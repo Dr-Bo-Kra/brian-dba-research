@@ -19,4 +19,5 @@
 window.BRIAN_DBA_CONFIG = {
   SUPABASE_URL: '', // e.g. 'https://xxxxxxxx.supabase.co'
   SUPABASE_ANON_KEY: '', // e.g. 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+  LINKEDIN_URL: 'https://www.linkedin.com/in/brianpereira/',
 };

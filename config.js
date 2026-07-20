@@ -8,4 +8,5 @@
 window.BRIAN_DBA_CONFIG = {
   SUPABASE_URL: '',
   SUPABASE_ANON_KEY: '',
+  LINKEDIN_URL: 'https://www.linkedin.com/in/brianpereira/',
 };

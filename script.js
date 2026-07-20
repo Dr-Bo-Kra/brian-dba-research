@@ -12,6 +12,22 @@ nav.querySelectorAll('a').forEach((a) =>
   })
 );
 
+(function initLinkedInCtas() {
+  const url = String((window.BRIAN_DBA_CONFIG || {}).LINKEDIN_URL || '').trim();
+  document.querySelectorAll('[data-linkedin]').forEach((link) => {
+    if (url) {
+      link.href = url;
+      link.removeAttribute('aria-disabled');
+      link.removeAttribute('tabindex');
+      return;
+    }
+    link.href = '#';
+    link.setAttribute('aria-disabled', 'true');
+    link.setAttribute('tabindex', '-1');
+    link.addEventListener('click', (e) => e.preventDefault());
+  });
+})();
+
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 tabs.forEach((tab, index) => {
   tab.addEventListener('click', () => selectTab(tab));
