@@ -373,11 +373,12 @@
           </div>
         </div>
 
-        <p class="survey-footnote" id="survey-footnote">Play telemetry and profile are stored in this browser (localStorage). Nothing is sent to a server. You can download a structured JSON record after assessment.</p>
+        <p class="survey-footnote" id="survey-footnote">Play telemetry and profile are stored in this browser (localStorage). When the research archive is configured, a copy is also sent securely for the study. You can download a structured JSON record after assessment.</p>
 
         <div class="survey-results" id="survey-results" hidden tabindex="-1" aria-labelledby="results-title">
           <p class="kicker">Assessment complete</p>
           <h3 id="results-title">Your responsible inclusive lending profile</h3>
+          <p class="archive-status" id="archive-status" role="status" aria-live="polite" hidden></p>
           <p class="results-lede" id="results-overall-summary"></p>
 
           <div class="play-style-banner" id="play-style-banner" aria-live="polite">
@@ -435,6 +436,7 @@
   </main>
 
   <footer><p>Brian E Pereira · DBA Research</p><a href="#top">Back to top ↑</a><p>Research evolves. This page will evolve with it.</p></footer>
+  <script src="config.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

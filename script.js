@@ -65,6 +65,7 @@ function selectTab(selected) {
   const playStyleTitle = document.getElementById('play-style-title');
   const playStyleBlurb = document.getElementById('play-style-blurb');
   const playBadgeMark = document.getElementById('play-badge-mark');
+  const archiveStatusEl = document.getElementById('archive-status');
 
   const phaseProfile = document.getElementById('phase-profile');
   const phaseBriefing = document.getElementById('phase-briefing');
@@ -74,6 +75,10 @@ function selectTab(selected) {
   const LATEST_KEY = 'brian-dba-survey-latest';
   const ARCHIVE_KEY = 'brian-dba-survey-responses';
   const INSTRUMENT = 'brian-dba-lending-desk-game-v2';
+  const cfg = window.BRIAN_DBA_CONFIG || {};
+  const SUPABASE_URL = String(cfg.SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const SUPABASE_ANON_KEY = String(cfg.SUPABASE_ANON_KEY || '').trim();
+  const archiveConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
   const START_TOKENS = 6;
   const START_RISK = 100;
   const METER_START = { portfolioRisk: 22, inclusion: 50, governance: 50 };
@@ -1343,6 +1348,70 @@ function selectTab(selected) {
     }
   }
 
+  function setArchiveStatus(state, message) {
+    if (!archiveStatusEl) return;
+    archiveStatusEl.hidden = false;
+    archiveStatusEl.dataset.state = state;
+    archiveStatusEl.textContent = message;
+  }
+
+  function buildArchivePayload(record) {
+    return {
+      instrument_id: record.instrument || INSTRUMENT,
+      client_record_id: record.id || null,
+      profile: record.profile || {},
+      responses: {
+        gameplay: record.gameplay || {},
+        instrumentType: record.instrumentType,
+        sessionStartedAt: record.sessionStartedAt,
+        savedAt: record.savedAt,
+        disclaimer: record.disclaimer,
+      },
+      assessment: record.assessment || {},
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      page_url: typeof location !== 'undefined' ? location.href : null,
+    };
+  }
+
+  /**
+   * POST assessment to Supabase REST. Never throws to the UI caller —
+   * localStorage + download remain the backup if this fails.
+   * Anon key is public by design; RLS must allow INSERT only (no SELECT).
+   */
+  async function submitToResearchArchive(record) {
+    if (!archiveConfigured) {
+      setArchiveStatus('local', 'Saved locally only (offline / not configured)');
+      return { ok: false, reason: 'not-configured' };
+    }
+
+    setArchiveStatus('pending', 'Saving to research archive…');
+
+    try {
+      const endpoint = `${SUPABASE_URL}/rest/v1/assessment_responses`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify(buildArchivePayload(record)),
+      });
+
+      if (!res.ok) {
+        setArchiveStatus('local', 'Saved locally only (offline / not configured)');
+        return { ok: false, reason: 'http', status: res.status };
+      }
+
+      setArchiveStatus('archived', 'Saved to research archive');
+      return { ok: true };
+    } catch {
+      setArchiveStatus('local', 'Saved locally only (offline / not configured)');
+      return { ok: false, reason: 'network' };
+    }
+  }
+
   function renderRadar(domains) {
     if (!radarChartEl) return;
     const size = 320;
@@ -1501,12 +1570,20 @@ function selectTab(selected) {
     renderRecordSummary(record);
   }
 
-  function showResults(record) {
+  function showResults(record, { submitArchive = false } = {}) {
     flow.hidden = true;
     if (footnote) footnote.hidden = true;
     results.hidden = false;
     renderAssessment(record);
     updateProgress('results');
+    if (submitArchive) {
+      // Fire-and-forget; results UI must not wait on network
+      void submitToResearchArchive(record);
+    } else if (archiveStatusEl) {
+      archiveStatusEl.hidden = true;
+      archiveStatusEl.textContent = '';
+      delete archiveStatusEl.dataset.state;
+    }
     results.focus({ preventScroll: true });
     results.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
   }
@@ -1518,7 +1595,7 @@ function selectTab(selected) {
       const record = JSON.parse(saved);
       if (record?.instrumentType === 'behavioral-game-assessment' && record?.assessment?.domains) {
         latestRecord = record;
-        showResults(record);
+        showResults(record, { submitArchive: false });
       }
     } catch {
       /* ignore */
@@ -1600,7 +1677,7 @@ function selectTab(selected) {
     const comment = String(document.getElementById('survey-comment').value || '').trim();
     const record = buildRecord(comment);
     saveRecord(record);
-    showResults(record);
+    showResults(record, { submitArchive: true });
   });
 
   if (sfxToggle) {
@@ -1627,6 +1704,11 @@ function selectTab(selected) {
     clearTimer();
     profileForm.reset();
     document.getElementById('survey-comment').value = '';
+    if (archiveStatusEl) {
+      archiveStatusEl.hidden = true;
+      archiveStatusEl.textContent = '';
+      delete archiveStatusEl.dataset.state;
+    }
     results.hidden = true;
     flow.hidden = false;
     if (footnote) footnote.hidden = false;

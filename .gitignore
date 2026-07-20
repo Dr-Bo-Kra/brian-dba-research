@@ -4,3 +4,8 @@ Thumbs.db
 .env
 .env.*
 node_modules/
+
+# Optional: uncomment to keep a filled local config.js out of git.
+# The committed config.js ships with empty placeholders so GitHub Pages
+# never 404s; only paste the public anon key (never service_role).
+# config.js
