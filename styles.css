@@ -300,8 +300,6 @@
 .objective-list li{padding:12px 0;border-top:1px solid #d5ddd9;font-size:14px;color:var(--muted);line-height:1.5}
 .objective-list li:last-child{border-bottom:1px solid #d5ddd9}
 .objective-list b{color:var(--ink);font-family:"Manrope",sans-serif}
-.keywords{margin:0;padding:18px 20px;background:#fff;border-left:3px solid var(--teal);font-size:13px;color:#4d6872;line-height:1.6}
-.keywords strong{color:var(--ink);font-family:"Manrope",sans-serif}
 .framework-diagram{width:100%;max-width:100%;box-sizing:border-box;margin:0 0 36px;padding:clamp(12px,2.5vw,24px);background:#061a29;border:1px solid #ffffff1e;overflow:hidden}
 .framework-svg{display:block;width:100%;max-width:100%;height:auto}
 .framework-legend{display:flex;flex-wrap:wrap;gap:14px 22px;justify-content:center;margin-top:18px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9eb2b9}
