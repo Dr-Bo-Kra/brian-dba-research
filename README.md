@@ -12,9 +12,15 @@ Open `index.html` directly, or serve the folder with any static web server.
 
 The folder can be deployed as-is to GitHub Pages, Netlify, Vercel, Cloudflare Pages, or any standard web host. No build step or Node backend is required.
 
-## Collecting Lending Desk assessment responses (Supabase)
+## Collecting Inclusive Lending Desk assessment responses (Supabase)
 
-The `#survey` Lending Desk game always saves a structured JSON record to **localStorage** and offers a **JSON download**. When Supabase is configured, the same record is also **POSTed** to a central archive so the researcher can review responses in one place.
+The `#survey` Inclusive Lending Desk always saves a structured JSON record to **localStorage** and offers a **JSON download**. When Supabase is configured, the same record is also **POSTed** to a central archive so the researcher can review responses in one place.
+
+Each record partitions answers for later analysis:
+
+- `responses.quantitative` — demographics, vignette acknowledgement, Likert items B1–F25  
+- `responses.qualitative` — open reflections Q1–Q9 plus narrative profile fields  
+- `assessment` — domain means from the Likert rounds (for the on-page desk report)
 
 The browser uses the **anon (public) key** only. That key is designed to be public when Row Level Security (RLS) is on. **Never** put the `service_role` key in front-end code or commit it.
 

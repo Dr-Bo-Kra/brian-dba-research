@@ -49,11 +49,10 @@ function selectTab(selected) {
   });
 }
 
-(function initLendingDesk() {
+(function initInclusiveLendingDesk() {
   const flow = document.getElementById('survey-flow');
   if (!flow) return;
 
-  const profileForm = document.getElementById('profile-form');
   const results = document.getElementById('survey-results');
   const summary = document.getElementById('survey-summary');
   const domainScoresEl = document.getElementById('domain-scores');
@@ -66,323 +65,440 @@ function selectTab(selected) {
   const overallScoreEl = document.getElementById('results-overall-score');
   const overallLevelEl = document.getElementById('results-overall-level');
   const footnote = document.getElementById('survey-footnote');
-  const sfxToggle = document.getElementById('sfx-toggle');
-  const outcomeToast = document.getElementById('outcome-toast');
-  const decisionStamp = document.getElementById('decision-stamp');
-  const decisionStampText = document.getElementById('decision-stamp-text');
-  const carryoverNote = document.getElementById('carryover-note');
-  const caseTimerEl = document.getElementById('case-timer');
-  const caseTimerVal = document.getElementById('case-timer-val');
-  const caseTimerBar = document.getElementById('case-timer-bar');
-  const portraitEl = document.getElementById('borrower-portrait');
-  const stakeTagEl = document.getElementById('stake-tag');
-  const signalCostHint = document.getElementById('signal-cost-hint');
   const radarChartEl = document.getElementById('radar-chart');
   const playStyleTitle = document.getElementById('play-style-title');
   const playStyleBlurb = document.getElementById('play-style-blurb');
   const playBadgeMark = document.getElementById('play-badge-mark');
   const archiveStatusEl = document.getElementById('archive-status');
 
-  const phaseProfile = document.getElementById('phase-profile');
-  const phaseBriefing = document.getElementById('phase-briefing');
-  const phasePlay = document.getElementById('phase-play');
-  const phaseDebrief = document.getElementById('phase-debrief');
-
   const LATEST_KEY = 'brian-dba-survey-latest';
   const ARCHIVE_KEY = 'brian-dba-survey-responses';
-  const INSTRUMENT = 'brian-dba-lending-desk-game-v2';
+  const INSTRUMENT = 'brian-dba-inclusive-lending-desk-v3';
+  const INSTRUMENT_TYPE = 'mixed-methods-desk-assessment';
+  const MIN_OPEN_LEN = 10;
+  const LIKERT_MAX = 7;
+
   const cfg = window.BRIAN_DBA_CONFIG || {};
   const SUPABASE_URL = String(cfg.SUPABASE_URL || '').trim().replace(/\/$/, '');
   const SUPABASE_ANON_KEY = String(cfg.SUPABASE_ANON_KEY || '').trim();
   const archiveConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
-  const START_TOKENS = 6;
-  const START_RISK = 100;
-  const METER_START = { portfolioRisk: 22, inclusion: 50, governance: 50 };
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduceMotion = (function () {
+    try {
+      return Boolean(
+        typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      );
+    } catch (e) {
+      return false;
+    }
+  })();
 
-  const labels = {
-    role: {
-      'credit-officer': 'Credit / risk officer',
-      underwriter: 'Underwriter / loan officer',
-      'product-lead': 'Product / lending lead',
-      executive: 'Executive / board',
-      academic: 'Academic / researcher',
-      policy: 'Policy / development finance',
-      consultant: 'Consultant / advisor',
-      other: 'Other',
-    },
-    institutionType: {
-      bank: 'Bank / commercial lender',
-      mfi: 'Microfinance institution',
-      fintech: 'Fintech / digital lender',
-      cooperative: 'Cooperative / credit union',
-      nbfi: 'Non-bank financial institution',
-      development: 'Development finance / NGO lender',
-      university: 'University / research body',
-      regulator: 'Regulator / policy body',
-      other: 'Other / not applicable',
-    },
-    region: {
-      'south-asia': 'South Asia',
-      'southeast-asia': 'Southeast Asia',
-      'other-asia': 'Other Asia–Pacific',
-      africa: 'Africa',
-      latam: 'Latin America & Caribbean',
-      other: 'Other / global',
-    },
-    yearsExperience: {
-      '0-2': '0–2 years',
-      '3-5': '3–5 years',
-      '6-10': '6–10 years',
-      '11-15': '11–15 years',
-      '16plus': '16+ years',
-    },
-    familiarity: {
-      1: 'Not at all',
-      2: 'Slightly',
-      3: 'Moderately',
-      4: 'Very',
-      5: 'Extremely',
-    },
-    decision: {
-      approve: 'Approved',
-      decline: 'Declined',
-      hold: 'Held for governance',
-    },
-  };
+  const LIKERT_SCALE = [
+    { value: 1, label: 'Strongly Disagree' },
+    { value: 2, label: 'Disagree' },
+    { value: 3, label: 'Somewhat Disagree' },
+    { value: 4, label: 'Neutral' },
+    { value: 5, label: 'Somewhat Agree' },
+    { value: 6, label: 'Agree' },
+    { value: 7, label: 'Strongly Agree' },
+  ];
 
-  const PORTRAITS = {
-    amina: {
-      bg: '#1a5c52',
-      accent: '#b8e65a',
-      paths:
-        '<ellipse cx="50" cy="38" rx="16" ry="18" fill="#c48a5a"/><path d="M28 28c4-14 40-14 44 2 2 10-4 18-10 20-8 2-18 2-26-2-6-4-10-12-8-20z" fill="#2a1a12"/><path d="M34 78c2-16 14-24 16-24s14 8 16 24" fill="#27b5a5"/><circle cx="44" cy="38" r="1.6" fill="#1a120c"/><circle cx="56" cy="38" r="1.6" fill="#1a120c"/><path d="M45 48c2 2 8 2 10 0" stroke="#1a120c" stroke-width="1.2" fill="none" stroke-linecap="round"/>',
-    },
-    ravi: {
-      bg: '#1e3a55',
-      accent: '#f3b64b',
-      paths:
-        '<ellipse cx="50" cy="40" rx="15" ry="17" fill="#d4a574"/><path d="M32 32c2-12 34-12 36 4v8c-4 6-12 8-18 8s-14-2-18-8v-12z" fill="#3d2918"/><path d="M35 78c1-14 12-22 15-22s14 8 15 22" fill="#092033"/><circle cx="44" cy="40" r="1.5" fill="#2a1a10"/><circle cx="56" cy="40" r="1.5" fill="#2a1a10"/><path d="M46 49h8" stroke="#2a1a10" stroke-width="1.2" stroke-linecap="round"/>',
-    },
-    sangha: {
-      bg: '#2a3d28',
-      accent: '#27b5a5',
-      paths:
-        '<circle cx="36" cy="42" r="11" fill="#c49a6c"/><circle cx="50" cy="36" r="12" fill="#b8895c"/><circle cx="64" cy="44" r="10" fill="#d4a878"/><path d="M24 78c4-18 18-26 26-26 6 0 14 4 20 14 2 4 4 12 4 12H24z" fill="#0e5360"/><circle cx="36" cy="40" r="1.2" fill="#2a1a10"/><circle cx="48" cy="34" r="1.3" fill="#2a1a10"/><circle cx="62" cy="42" r="1.1" fill="#2a1a10"/>',
-    },
-    fasttrack: {
-      bg: '#3a2a18',
-      accent: '#f3b64b',
-      paths:
-        '<ellipse cx="50" cy="39" rx="15" ry="17" fill="#c47a5a"/><path d="M30 30c6-12 34-12 40 4-2 8-8 14-14 16-8 2-18 1-24-4-4-4-6-10-2-16z" fill="#1a120c"/><path d="M34 78c2-15 13-23 16-23s14 8 16 23" fill="#102f3c"/><circle cx="44" cy="39" r="1.5" fill="#1a1008"/><circle cx="56" cy="39" r="1.5" fill="#1a1008"/><path d="M45 48c3 2.5 7 2.5 10 0" stroke="#1a1008" stroke-width="1.2" fill="none" stroke-linecap="round"/>',
-    },
-    lin: {
-      bg: '#243048',
-      accent: '#8f7cf1',
-      paths:
-        '<ellipse cx="50" cy="40" rx="14" ry="16" fill="#e0b898"/><path d="M34 28c4-8 28-8 32 4v10c-2 8-10 12-16 12s-14-4-16-12V28z" fill="#1a1a1e"/><path d="M36 78c1-14 11-22 14-22s13 8 14 22" fill="#5c4db8"/><circle cx="44" cy="40" r="1.4" fill="#2a1a10"/><circle cx="56" cy="40" r="1.4" fill="#2a1a10"/><path d="M46 49c2 1.5 6 1.5 8 0" stroke="#2a1a10" stroke-width="1.1" fill="none" stroke-linecap="round"/>',
-    },
-  };
-
-  /**
-   * Five borrower vignettes. Each encodes preferred signal use and decision quality
-   * for scoring psychometric, social, behavioral, readiness, governance, and inclusion.
-   */
-  const CASES = [
+  const PROFILE_FIELDS = [
     {
-      id: 'amina',
-      name: 'Amina Okoro',
-      role: 'Informal market vendor · inventory top-up',
-      tag: 'Thin-file',
-      amount: 'USD 420',
-      riskCost: 18,
-      stake: 'Stake: peak-season stock vs household celebration cash.',
-      story:
-        'No formal credit history. She sells produce daily and asks for a short inventory loan before a busy season. She mentions needing cash “this week for the festival as well,” but the application is framed as working capital.',
-      pressure: null,
-      timed: false,
-      signals: {
-        psych:
-          'Screening note: high self-discipline on prior savings habits; internal locus—“I plan stock around market days.” Mild tension with festival spending urge.',
-        social:
-          'Market association chair vouchers her; two peers offer informal monitoring. Strong community reputation, no formal collateral.',
-        behavior:
-          'Present-bias flag: festival framing competes with inventory use. Loss aversion to missing peak season is genuine; mental accounting may blur “business” vs “celebration” money.',
-      },
-      scoreHints: {
-        preferSignals: ['social', 'behavior'],
-        idealDecision: 'approve',
-        badDecision: 'decline',
-        governanceCase: false,
-      },
+      name: 'gender',
+      label: 'Gender',
+      required: true,
+      bucket: 'quantitative',
+      options: [
+        { value: 'male', label: 'Male' },
+        { value: 'female', label: 'Female' },
+        { value: 'prefer-not', label: 'Prefer not to say' },
+      ],
     },
     {
-      id: 'ravi',
-      name: 'Ravi Mehta',
-      role: 'Gig courier · personal top-up loan',
-      tag: 'Near-file',
-      amount: 'USD 900',
-      riskCost: 28,
-      stake: 'Stake: overconfidence vs volatile gig income.',
-      story:
-        'Irregular platform income. He insists he can “easily repay three times this amount” and wants the largest offer available today. Thin traditional statements; high verbal confidence.',
-      pressure: null,
-      timed: false,
-      signals: {
-        psych:
-          'Self-efficacy claim is high, but past follow-through on goals is uneven. External locus when setbacks occur—“the algorithm cut my hours.”',
-        social:
-          'Few durable peer ties for repayment monitoring. Roommate will not co-sign. Weak community guarantee.',
-        behavior:
-          'Overconfidence under uncertainty: repayment capacity stated far above earnings volatility. Present bias toward larger loan now; loss-frame resistance to a smaller product.',
-      },
-      scoreHints: {
-        preferSignals: ['behavior', 'psych'],
-        idealDecision: 'decline',
-        badDecision: 'approve',
-        governanceCase: false,
-      },
+      name: 'age',
+      label: 'Age',
+      required: true,
+      bucket: 'quantitative',
+      options: [
+        { value: '20-29', label: '20-29 years' },
+        { value: '30-39', label: '30-39 years' },
+        { value: '40-49', label: '40-49 years' },
+        { value: '50-59', label: '50-59 years' },
+        { value: '60plus', label: '60 years and above' },
+      ],
     },
     {
-      id: 'sangha',
-      name: 'River Bend Lending Circle',
-      role: 'Five-member joint-liability group · microenterprise',
-      tag: 'Group · thin-file',
-      amount: 'USD 1,100',
-      riskCost: 22,
-      stake: 'Stake: peer monitoring as collateral substitute.',
-      story:
-        'A rural cooperative-linked circle seeks a group facility. Individual credit files are thin. Members propose weekly peer meetings and rotating internal accountability.',
-      pressure: null,
-      timed: false,
-      signals: {
-        psych:
-          'Group average shows mixed individual self-control; two members score high on planning discipline.',
-        social:
-          'Dense network ties, mutual monitoring history, and village reputation score are strong. Prior informal ROSCA completed without default.',
-        behavior:
-          'Collective loss aversion may deter free-riding; slight mental accounting risk if one member treats the group pot as personal.',
-      },
-      scoreHints: {
-        preferSignals: ['social'],
-        idealDecision: 'approve',
-        badDecision: 'decline',
-        governanceCase: false,
-      },
+      name: 'education',
+      label: 'Highest educational qualification',
+      required: true,
+      bucket: 'quantitative',
+      options: [
+        { value: 'diploma', label: 'Diploma' },
+        { value: 'bachelors', label: "Bachelor's Degree" },
+        { value: 'masters', label: "Master's Degree" },
+        { value: 'doctorate', label: 'Doctorate' },
+        { value: 'professional', label: 'Professional Qualification' },
+        { value: 'other', label: 'Other' },
+      ],
     },
     {
-      id: 'fasttrack',
-      name: 'Priya Nair · flagged rush file',
-      role: 'Sole trader · digital onboarding',
-      tag: 'Governance stress',
-      amount: 'USD 650',
-      riskCost: 20,
-      stake: 'Stake: campaign speed vs consent and fairness trail.',
-      story:
-        'Application looks passable on sparse data. Consent language for alternative data scrapes is incomplete. A sales lead pings: “Approve in the next hour—campaign KPI.” Fairness audit trail is empty.',
-      pressure:
-        'Desk pressure: skip explainability notes and proceed without refreshed consent. Speed vs governance tradeoff.',
-      timed: true,
-      timerSeconds: 45,
-      signals: {
-        psych: 'Incomplete psych pack—borrower did not finish trait items after a rushed onboarding link.',
-        social: 'No community reference collected; digital-only channel.',
-        behavior:
-          'Staff overconfidence bias: urgency framing encourages skipping checks. Borrower loss aversion to delay is being used to push throughput.',
-      },
-      scoreHints: {
-        preferSignals: [],
-        idealDecision: 'hold',
-        badDecision: 'approve',
-        governanceCase: true,
-      },
+      name: 'institutionType',
+      label: 'Type of financial institution',
+      required: true,
+      bucket: 'quantitative',
+      options: [
+        { value: 'commercial-bank', label: 'Commercial Bank' },
+        { value: 'mfi', label: 'Microfinance Institution' },
+        { value: 'cooperative', label: 'Cooperative or Credit Union' },
+        { value: 'fintech', label: 'FinTech Lending Company' },
+        { value: 'digital-bank', label: 'Digital Bank' },
+        { value: 'dfi', label: 'Development Financial Institution' },
+        { value: 'other', label: 'Other' },
+      ],
     },
     {
-      id: 'lin',
-      name: 'Lin Wei',
-      role: 'Home-based craftsperson · equipment upgrade',
-      tag: 'Thin-file · strong intent',
-      amount: 'USD 380',
-      riskCost: 14,
-      stake: 'Stake: delayed gratification vs thin traditional evidence.',
-      story:
-        'Saved for two years toward a small machine. No collateral, informal sales via messaging apps. Asks for a modest facility timed to a delayed purchase rather than an impulse buy.',
-      pressure: null,
-      timed: true,
-      timerSeconds: 55,
-      signals: {
-        psych:
-          'Clear delay-of-gratification pattern and internal locus of control. High discipline markers; repayment intent narrative is coherent.',
-        social: 'Neighbor guild will mentor production quality; light reputation signal, not a full guarantee.',
-        behavior:
-          'Low present bias. Mental accounting is clean: equipment vs household cash. Confidence calibrated to past savings—not overstated.',
-      },
-      scoreHints: {
-        preferSignals: ['psych'],
-        idealDecision: 'approve',
-        badDecision: 'decline',
-        governanceCase: false,
-      },
+      name: 'position',
+      label: 'Current position',
+      required: true,
+      bucket: 'quantitative',
+      options: [
+        { value: 'credit-loan-officer', label: 'Credit or Loan Officer' },
+        { value: 'credit-manager', label: 'Credit Manager' },
+        { value: 'risk-manager', label: 'Risk Manager or Risk Analyst' },
+        { value: 'underwriting', label: 'Underwriting Specialist' },
+        { value: 'branch-manager', label: 'Branch Manager' },
+        { value: 'product-development', label: 'Product Development Specialist' },
+        { value: 'senior-management', label: 'Senior Management or Executive' },
+        { value: 'other', label: 'Other' },
+      ],
+    },
+    {
+      name: 'yearsLending',
+      label: 'Years of experience in lending or credit-related roles',
+      required: true,
+      bucket: 'quantitative',
+      options: [
+        { value: 'lt2', label: 'Less than 2 years' },
+        { value: '2-5', label: '2-5 years' },
+        { value: '6-10', label: '6-10 years' },
+        { value: '11-15', label: '11-15 years' },
+        { value: 'gt15', label: 'More than 15 years' },
+      ],
+    },
+    {
+      name: 'yearsFinancialServices',
+      label: 'Total years of professional experience in the financial services sector',
+      required: true,
+      bucket: 'qualitative',
+      options: [
+        { value: 'lt2', label: 'Less than 2 years' },
+        { value: '2-5', label: '2-5 years' },
+        { value: '6-10', label: '6-10 years' },
+        { value: '11-15', label: '11-15 years' },
+        { value: 'gt15', label: 'More than 15 years' },
+      ],
+    },
+    {
+      name: 'areaOperation',
+      label: 'Primary area of operation',
+      required: true,
+      bucket: 'quantitative',
+      options: [
+        { value: 'urban', label: 'Urban' },
+        { value: 'rural', label: 'Rural' },
+        { value: 'both', label: 'Both Urban and Rural' },
+      ],
+    },
+    {
+      name: 'involvement',
+      label: 'Level of involvement in lending decisions',
+      required: true,
+      bucket: 'quantitative',
+      options: [
+        { value: 'assess', label: 'I directly assess loan applications' },
+        { value: 'recommend', label: 'I recommend loan applications for approval' },
+        { value: 'approve-reject', label: 'I approve or reject loan applications' },
+        { value: 'supervise', label: 'I supervise credit assessment activities' },
+        { value: 'policies', label: 'I develop lending or credit policies' },
+        {
+          value: 'support',
+          label: 'I support lending decisions through risk, technology, or product functions',
+        },
+        { value: 'other', label: 'Other' },
+      ],
+    },
+    {
+      name: 'usesAltIndicators',
+      label: 'Does your institution currently use alternative creditworthiness indicators?',
+      required: true,
+      bucket: 'quantitative',
+      options: [
+        { value: 'yes', label: 'Yes' },
+        { value: 'no', label: 'No' },
+        { value: 'implementing', label: 'Currently Implementing' },
+        { value: 'not-sure', label: 'Not Sure' },
+      ],
     },
   ];
 
-  const domainsMeta = [
+  const CASE_SCENARIO = [
+    'You are evaluating a loan application from a micro-entrepreneur applying for business expansion financing.',
+    'The applicant has: Limited formal credit history; Moderate but stable business income; Partial collateral; No previous loan defaults; Stable business operations.',
+    'When answering the following sections, consider how additional borrower characteristics influence your professional lending decision.',
+    'While answering, assume that traditional financial information (income, repayment history, and collateral) is adequate and comparable across applicants. Base your responses on your professional judgment regarding how the borrower\'s characteristics would influence a responsible lending decision.',
+  ];
+
+  const LIKERT_SECTIONS = [
     {
       id: 'psychometric',
-      label: 'Psychometric indicators',
+      stageKey: 'likert-b',
+      title: 'Mindset signals',
+      chip: 'Psychometric cues',
+      hint: 'Rate how strongly you agree that these mindset-related signals would shape a responsible lending decision for the case file.',
+      domainLabel: 'Psychometric indicators',
       short: 'Psych',
-      low: 'Limited use of trait signals—discipline, locus of control and self-efficacy rarely informed your desk decisions.',
-      mid: 'Selective use of psychometric evidence—traits shaped some choices but were not systematically sought.',
-      high: 'Strong practice of seeking and weighting psychometric cues (self-control, locus, efficacy) for thin-file judgment.',
+      items: [
+        {
+          id: 'B1',
+          text: 'A borrower who demonstrates strong financial discipline is more likely to receive the recommendation for loan approval.',
+        },
+        {
+          id: 'B2',
+          text: "A borrower's commitment to repaying financial obligations positively influences loan approval decisions.",
+        },
+        {
+          id: 'B3',
+          text: 'Evidence that a borrower plans and manages finances responsibly positively influences lending decisions.',
+        },
+        {
+          id: 'B4',
+          text: 'A borrower who demonstrates confidence in managing financial responsibilities is more likely to be considered creditworthy.',
+        },
+        {
+          id: 'B5',
+          text: 'Psychological characteristics such as responsibility, self-control, and commitment provide valuable information beyond traditional financial records when making lending decisions.',
+        },
+      ],
     },
     {
       id: 'social',
-      label: 'Social capital',
+      stageKey: 'likert-c',
+      title: 'Community signals',
+      chip: 'Social capital',
+      hint: 'Rate how community reputation, peers, and networks would inform the same case file.',
+      domainLabel: 'Social capital',
       short: 'Social',
-      low: 'Community trust, peer monitoring and reputation carried little weight in how you unlocked signals or decided.',
-      mid: 'Moderate reliance on networks and peer accountability when traditional collateral was thin.',
-      high: 'Clear stance that social capital—trust, peers, reputation—can reduce information asymmetry in inclusive lending.',
+      items: [
+        {
+          id: 'C6',
+          text: "A borrower's positive reputation within the community increases confidence in approving a loan application.",
+        },
+        {
+          id: 'C7',
+          text: 'Strong peer recommendations positively influence the assessment of borrower reliability.',
+        },
+        {
+          id: 'C8',
+          text: "Active participation in community or business groups increases the confidence in the borrower's creditworthiness.",
+        },
+        {
+          id: 'C9',
+          text: 'Evidence of strong community trust reduces uncertainty when making lending decisions.',
+        },
+        {
+          id: 'C10',
+          text: 'Social relationships and community support provide useful information beyond traditional financial indicators when evaluating loan applications.',
+        },
+      ],
     },
     {
       id: 'behavioral',
-      label: 'Behavioral economics',
+      stageKey: 'likert-d',
+      title: 'Behavior signals',
+      chip: 'Decision patterns',
+      hint: 'Rate how behavioural patterns would influence your professional judgment on this file.',
+      domainLabel: 'Behavioral economics',
       short: 'Behavior',
-      low: 'Present bias, overconfidence and related biases rarely shaped interpretation or product caution.',
-      mid: 'Some recognition of behavioral red flags, with room to embed them more consistently under uncertainty.',
-      high: 'Consistent detection of present bias, overconfidence and framing—using behavior to temper or structure decisions.',
+      items: [
+        {
+          id: 'D11',
+          text: "Evidence that a borrower makes consistent financial decisions increases confidence in the borrower's ability to repay.",
+        },
+        {
+          id: 'D12',
+          text: 'Borrowers who avoid impulsive financial decisions are more likely to receive loan approval.',
+        },
+        {
+          id: 'D13',
+          text: 'A borrower who demonstrates responsible behaviour when managing financial risks is viewed more favourably during credit assessment.',
+        },
+        {
+          id: 'D14',
+          text: 'Behavioural information improves the assessment of creditworthiness beyond traditional financial records.',
+        },
+        {
+          id: 'D15',
+          text: 'Behavioural characteristics improve the quality of responsible lending decisions.',
+        },
+      ],
     },
     {
       id: 'readiness',
-      label: 'Organizational readiness',
+      stageKey: 'likert-e',
+      title: 'Institutional readiness',
+      chip: 'Org capacity',
+      hint: 'Shift from the borrower file to your institution—how ready is the desk to use alternative signals responsibly?',
+      domainLabel: 'Organizational readiness',
       short: 'Ready',
-      low: 'Process looked ad hoc: little integrated signal use or disciplined budget/token management under desk constraints.',
-      mid: 'Mixed operational discipline—interest in alternative evidence with uneven process rigor.',
-      high: 'Behaved like a ready desk: budgeted information, combined signal types, and structured decisions under constraint.',
+      items: [
+        {
+          id: 'E16',
+          text: 'Organizational leadership supports the adoption of alternative creditworthiness assessment methods.',
+        },
+        {
+          id: 'E17',
+          text: 'The organization has clear policies governing the responsible use of alternative borrower information.',
+        },
+        {
+          id: 'E18',
+          text: 'The organization has adequate technological capability to implement alternative creditworthiness models.',
+        },
+        {
+          id: 'E19',
+          text: 'Employees receive sufficient training to evaluate alternative creditworthiness indicators responsibly.',
+        },
+        {
+          id: 'E20',
+          text: 'The organization is prepared to integrate alternative creditworthiness models into routine lending decisions while maintaining ethical and regulatory standards.',
+        },
+      ],
     },
     {
-      id: 'governance',
-      label: 'Ethical governance & inclusion',
-      short: 'Ethics',
-      low: 'Speed or throughput often beat consent, fairness and explainability—or inclusion for evidence-backed thin-files lagged.',
-      mid: 'Supports safeguards and fair access in places; governance habits may still need strengthening under pressure.',
-      high: 'Strong responsible orientation: ethics holds when pressured, and alternatives used to expand fair access—not only to exclude.',
+      id: 'inclusiveDecision',
+      stageKey: 'likert-f',
+      title: 'Inclusive decision stance',
+      chip: 'Lending stance',
+      hint: 'Last rating round—how should inclusion and responsibility show up in the decision?',
+      domainLabel: 'Inclusive decision-making',
+      short: 'Decision',
+      items: [
+        {
+          id: 'F21',
+          text: 'Creditworthy borrowers should be considered for loan approval even when they have limited traditional financial documentation.',
+        },
+        {
+          id: 'F22',
+          text: 'Lending decisions should balance responsible risk management with financial inclusion.',
+        },
+        {
+          id: 'F23',
+          text: 'Fairness and ethical responsibility should be considered when making lending decisions.',
+        },
+        {
+          id: 'F24',
+          text: 'Alternative creditworthiness information can improve responsible lending decisions without compromising credit quality.',
+        },
+        {
+          id: 'F25',
+          text: 'Incorporating alternative creditworthiness indicators leads to more responsible and inclusive lending decisions.',
+        },
+      ],
     },
   ];
 
-  let profile = {};
-  let state = null;
-  let latestRecord = null;
-  let caseStartedAt = 0;
-  let deciding = false;
-  let timerId = null;
-  let timerRemaining = 0;
-  let timerTotal = 0;
-  let softTimerActive = false;
-  let audioCtx = null;
-  let sfxEnabled = false;
+  const QUAL_QUESTIONS = {
+    adoption: [
+      {
+        id: 'Q1',
+        text: 'What is your understanding of alternative creditworthiness indicators, such as psychometric characteristics, social capital, and behavioural financial information, in the context of lending decisions?',
+      },
+      {
+        id: 'Q2',
+        text: 'How do you think psychometric indicators (e.g., financial discipline, repayment commitment, and financial responsibility) can contribute to improving lending decisions?',
+      },
+      {
+        id: 'Q3',
+        text: 'In your opinion, what role do social capital indicators (e.g., community reputation, peer recommendations, and social networks) play in evaluating borrowers who have limited traditional credit histories?',
+      },
+      {
+        id: 'Q4',
+        text: 'How useful do you believe behavioural economic indicators (e.g., spending behaviour, financial decision-making patterns, and risk-taking behaviour) are in supporting responsible lending decisions?',
+      },
+      {
+        id: 'Q5',
+        text: 'What benefits and opportunities do you believe the adoption of alternative creditworthiness models can bring to your organization and to financially underserved borrowers?',
+      },
+    ],
+    governance: [
+      {
+        id: 'Q6',
+        text: 'What operational challenges do you anticipate your organization may face when implementing alternative creditworthiness assessment models?',
+      },
+      {
+        id: 'Q7',
+        text: 'What ethical concerns, if any, do you associate with using alternative borrower information in lending decisions?',
+      },
+      {
+        id: 'Q8',
+        text: 'What organizational capabilities, governance mechanisms, or regulatory support do you believe are necessary for the successful implementation of alternative creditworthiness models?',
+      },
+      {
+        id: 'Q9',
+        text: 'Based on your experience, what recommendations would you make to financial institutions and policymakers for promoting responsible and inclusive adoption of alternative creditworthiness models?',
+      },
+    ],
+  };
 
-  function clamp(n, min, max) {
-    return Math.min(max, Math.max(min, n));
+  const DOMAINS_META = LIKERT_SECTIONS.map((s) => ({
+    id: s.id,
+    label: s.domainLabel,
+    short: s.short,
+    low: `Responses leaned cautious on ${s.domainLabel.toLowerCase()}—these signals carried limited weight in your desk orientation.`,
+    mid: `A balanced view of ${s.domainLabel.toLowerCase()}—useful in places, with room to integrate more systematically.`,
+    high: `Strong alignment with ${s.domainLabel.toLowerCase()} as informative beyond traditional records for responsible inclusive lending.`,
+  }));
+
+  const STAGES = [
+    { key: 'profile', label: 'Your profile', pct: 8 },
+    { key: 'case', label: 'The case', pct: 16 },
+    ...LIKERT_SECTIONS.map((s, i) => ({
+      key: s.stageKey,
+      label: s.title,
+      pct: 24 + i * 10,
+      section: s,
+    })),
+    { key: 'qual-adoption', label: 'Your take · adoption', pct: 78 },
+    { key: 'qual-governance', label: 'Your take · governance', pct: 90 },
+    { key: 'results', label: 'Your results', pct: 100 },
+  ];
+
+  let stageIndex = 0;
+  let startedAt = new Date().toISOString();
+  let latestRecord = null;
+  let state = {
+    profile: {},
+    quantitative: {
+      demographics: {},
+      vignetteAcknowledged: false,
+      vignetteAcknowledgedAt: null,
+      likert: {},
+    },
+    qualitative: {
+      yearsFinancialServices: '',
+      roleDescription: '',
+      altIndicatorsExplain: '',
+      openResponses: {},
+    },
+  };
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function mean(values) {
@@ -392,961 +508,610 @@ function selectTab(selected) {
   }
 
   function levelFor(score) {
-    if (score >= 4) return { id: 'strong', label: 'Strong alignment' };
-    if (score >= 3) return { id: 'moderate', label: 'Moderate alignment' };
-    return { id: 'cautious', label: 'Cautious / skeptical' };
+    if (score >= 5.5) return { id: 'inclusion-forward', label: 'Inclusion-forward' };
+    if (score >= 4) return { id: 'balanced', label: 'Balanced' };
+    return { id: 'cautious', label: 'Cautious' };
   }
 
   function interpretDomain(meta, score) {
-    if (score >= 4) return meta.high;
-    if (score >= 3) return meta.mid;
+    if (score >= 5.5) return meta.high;
+    if (score >= 4) return meta.mid;
     return meta.low;
   }
 
-  function clearErrors(root) {
-    root.querySelectorAll('.field-error').forEach((el) => {
+  function optionLabel(fieldName, value) {
+    const field = PROFILE_FIELDS.find((f) => f.name === fieldName);
+    const hit = field?.options?.find((o) => o.value === value);
+    return hit?.label || value || '—';
+  }
+
+  function updateProgress() {
+    const stage = STAGES[stageIndex] || STAGES[0];
+    const steps = Math.max(STAGES.length - 1, 1);
+    const pct = stageIndex <= 0 ? 0 : Math.round((stageIndex / steps) * 100);
+    if (progressLabel) progressLabel.textContent = stage.label;
+    if (progressPct) progressPct.textContent = `${pct}% complete`;
+    if (progressBar) progressBar.style.width = `${pct}%`;
+  }
+
+  function focusStageTitle() {
+    const title = flow.querySelector('.phase-title, #desk-stage-title');
+    if (!title) return;
+    if (!title.hasAttribute('tabindex')) title.setAttribute('tabindex', '-1');
+    try {
+      if (typeof title.focus === 'function') title.focus({ preventScroll: true });
+    } catch (e) {
+      /* embedded browsers may lack focus options */
+    }
+  }
+
+  function scrollElementIntoView(el) {
+    if (!el || typeof el.scrollIntoView !== 'function') return;
+    try {
+      el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    } catch (e) {
+      try {
+        el.scrollIntoView(true);
+      } catch (e2) {
+        /* ignore */
+      }
+    }
+  }
+
+  function showStageError(message) {
+    let err = flow.querySelector('#stage-error');
+    if (!err) {
+      err = document.createElement('p');
+      err.id = 'stage-error';
+      err.className = 'field-error stage-error';
+      err.setAttribute('role', 'alert');
+      const actions = flow.querySelector('.survey-actions');
+      if (actions) actions.before(err);
+      else flow.append(err);
+    }
+    err.hidden = false;
+    err.textContent = message;
+  }
+
+  function clearStageError() {
+    const err = flow.querySelector('#stage-error');
+    if (err) {
+      err.hidden = true;
+      err.textContent = '';
+    }
+    flow.querySelectorAll('.field.invalid').forEach((el) => el.classList.remove('invalid'));
+    flow.querySelectorAll('.field-error[data-field-error]').forEach((el) => {
       el.hidden = true;
     });
-    root.querySelectorAll('.field.invalid').forEach((el) => el.classList.remove('invalid'));
   }
 
-  function showError(name) {
-    const error = document.getElementById(`error-${name}`);
-    const field = error?.closest('.field');
-    if (error) error.hidden = false;
-    if (field) field.classList.add('invalid');
+  function wireNav(showBack, onBack, onNext) {
+    document.getElementById('stage-next')?.addEventListener('click', onNext);
+    if (showBack) {
+      document.getElementById('stage-back')?.addEventListener('click', onBack);
+    }
   }
 
-  function validateProfile() {
-    clearErrors(profileForm);
+  function stageShell(bodyHtml, { showBack, nextLabel }) {
+    const playable = STAGES.filter((s) => s.key !== 'results');
+    const current = playable[Math.min(stageIndex, playable.length - 1)];
+    const stepNum = Math.min(stageIndex + 1, playable.length);
+
+    return `
+      <div class="desk-stage inclusive-desk" id="desk-stage-root" tabindex="-1">
+        <div class="desk-toolbar">
+          <p class="desk-toolbar-label">Beyond the credit file · challenge</p>
+          <span class="desk-stage-index">Stage ${stepNum} of ${playable.length}</span>
+        </div>
+        <div class="stage-progress-simple" aria-hidden="true">
+          ${playable
+            .map((_, i) => {
+              const cls = i < stageIndex ? 'done' : i === stageIndex ? 'current' : '';
+              return `<i class="${cls}"></i>`;
+            })
+            .join('')}
+        </div>
+        <p class="stage-now-label">${escapeHtml(current ? current.label : '')}</p>
+        <div class="survey-step desk-stage-body">
+          ${bodyHtml}
+          <p class="field-error" id="stage-error" hidden role="alert"></p>
+          <div class="survey-actions">
+            ${showBack ? '<button type="button" class="button ghost" id="stage-back">← Back</button>' : ''}
+            <button type="button" class="button primary" id="stage-next">${escapeHtml(nextLabel)} <span aria-hidden="true">→</span></button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderProfileStage() {
+    const selects = PROFILE_FIELDS.map((field) => {
+      const current =
+        field.bucket === 'qualitative'
+          ? state.qualitative[field.name] || ''
+          : state.quantitative.demographics[field.name] || state.profile[field.name] || '';
+      const opts = field.options
+        .map(
+          (o) =>
+            `<option value="${escapeHtml(o.value)}" ${current === o.value ? 'selected' : ''}>${escapeHtml(o.label)}</option>`
+        )
+        .join('');
+      return `
+        <div class="field" data-field="${escapeHtml(field.name)}">
+          <label for="field-${escapeHtml(field.name)}">${escapeHtml(field.label)} <span aria-hidden="true">*</span></label>
+          <select id="field-${escapeHtml(field.name)}" name="${escapeHtml(field.name)}" required>
+            <option value="">Select one…</option>
+            ${opts}
+          </select>
+          <p class="field-error" data-field-error hidden>Please complete this field.</p>
+        </div>
+      `;
+    }).join('');
+
+    const country = state.quantitative.demographics.countryRegion || '';
+    const roleDesc = state.qualitative.roleDescription || '';
+    const altExplain = state.qualitative.altIndicatorsExplain || '';
+
+    const bodyHtml = `
+      <h3 class="phase-title" id="desk-stage-title">Your profile</h3>
+      <p class="survey-hint">A few details for the research record—then you open the case. This is a research challenge, not a clinical diagnosis or credit decision tool.</p>
+      <form id="profile-form" class="survey-form" novalidate>
+        ${selects}
+        <div class="field" data-field="countryRegion">
+          <label for="field-countryRegion">Country or region of operation <span aria-hidden="true">*</span></label>
+          <input type="text" id="field-countryRegion" name="countryRegion" required maxlength="120" value="${escapeHtml(country)}" placeholder="e.g. India · Southeast Asia" autocomplete="country-name">
+          <p class="field-error" data-field-error hidden>Please enter your country or region.</p>
+        </div>
+        <div class="field" data-field="roleDescription">
+          <label for="field-roleDescription">Briefly describe your current roles and responsibilities related to lending or credit assessment <span aria-hidden="true">*</span></label>
+          <textarea id="field-roleDescription" name="roleDescription" rows="3" maxlength="1200" required minlength="${MIN_OPEN_LEN}" placeholder="Your day-to-day credit or lending responsibilities…">${escapeHtml(roleDesc)}</textarea>
+          <p class="field-error" data-field-error hidden>Please write at least ${MIN_OPEN_LEN} characters.</p>
+        </div>
+        <div class="field" data-field="altIndicatorsExplain">
+          <label for="field-altIndicatorsExplain">If relevant, briefly explain how your organization uses (or does not use) alternative creditworthiness indicators <span class="optional-tag">(optional)</span></label>
+          <textarea id="field-altIndicatorsExplain" name="altIndicatorsExplain" rows="3" maxlength="1200" placeholder="Optional detail…">${escapeHtml(altExplain)}</textarea>
+        </div>
+      </form>
+    `;
+
+    flow.innerHTML = stageShell(bodyHtml, {
+      showBack: false,
+      nextLabel: 'Open the case',
+    });
+
+    wireNav(false, null, () => {
+      if (!validateAndCollectProfile()) return;
+      goToStage(1);
+    });
+  }
+
+  function validateAndCollectProfile() {
+    clearStageError();
     let valid = true;
-    profileForm.querySelectorAll('select[required]').forEach((select) => {
-      if (!select.value) {
+    const form = document.getElementById('profile-form');
+    if (!form) return false;
+
+    PROFILE_FIELDS.forEach((field) => {
+      const el = form.querySelector(`[name="${field.name}"]`);
+      const wrap = form.querySelector(`[data-field="${field.name}"]`);
+      const err = wrap?.querySelector('[data-field-error]');
+      if (!el || !String(el.value || '').trim()) {
         valid = false;
-        showError(select.name);
+        wrap?.classList.add('invalid');
+        if (err) err.hidden = false;
       }
     });
-    const fam = [...profileForm.querySelectorAll('input[name="familiarity"]')];
-    if (!fam.some((r) => r.checked)) {
+
+    const countryEl = form.querySelector('[name="countryRegion"]');
+    const countryWrap = form.querySelector('[data-field="countryRegion"]');
+    if (!String(countryEl?.value || '').trim()) {
       valid = false;
-      showError('familiarity');
+      countryWrap?.classList.add('invalid');
+      const err = countryWrap?.querySelector('[data-field-error]');
+      if (err) err.hidden = false;
     }
-    return valid;
-  }
 
-  function collectProfile() {
-    const fd = new FormData(profileForm);
-    return {
-      role: String(fd.get('role') || ''),
-      institutionType: String(fd.get('institutionType') || ''),
-      region: String(fd.get('region') || ''),
-      yearsExperience: String(fd.get('yearsExperience') || ''),
-      familiarity: String(fd.get('familiarity') || ''),
+    const roleEl = form.querySelector('[name="roleDescription"]');
+    const roleWrap = form.querySelector('[data-field="roleDescription"]');
+    const roleVal = String(roleEl?.value || '').trim();
+    if (roleVal.length < MIN_OPEN_LEN) {
+      valid = false;
+      roleWrap?.classList.add('invalid');
+      const err = roleWrap?.querySelector('[data-field-error]');
+      if (err) err.hidden = false;
+    }
+
+    if (!valid) {
+      showStageError('Please complete the required clearance fields before continuing.');
+      form.querySelector('.field.invalid select, .field.invalid input, .field.invalid textarea')?.focus();
+      return false;
+    }
+
+    const demographics = {};
+    PROFILE_FIELDS.forEach((field) => {
+      const val = String(form.querySelector(`[name="${field.name}"]`)?.value || '').trim();
+      if (field.bucket === 'qualitative') {
+        state.qualitative[field.name] = val;
+      } else {
+        demographics[field.name] = val;
+      }
+    });
+    demographics.countryRegion = String(countryEl?.value || '').trim();
+    state.quantitative.demographics = demographics;
+    state.qualitative.roleDescription = roleVal;
+    state.qualitative.altIndicatorsExplain = String(
+      form.querySelector('[name="altIndicatorsExplain"]')?.value || ''
+    ).trim();
+
+    state.profile = {
+      ...demographics,
+      yearsFinancialServices: state.qualitative.yearsFinancialServices,
+      roleDescription: state.qualitative.roleDescription,
+      altIndicatorsExplain: state.qualitative.altIndicatorsExplain || undefined,
     };
+    return true;
   }
 
-  /* —— Web Audio SFX (muted by default) —— */
-  function ensureAudio() {
-    if (!audioCtx) {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return null;
-      audioCtx = new Ctx();
-    }
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    return audioCtx;
-  }
+  function renderCaseStage() {
+    const paragraphs = CASE_SCENARIO.map((p) => `<p>${escapeHtml(p)}</p>`).join('');
+    const bodyHtml = `
+      <h3 class="phase-title" id="desk-stage-title">The case</h3>
+      <p class="survey-hint">One standardized thin-file application. Your ratings later apply to this borrower.</p>
+      <article class="case-card dossier case-dossier" aria-labelledby="desk-stage-title">
+        <div class="dossier-header">
+          <div class="borrower-portrait" aria-hidden="true">
+            <svg viewBox="0 0 100 100" focusable="false">
+              <rect width="100" height="100" fill="#1a5c52"/>
+              <circle cx="50" cy="50" r="46" fill="none" stroke="#b8e65a" stroke-width="1.5" opacity=".45"/>
+              <ellipse cx="50" cy="38" rx="16" ry="18" fill="#c48a5a"/>
+              <path d="M28 28c4-14 40-14 44 2 2 10-4 18-10 20-8 2-18 2-26-2-6-4-10-12-8-20z" fill="#2a1a12"/>
+              <path d="M34 78c2-16 14-24 16-24s14 8 16 24" fill="#27b5a5"/>
+            </svg>
+          </div>
+          <div class="dossier-identity">
+            <div class="case-meta">
+              <span class="case-tag">Micro-entrepreneur</span>
+              <span class="case-amount">Business expansion</span>
+            </div>
+            <h4 class="case-role">Standardized thin-file applicant</h4>
+            <p class="stake-tag">Traditional financial evidence held constant across respondents.</p>
+          </div>
+        </div>
+        <div class="dossier-body case-scenario">
+          ${paragraphs}
+        </div>
+      </article>
+    `;
 
-  function tone(freq, dur, type, gainVal, when) {
-    const ctx = ensureAudio();
-    if (!ctx || !sfxEnabled || reduceMotion) return;
-    const t0 = when ?? ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type || 'sine';
-    osc.frequency.setValueAtTime(freq, t0);
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(gainVal, t0 + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t0);
-    osc.stop(t0 + dur + 0.02);
-  }
+    flow.innerHTML = stageShell(bodyHtml, {
+      showBack: true,
+      nextLabel: 'Rate the signals',
+    });
 
-  function playSfx(kind) {
-    if (!sfxEnabled || reduceMotion) return;
-    if (!ensureAudio()) return;
-    const ctx = audioCtx;
-    const t = ctx.currentTime;
-    if (kind === 'token') {
-      tone(880, 0.08, 'triangle', 0.04, t);
-      tone(1320, 0.06, 'sine', 0.025, t + 0.05);
-    } else if (kind === 'stamp') {
-      tone(180, 0.12, 'square', 0.035, t);
-      tone(90, 0.18, 'sine', 0.04, t + 0.04);
-    } else if (kind === 'tick') {
-      tone(640, 0.04, 'square', 0.018, t);
-    } else if (kind === 'chime') {
-      tone(523, 0.14, 'sine', 0.04, t);
-      tone(659, 0.16, 'sine', 0.035, t + 0.1);
-      tone(784, 0.22, 'sine', 0.03, t + 0.2);
-    } else if (kind === 'warn') {
-      tone(420, 0.07, 'triangle', 0.03, t);
-    }
-  }
-
-  function updateSfxToggleUi() {
-    if (!sfxToggle) return;
-    sfxToggle.setAttribute('aria-pressed', String(sfxEnabled));
-    sfxToggle.setAttribute(
-      'aria-label',
-      sfxEnabled ? 'Sound effects on. Activate to mute.' : 'Sound effects muted. Activate to unmute.'
+    wireNav(
+      true,
+      () => goToStage(0),
+      () => {
+        state.quantitative.vignetteAcknowledged = true;
+        state.quantitative.vignetteAcknowledgedAt = new Date().toISOString();
+        goToStage(2);
+      }
     );
-    const icon = sfxToggle.querySelector('.sfx-toggle-icon');
-    const text = sfxToggle.querySelector('.sfx-toggle-text');
-    if (icon) icon.textContent = sfxEnabled ? '♪' : '–';
-    if (text) text.textContent = sfxEnabled ? 'Sound on' : 'Sound off';
   }
 
-  function showPhase(name) {
-    phaseProfile.hidden = name !== 'profile';
-    phaseBriefing.hidden = name !== 'briefing';
-    phasePlay.hidden = name !== 'play';
-    phaseDebrief.hidden = name !== 'debrief';
-    updateProgress(name);
+  function likertLegendHtml() {
+    return `
+      <div class="likert-legend likert-legend-7" role="note" aria-label="Response scale from 1 Strongly Disagree to 7 Strongly Agree">
+        ${LIKERT_SCALE.map((s) => `<span><strong>${s.value}</strong> ${escapeHtml(s.label)}</span>`).join('')}
+      </div>
+    `;
   }
 
-  function updateProgress(phase) {
-    const map = {
-      profile: { label: 'Profile', pct: 5 },
-      briefing: { label: 'Briefing', pct: 15 },
-      play: {
-        label: `Desk case ${(state?.caseIndex ?? 0) + 1} of ${CASES.length}`,
-        pct: 15 + Math.round(((state?.caseIndex ?? 0) / CASES.length) * 70),
-      },
-      debrief: { label: 'Reflection', pct: 92 },
-      results: { label: 'Assessment complete', pct: 100 },
-    };
-    const m = map[phase] || map.profile;
-    progressLabel.textContent = m.label;
-    progressPct.textContent = `${m.pct}% complete`;
-    progressBar.style.width = `${m.pct}%`;
-  }
-
-  function resetGameState() {
-    state = {
-      tokens: START_TOKENS,
-      risk: START_RISK,
-      caseIndex: 0,
-      unlocked: { psych: false, social: false, behavior: false },
-      meters: { ...METER_START },
-      signalCost: 1,
-      riskMultiplier: 1,
-      plays: [],
-      carryoverFlags: [],
-      startedAt: new Date().toISOString(),
-    };
-  }
-
-  function currentSignalCost() {
-    return state?.signalCost ?? 1;
-  }
-
-  function applyCarryoverRules() {
-    if (!state) return;
-    const m = state.meters;
-    let cost = 1;
-    let note = '';
-    let riskMultiplier = 1;
-
-    if (m.portfolioRisk >= 70) {
-      cost = Math.max(cost, 2);
-      riskMultiplier = 1.25;
-      note = 'Carryover: elevated portfolio risk — signal unlocks cost 2 tokens; approvals burn more budget.';
-    }
-    if (m.governance < 35) {
-      cost = Math.max(cost, 2);
-      note = note
-        ? `${note} Governance strain also raises unlock cost.`
-        : 'Carryover: governance strain — signal unlocks cost 2 tokens until ethics recover.';
-    }
-    if (m.inclusion < 35 && state.caseIndex >= 2) {
-      note = note
-        ? `${note} Inclusion meter is low — thin-file declines will deepen exclusion signals.`
-        : 'Carryover: inclusion is soft — evidence-backed approvals can still recover the meter.';
-    }
-    if (m.governance >= 70 && m.portfolioRisk < 55) {
-      riskMultiplier = Math.min(riskMultiplier, 0.9);
-      if (!note) note = 'Carryover: strong governance posture — approval risk burn eased slightly.';
-    }
-    if (state.risk < 30 && !note) {
-      note = 'Carryover: risk budget is thin — further approvals will constrain the remaining queue.';
-    }
-    if (m.portfolioRisk >= 80) {
-      note = 'Carryover: critical portfolio risk — blind approvals are blocked until you unlock at least one signal.';
-    }
-
-    state.signalCost = cost;
-    state.riskMultiplier = riskMultiplier;
-    state.carryoverNote = note;
-
-    if (carryoverNote) {
-      if (note) {
-        carryoverNote.hidden = false;
-        carryoverNote.textContent = note;
-      } else {
-        carryoverNote.hidden = true;
-        carryoverNote.textContent = '';
-      }
-    }
-
-    if (signalCostHint) {
-      signalCostHint.textContent = cost === 1 ? '(1 token each)' : `(${cost} tokens each — carryover)`;
-    }
-    document.querySelectorAll('[data-cost-label]').forEach((el) => {
-      el.textContent = cost === 1 ? '1 token' : `${cost} tokens`;
-    });
-  }
-
-  function updateLiveMeters(flash) {
-    if (!state) return;
-    const { portfolioRisk, inclusion, governance } = state.meters;
-    const riskVal = document.getElementById('meter-risk-val');
-    const inclVal = document.getElementById('meter-incl-val');
-    const govVal = document.getElementById('meter-gov-val');
-    const riskBar = document.getElementById('meter-risk-bar');
-    const inclBar = document.getElementById('meter-incl-bar');
-    const govBar = document.getElementById('meter-gov-bar');
-    if (riskVal) riskVal.textContent = String(Math.round(portfolioRisk));
-    if (inclVal) inclVal.textContent = String(Math.round(inclusion));
-    if (govVal) govVal.textContent = String(Math.round(governance));
-    if (riskBar) riskBar.style.width = `${portfolioRisk}%`;
-    if (inclBar) inclBar.style.width = `${inclusion}%`;
-    if (govBar) govBar.style.width = `${governance}%`;
-
-    if (flash && !reduceMotion) {
-      document.querySelectorAll('.live-meter').forEach((el) => {
-        el.classList.remove('flash');
-        void el.offsetWidth;
-        el.classList.add('flash');
-      });
-    }
-  }
-
-  function updateHud() {
-    document.getElementById('hud-case').textContent = `${state.caseIndex + 1} / ${CASES.length}`;
-    document.getElementById('hud-tokens').textContent = String(state.tokens);
-    document.getElementById('hud-risk').textContent = String(Math.round(state.risk));
-    document.getElementById('hud-tokens-bar').style.width = `${(state.tokens / START_TOKENS) * 100}%`;
-    document.getElementById('hud-risk-bar').style.width = `${(state.risk / START_RISK) * 100}%`;
-
-    const cost = currentSignalCost();
-    ['psych', 'social', 'behavior'].forEach((key) => {
-      const btn = document.getElementById(`btn-signal-${key}`);
-      if (!btn || state.unlocked[key]) return;
-      btn.disabled = state.tokens < cost;
-      btn.classList.toggle('spent', state.tokens < cost);
-    });
-
-    // Blind approve block under critical risk
-    const approveBtn = document.getElementById('btn-approve');
-    if (approveBtn) {
-      const blindBlocked =
-        state.meters.portfolioRisk >= 80 &&
-        !state.unlocked.psych &&
-        !state.unlocked.social &&
-        !state.unlocked.behavior;
-      approveBtn.disabled = blindBlocked;
-      approveBtn.title = blindBlocked
-        ? 'Portfolio risk is critical — unlock at least one signal before approving.'
-        : '';
-    }
-  }
-
-  function renderPortrait(caseId) {
-    const p = PORTRAITS[caseId] || PORTRAITS.amina;
-    portraitEl.innerHTML = `<svg viewBox="0 0 100 100" role="img" aria-hidden="true" focusable="false">
-      <rect width="100" height="100" fill="${p.bg}"/>
-      <circle cx="50" cy="50" r="46" fill="none" stroke="${p.accent}" stroke-width="1.5" opacity=".45"/>
-      ${p.paths}
-    </svg>`;
-  }
-
-  function clearTimer() {
-    if (timerId) {
-      clearInterval(timerId);
-      timerId = null;
-    }
-    softTimerActive = false;
-    if (caseTimerEl) {
-      caseTimerEl.hidden = true;
-      caseTimerEl.classList.remove('urgent');
-    }
-  }
-
-  function formatTime(sec) {
-    const s = Math.max(0, Math.ceil(sec));
-    const m = Math.floor(s / 60);
-    const r = s % 60;
-    return `${m}:${String(r).padStart(2, '0')}`;
-  }
-
-  function startSoftTimer(seconds) {
-    clearTimer();
-    softTimerActive = true;
-    timerTotal = seconds;
-    timerRemaining = seconds;
-    state.timerTimedOut = false;
-    caseTimerEl.hidden = false;
-    caseTimerVal.textContent = formatTime(timerRemaining);
-    caseTimerBar.style.width = '100%';
-
-    timerId = setInterval(() => {
-      timerRemaining -= 1;
-      if (timerRemaining <= 0) {
-        timerRemaining = 0;
-        state.timerTimedOut = true;
-        caseTimerVal.textContent = '0:00';
-        caseTimerBar.style.width = '0%';
-        caseTimerEl.classList.add('urgent');
-        playSfx('warn');
-        clearInterval(timerId);
-        timerId = null;
-        return;
-      }
-      caseTimerVal.textContent = formatTime(timerRemaining);
-      caseTimerBar.style.width = `${(timerRemaining / timerTotal) * 100}%`;
-      if (timerRemaining <= 10) {
-        caseTimerEl.classList.add('urgent');
-        if (timerRemaining <= 8 && timerRemaining % 2 === 0) playSfx('tick');
-      }
-    }, 1000);
-  }
-
-  function renderCase() {
-    const c = CASES[state.caseIndex];
-    state.unlocked = { psych: false, social: false, behavior: false };
-    state.timerTimedOut = false;
-    caseStartedAt = performance.now();
-    deciding = false;
-
-    applyCarryoverRules();
-    renderPortrait(c.id);
-
-    document.getElementById('case-tag').textContent = c.tag;
-    document.getElementById('case-amount').textContent = c.amount;
-    document.getElementById('case-title').textContent = c.name;
-    document.getElementById('case-role').textContent = c.role;
-    document.getElementById('case-story').textContent = c.story;
-    if (stakeTagEl) stakeTagEl.textContent = c.stake || '';
-
-    const pressure = document.getElementById('case-pressure');
-    if (c.pressure) {
-      pressure.hidden = false;
-      pressure.textContent = c.pressure;
-    } else {
-      pressure.hidden = true;
-      pressure.textContent = '';
-    }
-
-    const reveals = document.getElementById('signal-reveals');
-    reveals.innerHTML = '';
-
-    ['psych', 'social', 'behavior'].forEach((key) => {
-      const btn = document.getElementById(`btn-signal-${key}`);
-      btn.disabled = false;
-      btn.classList.remove('unlocked', 'spent');
-    });
-    document.getElementById('btn-approve').disabled = false;
-    document.getElementById('btn-approve').title = '';
-
-    document.getElementById('error-decision').hidden = true;
-    document.getElementById('error-decision').textContent = 'Choose a decision to continue.';
-    if (decisionStamp) {
-      decisionStamp.hidden = true;
-      decisionStamp.classList.remove('show', 'approve', 'hold', 'decline');
-    }
-    if (outcomeToast) {
-      outcomeToast.hidden = true;
-      outcomeToast.classList.remove('show');
-    }
-
-    updateLiveMeters(false);
-    updateHud();
-    updateProgress('play');
-
-    clearTimer();
-    // Soft timer: always on Priya; Lin only if governance already strained (carryover)
-    const useTimer = c.timed && (c.id === 'fasttrack' || state.meters.governance < 45);
-    if (useTimer) {
-      const secs = c.timerSeconds || 45;
-      // slightly shorter if governance already low on Priya
-      const adjusted =
-        c.id === 'fasttrack' && state.meters.governance < 40 ? Math.max(30, secs - 10) : secs;
-      startSoftTimer(adjusted);
-    }
-
-    const card = document.getElementById('case-card');
-    card.classList.remove('case-enter');
-    void card.offsetWidth;
-    if (!reduceMotion) card.classList.add('case-enter');
-
-    // Keep keyboard shortcuts available inside the desk stage
-    const stage = document.getElementById('desk-stage');
-    if (stage && !stage.hasAttribute('tabindex')) stage.setAttribute('tabindex', '-1');
-    stage?.focus({ preventScroll: true });
-  }
-
-  function unlockSignal(type) {
-    if (state.unlocked[type] || deciding) return;
-    const cost = currentSignalCost();
-    if (state.tokens < cost) {
-      const reveals = document.getElementById('signal-reveals');
-      let note = reveals.querySelector('.token-warn');
-      if (!note) {
-        note = document.createElement('p');
-        note.className = 'token-warn';
-        note.textContent =
-          cost > 1
-            ? `Need ${cost} tokens (carryover cost). Decide with what you have—or use governance hold if the file is incomplete.`
-            : 'No information tokens left. Decide with what you have—or use governance hold if the file is incomplete.';
-        reveals.prepend(note);
-      }
-      playSfx('warn');
-      return;
-    }
-
-    state.tokens -= cost;
-    state.unlocked[type] = true;
-    const btn = document.getElementById(`btn-signal-${type}`);
-    btn.disabled = true;
-    btn.classList.add('unlocked');
-
-    const c = CASES[state.caseIndex];
-    const labelsMap = { psych: 'Psychometric', social: 'Community', behavior: 'Behavioral' };
-    const reveals = document.getElementById('signal-reveals');
-    const block = document.createElement('div');
-    block.className = `signal-reveal ${type}`;
-    block.innerHTML = `<strong>${labelsMap[type]} signal</strong><p>${c.signals[type]}</p>`;
-    reveals.append(block);
-    playSfx('token');
-    updateHud();
-  }
-
-  function meterDeltaForDecision(c, decision, unlockedList) {
-    const deltas = { portfolioRisk: 0, inclusion: 0, governance: 0 };
-    const hadEvidence = unlockedList.length > 0;
-    const ideal = c.scoreHints.idealDecision;
-    const bad = c.scoreHints.badDecision;
-
-    if (decision === 'approve') {
-      deltas.portfolioRisk += c.scoreHints.governanceCase ? 18 : hadEvidence ? 6 : 12;
-      if (c.id === 'ravi') deltas.portfolioRisk += hadEvidence ? 10 : 16;
-      if (['amina', 'lin', 'sangha'].includes(c.id)) {
-        deltas.inclusion += hadEvidence ? 12 : 6;
-        deltas.governance += hadEvidence ? 4 : 1;
-      }
-      if (c.scoreHints.governanceCase) {
-        deltas.governance -= 18;
-        deltas.inclusion += 2;
-      }
-      if (decision === bad) deltas.governance -= 4;
-    } else if (decision === 'decline') {
-      deltas.portfolioRisk -= 4;
-      if (['amina', 'lin', 'sangha'].includes(c.id)) {
-        deltas.inclusion -= hadEvidence ? 10 : 6;
-      }
-      if (c.id === 'ravi') {
-        deltas.governance += 8;
-        deltas.portfolioRisk -= 6;
-        deltas.inclusion += 2;
-      }
-      if (c.scoreHints.governanceCase) deltas.governance += 4;
-    } else if (decision === 'hold') {
-      deltas.governance += c.scoreHints.governanceCase ? 16 : 6;
-      deltas.portfolioRisk -= 2;
-      if (['amina', 'lin', 'sangha'].includes(c.id) && hadEvidence) {
-        deltas.inclusion += 2;
-      }
-    }
-
-    if (decision === ideal) {
-      if (ideal === 'approve') deltas.inclusion += 2;
-      if (ideal === 'hold') deltas.governance += 2;
-      if (ideal === 'decline') deltas.portfolioRisk -= 2;
-    }
-
-    if (state.timerTimedOut && c.scoreHints.governanceCase && decision === 'approve') {
-      deltas.governance -= 4;
-    }
-    if (state.timerTimedOut && c.id === 'lin' && decision === 'decline') {
-      deltas.inclusion -= 2;
-    }
-
-    return deltas;
-  }
-
-  function feedbackChips(deltas, decision, c) {
-    const chips = [];
-    if (deltas.portfolioRisk > 3) chips.push({ t: 'Risk ↑', cls: 'down' });
-    else if (deltas.portfolioRisk < -2) chips.push({ t: 'Risk ↓', cls: 'up' });
-    if (deltas.inclusion > 3) chips.push({ t: 'Inclusion ↑', cls: 'up' });
-    else if (deltas.inclusion < -3) chips.push({ t: 'Inclusion ↓', cls: 'down' });
-    if (deltas.governance > 3) chips.push({ t: 'Governance ↑', cls: 'up' });
-    else if (deltas.governance < -3) chips.push({ t: 'Ethics ↓', cls: 'down' });
-
-    if (decision === 'approve' && c.id === 'sangha') chips.push({ t: 'Peer trust secured', cls: 'up' });
-    if (decision === 'hold' && c.scoreHints.governanceCase) chips.push({ t: 'Consent pause', cls: 'up' });
-    if (decision === 'decline' && c.id === 'ravi') chips.push({ t: 'Overconfidence checked', cls: 'up' });
-    if (decision === 'approve' && c.id === 'ravi') chips.push({ t: 'Exposure added', cls: 'down' });
-    if (decision === 'approve' && !Object.values(state.unlocked).some(Boolean) && !c.scoreHints.governanceCase) {
-      chips.push({ t: 'Thin evidence', cls: 'down' });
-    }
-    if (state.timerTimedOut) chips.push({ t: 'Soft timeout noted', cls: 'down' });
-    return chips;
-  }
-
-  function feedbackMessage(decision, c, deltas) {
-    if (decision === 'approve') {
-      if (c.scoreHints.governanceCase) return 'Approved under governance stress — ethics meter takes the hit.';
-      if (c.id === 'ravi') return 'Approved the overconfident file — portfolio risk rises.';
-      if (c.id === 'sangha') return 'Group facility approved — peer monitoring credited toward inclusion.';
-      if (c.id === 'lin') return 'Modest facility approved — discipline signal supports inclusion.';
-      return 'Approval logged — risk budget spent; meters updated.';
-    }
-    if (decision === 'hold') {
-      if (c.scoreHints.governanceCase) return 'Held for governance — consent and fairness trail protected.';
-      return 'Held for review — slower path, stronger process signal.';
-    }
-    if (c.id === 'ravi') return 'Declined — behavioral caution preserved portfolio capacity.';
-    if (['amina', 'lin', 'sangha'].includes(c.id)) return 'Declined a thin-file — inclusion meter softens.';
-    return 'Decline logged — risk budget preserved.';
-  }
-
-  function showStamp(decision) {
-    if (!decisionStamp) return;
-    const map = { approve: 'APPROVED', hold: 'ON HOLD', decline: 'DECLINED' };
-    decisionStampText.textContent = map[decision] || decision.toUpperCase();
-    decisionStamp.classList.remove('show', 'approve', 'hold', 'decline');
-    decisionStamp.classList.add(decision);
-    decisionStamp.hidden = false;
-    void decisionStamp.offsetWidth;
-    decisionStamp.classList.add('show');
-    playSfx('stamp');
-  }
-
-  function showToast(message, chips) {
-    if (!outcomeToast) return;
-    const chipsHtml = chips
-      .map((c) => `<span class="toast-chip ${c.cls}">${c.t}</span>`)
+  function renderLikertStage(section) {
+    const itemsHtml = section.items
+      .map((item) => {
+        const current = state.quantitative.likert[item.id];
+        const radios = LIKERT_SCALE.map(
+          (s) => `
+          <label>
+            <input type="radio" name="${escapeHtml(item.id)}" value="${s.value}" ${
+            Number(current) === s.value ? 'checked' : ''
+          } required>
+            <span>${s.value}</span>
+            <span class="sr-only">${escapeHtml(s.label)}</span>
+          </label>`
+        ).join('');
+        return `
+          <div class="likert-item field" data-field="${escapeHtml(item.id)}">
+            <fieldset>
+              <legend><span class="item-id">${escapeHtml(item.id)}</span> ${escapeHtml(item.text)}</legend>
+              <div class="likert-scale numbered likert-scale-7" role="radiogroup" aria-label="${escapeHtml(item.id)}: ${escapeHtml(item.text)}">
+                ${radios}
+              </div>
+            </fieldset>
+            <p class="field-error" data-field-error hidden>Please select a rating from 1 to 7.</p>
+          </div>
+        `;
+      })
       .join('');
-    outcomeToast.innerHTML = `<strong>Case outcome</strong> — ${message}<div class="toast-chips">${chipsHtml}</div>`;
-    outcomeToast.hidden = false;
-    outcomeToast.classList.remove('show');
-    void outcomeToast.offsetWidth;
-    outcomeToast.classList.add('show');
-    playSfx('chime');
-  }
 
-  function decide(decision) {
-    if (deciding) return;
-    const c = CASES[state.caseIndex];
-    const unlockedList = Object.keys(state.unlocked).filter((k) => state.unlocked[k]);
+    const bodyHtml = `
+      <p class="stage-kicker"><span class="stage-chip current">${escapeHtml(section.chip)}</span></p>
+      <h3 class="phase-title" id="desk-stage-title">${escapeHtml(section.title)}</h3>
+      <p class="survey-hint">${escapeHtml(section.hint)}</p>
+      ${likertLegendHtml()}
+      <form id="likert-form" class="survey-form likert-form" novalidate>
+        ${itemsHtml}
+      </form>
+    `;
 
-    // Critical risk: block blind approve
-    if (
-      decision === 'approve' &&
-      state.meters.portfolioRisk >= 80 &&
-      unlockedList.length === 0
-    ) {
-      document.getElementById('error-decision').hidden = false;
-      document.getElementById('error-decision').textContent =
-        'Portfolio risk is critical — unlock at least one signal before approving.';
-      playSfx('warn');
-      return;
-    }
+    const sectionIndex = LIKERT_SECTIONS.findIndex((s) => s.id === section.id);
+    const absIndex = 2 + sectionIndex;
 
-    deciding = true;
-    const usedSoftTimer = softTimerActive || Boolean(state.timerTimedOut);
-    clearTimer();
-
-    const elapsedMs = Math.round(performance.now() - caseStartedAt);
-    const timedOut = Boolean(state.timerTimedOut);
-    let riskSpent = 0;
-
-    if (decision === 'approve') {
-      riskSpent = Math.round(c.riskCost * (state.riskMultiplier || 1));
-      state.risk = Math.max(0, state.risk - riskSpent);
-    }
-
-    const deltas = meterDeltaForDecision(c, decision, unlockedList);
-    state.meters.portfolioRisk = clamp(state.meters.portfolioRisk + deltas.portfolioRisk, 0, 100);
-    state.meters.inclusion = clamp(state.meters.inclusion + deltas.inclusion, 0, 100);
-    state.meters.governance = clamp(state.meters.governance + deltas.governance, 0, 100);
-
-    state.plays.push({
-      caseId: c.id,
-      caseName: c.name,
-      decision,
-      unlocked: unlockedList,
-      unlockedPsych: state.unlocked.psych,
-      unlockedSocial: state.unlocked.social,
-      unlockedBehavior: state.unlocked.behavior,
-      riskAfter: state.risk,
-      tokensAfter: state.tokens,
-      elapsedMs,
-      timedOut,
-      softTimerUsed: usedSoftTimer,
-      signalCostPaid: currentSignalCost(),
-      riskSpent,
-      metersAfter: { ...state.meters },
-      meterDeltas: { ...deltas },
-      riskCostIfApproved: c.riskCost,
-      governanceCase: c.scoreHints.governanceCase,
-      idealDecision: c.scoreHints.idealDecision,
-      preferSignals: c.scoreHints.preferSignals,
+    flow.innerHTML = stageShell(bodyHtml, {
+      showBack: true,
+      nextLabel: sectionIndex === LIKERT_SECTIONS.length - 1 ? 'Share your take' : 'Next round',
     });
 
-    updateLiveMeters(true);
-    updateHud();
-    showStamp(decision);
-    const chips = feedbackChips(deltas, decision, c);
-    showToast(feedbackMessage(decision, c, deltas), chips);
+    wireNav(
+      true,
+      () => goToStage(absIndex - 1),
+      () => {
+        if (!validateAndCollectLikert(section)) return;
+        goToStage(absIndex + 1);
+      }
+    );
+  }
 
-    const pause = reduceMotion ? 650 : 1450;
-    setTimeout(() => {
-      if (state.caseIndex < CASES.length - 1) {
-        state.caseIndex += 1;
-        renderCase();
-        phasePlay.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest' });
+  function validateAndCollectLikert(section) {
+    clearStageError();
+    let valid = true;
+    section.items.forEach((item) => {
+      const checked = flow.querySelector(`input[name="${item.id}"]:checked`);
+      const wrap = flow.querySelector(`[data-field="${item.id}"]`);
+      const err = wrap?.querySelector('[data-field-error]');
+      if (!checked) {
+        valid = false;
+        wrap?.classList.add('invalid');
+        if (err) err.hidden = false;
       } else {
-        showPhase('debrief');
-        document.getElementById('survey-comment')?.focus({ preventScroll: true });
+        state.quantitative.likert[item.id] = Number(checked.value);
       }
-      deciding = false;
-    }, pause);
+    });
+    if (!valid) {
+      showStageError('Please rate every statement before continuing.');
+      flow.querySelector('.field.invalid input')?.focus();
+      return false;
+    }
+    return true;
   }
 
-  function derivePlayStyle(plays, assessment) {
-    const byId = Object.fromEntries(plays.map((p) => [p.caseId, p]));
-    const gov = assessment.domains.find((d) => d.id === 'governance')?.score ?? 3;
-    const ready = assessment.domains.find((d) => d.id === 'readiness')?.score ?? 3;
-    const social = assessment.domains.find((d) => d.id === 'social')?.score ?? 3;
-    const behav = assessment.domains.find((d) => d.id === 'behavioral')?.score ?? 3;
-    const psych = assessment.domains.find((d) => d.id === 'psychometric')?.score ?? 3;
-    const overall = assessment.overall.score;
+  function renderQualStage(kind) {
+    const questions = QUAL_QUESTIONS[kind];
+    const isAdoption = kind === 'adoption';
+    const title = isAdoption ? 'Your take · adoption' : 'Your take · governance';
+    const hint = isAdoption
+      ? 'In your own words: how alternative indicators could improve lending decisions and what opportunities you see.'
+      : 'In your own words: operational friction, ethics, governance needs, and what you would recommend.';
 
-    const fast = byId.fasttrack;
-    const heldGov = fast?.decision === 'hold';
-    const approvedRush = fast?.decision === 'approve';
-    const inclusives = ['amina', 'lin', 'sangha'].filter((id) => byId[id]?.decision === 'approve').length;
-    const signalHeavy = plays.reduce((n, p) => n + p.unlocked.length, 0) >= 7;
-    const timeouts = plays.filter((p) => p.timedOut).length;
+    const fields = questions
+      .map((q) => {
+        const val = state.qualitative.openResponses[q.id] || '';
+        return `
+          <div class="field" data-field="${escapeHtml(q.id)}">
+            <label for="field-${escapeHtml(q.id)}"><span class="item-id">${escapeHtml(q.id)}</span> ${escapeHtml(q.text)} <span aria-hidden="true">*</span></label>
+            <textarea id="field-${escapeHtml(q.id)}" name="${escapeHtml(q.id)}" rows="4" maxlength="2000" required minlength="${MIN_OPEN_LEN}">${escapeHtml(val)}</textarea>
+            <p class="field-error" data-field-error hidden>Please write at least ${MIN_OPEN_LEN} characters.</p>
+          </div>
+        `;
+      })
+      .join('');
 
-    if (heldGov && gov >= 4 && overall >= 3.6) {
-      return {
-        id: 'governance-guardian',
-        mark: 'GG',
-        title: 'Governance guardian',
-        blurb:
-          'You protected consent and explainability under rush pressure while still engaging alternative signals—closest to a responsible desk posture.',
-      };
-    }
-    if (inclusives >= 2 && social >= 3.8 && !approvedRush) {
-      return {
-        id: 'inclusion-builder',
-        mark: 'IB',
-        title: 'Inclusion builder',
-        blurb:
-          'You used community and thin-file evidence to expand access without abandoning ethical holds—inclusion with guardrails.',
-      };
-    }
-    if (behav >= 4 && byId.ravi?.decision === 'decline') {
-      return {
-        id: 'bias-spotter',
-        mark: 'BS',
-        title: 'Bias spotter',
-        blurb:
-          'Behavioral red flags shaped your caution—especially overconfidence and present bias—keeping portfolio risk in check.',
-      };
-    }
-    if (signalHeavy && ready >= 3.5) {
-      return {
-        id: 'signal-scout',
-        mark: 'SS',
-        title: 'Signal scout',
-        blurb:
-          'You spent tokens to triangulate psychometric, social and behavioral cues—operational curiosity that mirrors organizational readiness.',
-      };
-    }
-    if (psych >= 4 && byId.lin?.decision === 'approve') {
-      return {
-        id: 'trait-reader',
-        mark: 'TR',
-        title: 'Trait-informed lender',
-        blurb:
-          'Discipline and locus-of-control cues mattered at your desk—psychometric evidence helped unlock careful inclusion.',
-      };
-    }
-    if (approvedRush || (overall < 3 && inclusives <= 1)) {
-      return {
-        id: 'throughput-driver',
-        mark: 'TD',
-        title: 'Throughput-leaning desk',
-        blurb:
-          'Speed or traditional thin-file caution dominated. The research asks how institutions can rebalance throughput with governance and alternative evidence.',
-      };
-    }
-    if (timeouts >= 1 && gov < 3.5) {
-      return {
-        id: 'pressure-reactive',
-        mark: 'PR',
-        title: 'Pressure-reactive officer',
-        blurb:
-          'Soft time pressure left a mark on the record. Under urgency, process habits matter as much as the decision itself.',
-      };
-    }
-    return {
-      id: 'balanced-desk',
-      mark: 'BD',
-      title: 'Balanced desk officer',
-      blurb:
-        'A mixed responsible stance: some alternative-signal use, some caution. Stronger integration of evidence, ethics and inclusion is the growth edge.',
-    };
+    const bodyHtml = `
+      <h3 class="phase-title" id="desk-stage-title">${escapeHtml(title)}</h3>
+      <p class="survey-hint">${escapeHtml(hint)}</p>
+      <form id="qual-form" class="survey-form" novalidate>
+        ${fields}
+      </form>
+    `;
+
+    const absIndex = isAdoption ? 7 : 8;
+    flow.innerHTML = stageShell(bodyHtml, {
+      showBack: true,
+      nextLabel: isAdoption ? 'Continue' : 'Unlock my profile',
+    });
+
+    wireNav(
+      true,
+      () => goToStage(absIndex - 1),
+      () => {
+        if (!validateAndCollectQual(questions)) return;
+        if (isAdoption) goToStage(8);
+        else finishAssessment();
+      }
+    );
   }
 
-  /**
-   * Map play telemetry → 1–5 domain scores (same scale as prior Likert instrument).
-   */
-  function scoreFromPlays(plays) {
-    let psychPts = [];
-    let socialPts = [];
-    let behavPts = [];
-    let readyPts = [];
-    let govPts = [];
-
-    const byId = Object.fromEntries(plays.map((p) => [p.caseId, p]));
-
-    const lin = byId.lin;
-    if (lin) {
-      if (lin.unlockedPsych && lin.decision === 'approve') psychPts.push(5);
-      else if (lin.unlockedPsych && lin.decision === 'hold') psychPts.push(4);
-      else if (lin.decision === 'approve') psychPts.push(3.2);
-      else if (lin.decision === 'decline') psychPts.push(lin.unlockedPsych ? 2.2 : 1.8);
-      else psychPts.push(2.8);
-      if (lin.timedOut && lin.decision === 'decline') psychPts.push(2.4);
-    }
-    const ravi = byId.ravi;
-    if (ravi) {
-      if (ravi.unlockedPsych || ravi.unlockedBehavior) {
-        if (ravi.decision === 'decline') psychPts.push(4.4);
-        else if (ravi.decision === 'hold') psychPts.push(3.8);
-        else psychPts.push(2.0);
+  function validateAndCollectQual(questions) {
+    clearStageError();
+    let valid = true;
+    questions.forEach((q) => {
+      const el = flow.querySelector(`[name="${q.id}"]`);
+      const wrap = flow.querySelector(`[data-field="${q.id}"]`);
+      const err = wrap?.querySelector('[data-field-error]');
+      const val = String(el?.value || '').trim();
+      if (val.length < MIN_OPEN_LEN) {
+        valid = false;
+        wrap?.classList.add('invalid');
+        if (err) err.hidden = false;
       } else {
-        psychPts.push(ravi.decision === 'decline' ? 3.0 : 2.2);
-      }
-    }
-    const amina = byId.amina;
-    if (amina?.unlockedPsych) psychPts.push(amina.decision === 'approve' ? 4.2 : 3.5);
-
-    const sangha = byId.sangha;
-    if (sangha) {
-      if (sangha.unlockedSocial && sangha.decision === 'approve') socialPts.push(5);
-      else if (sangha.unlockedSocial && sangha.decision === 'hold') socialPts.push(4);
-      else if (sangha.decision === 'approve') socialPts.push(3.3);
-      else if (sangha.decision === 'decline') socialPts.push(sangha.unlockedSocial ? 2.0 : 1.6);
-      else socialPts.push(2.8);
-    }
-    if (amina) {
-      if (amina.unlockedSocial && amina.decision === 'approve') socialPts.push(4.8);
-      else if (amina.unlockedSocial) socialPts.push(3.6);
-      else if (amina.decision === 'approve') socialPts.push(3.0);
-      else socialPts.push(2.2);
-    }
-    if (ravi && ravi.unlockedSocial && ravi.decision === 'approve') {
-      socialPts.push(2.0);
-    } else if (ravi?.unlockedSocial && ravi.decision === 'decline') {
-      socialPts.push(3.8);
-    }
-
-    if (ravi) {
-      if (ravi.unlockedBehavior && ravi.decision === 'decline') behavPts.push(5);
-      else if (ravi.unlockedBehavior && ravi.decision === 'hold') behavPts.push(4.2);
-      else if (ravi.decision === 'decline') behavPts.push(3.4);
-      else if (ravi.decision === 'approve' && !ravi.unlockedBehavior) behavPts.push(1.6);
-      else behavPts.push(2.4);
-    }
-    if (amina) {
-      if (amina.unlockedBehavior && amina.decision === 'approve') behavPts.push(4.5);
-      else if (amina.unlockedBehavior && amina.decision === 'hold') behavPts.push(4.0);
-      else if (amina.unlockedBehavior && amina.decision === 'decline') behavPts.push(3.2);
-      else behavPts.push(2.8);
-    }
-    const fast = byId.fasttrack;
-    if (fast?.unlockedBehavior && fast.decision === 'hold') behavPts.push(4.0);
-
-    const unlockCounts = plays.map((p) => p.unlocked.length);
-    const multiSignalCases = unlockCounts.filter((n) => n >= 2).length;
-    const zeroSignalApprovals = plays.filter(
-      (p) => p.decision === 'approve' && p.unlocked.length === 0 && !p.governanceCase
-    ).length;
-    const tokensLeft = plays.length ? plays[plays.length - 1].tokensAfter : START_TOKENS;
-    const tokensSpent = START_TOKENS - tokensLeft;
-
-    let readyScore = 3;
-    readyScore += multiSignalCases * 0.35;
-    readyScore -= zeroSignalApprovals * 0.55;
-    if (tokensSpent >= 3 && tokensSpent <= 6) readyScore += 0.45;
-    if (tokensSpent === 0) readyScore -= 0.8;
-    if (tokensSpent === START_TOKENS && zeroSignalApprovals === 0) readyScore += 0.2;
-    const usedPsych = plays.some((p) => p.unlockedPsych);
-    const usedSocial = plays.some((p) => p.unlockedSocial);
-    const usedBehav = plays.some((p) => p.unlockedBehavior);
-    const domainsUsed = [usedPsych, usedSocial, usedBehav].filter(Boolean).length;
-    readyScore += (domainsUsed - 1) * 0.35;
-    // Carryover adaptation: if signal cost rose and player still unlocked, credit readiness
-    if (plays.some((p) => (p.signalCostPaid || 1) > 1 && p.unlocked.length > 0)) readyScore += 0.25;
-    readyPts.push(clamp(readyScore, 1, 5));
-
-    let preferHits = 0;
-    let preferTotal = 0;
-    plays.forEach((p) => {
-      const hints = CASES.find((c) => c.id === p.caseId)?.scoreHints;
-      if (!hints?.preferSignals?.length) return;
-      preferTotal += 1;
-      if (hints.preferSignals.some((s) => p.unlocked.includes(s))) {
-        preferHits += 1;
+        state.qualitative.openResponses[q.id] = val;
       }
     });
-    if (preferTotal) {
-      readyPts.push(1 + (preferHits / preferTotal) * 4);
+    if (!valid) {
+      showStageError(`Please complete each reflection with at least ${MIN_OPEN_LEN} characters.`);
+      flow.querySelector('.field.invalid textarea')?.focus();
+      return false;
     }
+    return true;
+  }
 
-    if (fast) {
-      if (fast.decision === 'hold') govPts.push(5);
-      else if (fast.decision === 'decline') govPts.push(3.6);
-      else govPts.push(1.5);
-      // Soft timeout: mild penalty only if approved after timeout
-      if (fast.timedOut && fast.decision === 'approve') govPts.push(1.8);
-      else if (fast.timedOut && fast.decision === 'hold') govPts.push(4.4);
-    }
-    ['amina', 'lin', 'sangha'].forEach((id) => {
-      const p = byId[id];
-      if (!p) return;
-      const hadEvidence = p.unlocked.length > 0;
-      if (p.decision === 'approve' && hadEvidence) govPts.push(4.6);
-      else if (p.decision === 'approve') govPts.push(3.4);
-      else if (p.decision === 'hold' && hadEvidence) govPts.push(3.8);
-      else if (p.decision === 'decline' && hadEvidence) govPts.push(2.2);
-      else govPts.push(2.0);
-    });
-    if (ravi?.decision === 'decline') govPts.push(4.2);
-    else if (ravi?.decision === 'approve') govPts.push(2.0);
-
-    // Final meter alignment bonus (live meters → telemetry integrity)
-    const lastMeters = plays.length ? plays[plays.length - 1].metersAfter : METER_START;
-    if (lastMeters) {
-      if (lastMeters.governance >= 65) govPts.push(4.3);
-      if (lastMeters.inclusion >= 60) govPts.push(4.0);
-      if (lastMeters.portfolioRisk >= 75) govPts.push(2.2);
-    }
-
-    const pack = (id, pts) => {
-      const meta = domainsMeta.find((d) => d.id === id);
-      const score = Number(clamp(mean(pts.length ? pts : [2.5]), 1, 5).toFixed(2));
+  function scoreAssessment() {
+    const likert = state.quantitative.likert;
+    const domainResults = LIKERT_SECTIONS.map((section) => {
+      const meta = DOMAINS_META.find((d) => d.id === section.id);
+      const values = section.items.map((item) => Number(likert[item.id]));
+      const score = Number(mean(values).toFixed(2));
       const level = levelFor(score);
       return {
-        id,
+        id: section.id,
         label: meta.label,
         score,
-        max: 5,
-        percent: Math.round((score / 5) * 100),
+        max: LIKERT_MAX,
+        percent: Math.round((score / LIKERT_MAX) * 100),
         level: level.id,
         levelLabel: level.label,
         interpretation: interpretDomain(meta, score),
-        signalPoints: pts.map((n) => Number(n.toFixed(2))),
+        itemIds: section.items.map((i) => i.id),
       };
-    };
-
-    const domainResults = [
-      pack('psychometric', psychPts),
-      pack('social', socialPts),
-      pack('behavioral', behavPts),
-      pack('readiness', readyPts),
-      pack('governance', govPts),
-    ];
+    });
 
     const overallScore = Number(mean(domainResults.map((d) => d.score)).toFixed(2));
     const overallLevel = levelFor(overallScore);
     const strongest = [...domainResults].sort((a, b) => b.score - a.score)[0];
     const weakest = [...domainResults].sort((a, b) => a.score - b.score)[0];
-    const gov = domainResults.find((d) => d.id === 'governance');
-    const ready = domainResults.find((d) => d.id === 'readiness');
 
     let summaryText =
-      'Your play suggests a measured orientation toward alternative creditworthiness signals for responsible inclusive lending.';
-    if (overallScore >= 4 && gov.score >= 4) {
+      'Your desk orientation toward alternative creditworthiness signals for responsible inclusive lending is mixed—useful signal review with room to sharpen stance.';
+    if (overallScore >= 5.5) {
       summaryText =
-        'You combined alternative signals with ethical holds and inclusive approvals—close to the research’s responsible inclusive lending proposition.';
-    } else if (overallScore >= 4 && gov.score < 3.5) {
+        'Your responses lean inclusion-forward: alternative signals and responsible access sit comfortably alongside risk and ethics considerations.';
+    } else if (overallScore >= 4) {
       summaryText =
-        'You used alternative signals assertively, but governance or inclusive-purpose play lagged—especially under speed pressure.';
-    } else if (ready.score < 3 && overallScore >= 3) {
+        'Your responses suggest a balanced desk stance—open to alternative evidence while keeping traditional caution in view.';
+    } else {
       summaryText =
-        'You see value in alternative indicators, yet desk process (tokens, integration) looked constrained—mirroring the adoption gap this DBA investigates.';
-    } else if (overallScore < 3) {
-      summaryText =
-        'Your desk play was cautious toward alternative signals—or approved without gathering evidence. Traditional thin-file caution still dominates.';
+        'Your responses lean cautious: traditional evidence still dominates, with alternative signals carrying less weight in the orientation.';
     }
-    summaryText += ` Strongest domain: ${strongest.label}. Area to watch: ${weakest.label}.`;
+    summaryText += ` Strongest domain: ${strongest.label}. Area to watch: ${weakest.label}. This is an interpretive orientation from your answers—not a clinical diagnosis or credit score.`;
 
-    const assessment = {
+    const playStyle = derivePlayStyle(domainResults, overallScore);
+
+    return {
       domains: domainResults,
       overall: {
         score: overallScore,
-        max: 5,
-        percent: Math.round((overallScore / 5) * 100),
+        max: LIKERT_MAX,
+        percent: Math.round((overallScore / LIKERT_MAX) * 100),
         level: overallLevel.id,
         levelLabel: overallLevel.label,
         summary: summaryText,
         strongestDomain: strongest.id,
         weakestDomain: weakest.id,
       },
-      telemetry: {
-        tokensStart: START_TOKENS,
-        tokensEnd: tokensLeft,
-        tokensSpent,
-        riskStart: START_RISK,
-        riskEnd: plays.length ? plays[plays.length - 1].riskAfter : START_RISK,
-        multiSignalCases,
-        zeroSignalApprovals,
-        domainsUsed: { psych: usedPsych, social: usedSocial, behavior: usedBehav },
-        preferSignalHitRate: preferTotal ? Number((preferHits / preferTotal).toFixed(2)) : null,
-        metersEnd: lastMeters || null,
-        softTimeouts: plays.filter((p) => p.timedOut).length,
-      },
+      playStyle,
     };
-
-    assessment.playStyle = derivePlayStyle(plays, assessment);
-    return assessment;
   }
 
-  function buildRecord(comment) {
-    const assessment = scoreFromPlays(state.plays);
+  function derivePlayStyle(domains, overall) {
+    const byId = Object.fromEntries(domains.map((d) => [d.id, d.score]));
+    const sorted = [...domains].sort((a, b) => b.score - a.score);
+    const top = sorted[0];
+    const second = sorted[1];
+
+    if (byId.readiness >= 5.5 && byId.inclusiveDecision >= 5.2) {
+      return {
+        id: 'adoption-ready',
+        mark: 'AR',
+        title: 'The Adoption Pioneer',
+        blurb:
+          'You unlocked a readiness-forward profile: institutions and inclusion both score high. You’re closest to someone who’d actually integrate alternative signals—without dropping the governance bar.',
+      };
+    }
+    if (top.id === 'social' || (byId.social >= 5.5 && second.id === 'psychometric')) {
+      return {
+        id: 'community-anchored',
+        mark: 'CA',
+        title: 'The Community Reader',
+        blurb:
+          'Reputation, peers and networks carry the most weight in your profile. For thin-file borrowers, you look past the paperwork into who stands with them.',
+      };
+    }
+    if (top.id === 'psychometric') {
+      return {
+        id: 'mindset-reader',
+        mark: 'MR',
+        title: 'The Mindset Reader',
+        blurb:
+          'Discipline, commitment and self-control light up your radar. You treat character cues as real evidence—not soft decoration around the credit file.',
+      };
+    }
+    if (top.id === 'behavioral') {
+      return {
+        id: 'behavior-spotter',
+        mark: 'BS',
+        title: 'The Behavior Spotter',
+        blurb:
+          'Consistency, impulse control and risk patterns lead your profile. You watch how people decide under pressure—not just what their documents claim.',
+      };
+    }
+    if (top.id === 'inclusiveDecision' && overall >= 4) {
+      return {
+        id: 'inclusion-balancer',
+        mark: 'IB',
+        title: 'The Inclusion Balancer',
+        blurb:
+          'Fair access and responsible risk share the stage. You want alternative signals to open doors—without lowering the quality of the book.',
+      };
+    }
+    if (overall < 4) {
+      return {
+        id: 'traditional-anchor',
+        mark: 'TA',
+        title: 'The File-First Guard',
+        blurb:
+          'Your profile stays closer to conventional caution. That’s a usable finding too: the research asks how institutions earn trust in new evidence without losing control.',
+      };
+    }
+    return {
+      id: 'balanced-desk',
+      mark: 'BD',
+      title: 'The Balanced Signaler',
+      blurb:
+        'No single domain dominates. You blend mindset, community, behavior, readiness and inclusion—your growth edge is turning that mix into a clear institutional playbook.',
+    };
+  }
+
+  function buildRecord() {
+    const assessment = scoreAssessment();
+    const quantitative = {
+      demographics: { ...state.quantitative.demographics },
+      vignetteAcknowledged: Boolean(state.quantitative.vignetteAcknowledged),
+      vignetteAcknowledgedAt: state.quantitative.vignetteAcknowledgedAt,
+      likert: { ...state.quantitative.likert },
+    };
+    const qualitative = {
+      yearsFinancialServices: state.qualitative.yearsFinancialServices,
+      roleDescription: state.qualitative.roleDescription,
+      altIndicatorsExplain: state.qualitative.altIndicatorsExplain || undefined,
+      openResponses: { ...state.qualitative.openResponses },
+    };
+
     return {
       id: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       instrument: INSTRUMENT,
-      instrumentType: 'behavioral-game-assessment',
+      instrumentType: INSTRUMENT_TYPE,
       disclaimer:
-        'Research-oriented behavioral instrument / proposal demo. Not a clinical diagnosis, credit score, or institutional decision.',
+        'Research-oriented mixed-methods desk instrument / proposal demo. Not a clinical diagnosis, credit score, or institutional decision.',
       savedAt: new Date().toISOString(),
-      sessionStartedAt: state.startedAt,
-      profile,
-      gameplay: {
-        cases: state.plays,
-        comment: comment || undefined,
-        metersStart: { ...METER_START },
+      sessionStartedAt: startedAt,
+      profile: { ...state.profile },
+      responses: {
+        quantitative,
+        qualitative,
       },
+      quantitative,
+      qualitative,
       assessment,
     };
   }
@@ -1364,10 +1129,10 @@ function selectTab(selected) {
     }
   }
 
-  function setArchiveStatus(state, message) {
+  function setArchiveStatus(status, message) {
     if (!archiveStatusEl) return;
     archiveStatusEl.hidden = false;
-    archiveStatusEl.dataset.state = state;
+    archiveStatusEl.dataset.state = status;
     archiveStatusEl.textContent = message;
   }
 
@@ -1377,7 +1142,8 @@ function selectTab(selected) {
       client_record_id: record.id || null,
       profile: record.profile || {},
       responses: {
-        gameplay: record.gameplay || {},
+        quantitative: record.responses?.quantitative || record.quantitative || {},
+        qualitative: record.responses?.qualitative || record.qualitative || {},
         instrumentType: record.instrumentType,
         sessionStartedAt: record.sessionStartedAt,
         savedAt: record.savedAt,
@@ -1389,11 +1155,6 @@ function selectTab(selected) {
     };
   }
 
-  /**
-   * POST assessment to Supabase REST. Never throws to the UI caller —
-   * localStorage + download remain the backup if this fails.
-   * Anon key is public by design; RLS must allow INSERT only (no SELECT).
-   */
   async function submitToResearchArchive(record) {
     if (!archiveConfigured) {
       setArchiveStatus('local', 'Saved locally only (offline / not configured)');
@@ -1438,12 +1199,12 @@ function selectTab(selected) {
     const angleAt = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
     const pointAt = (i, score) => {
       const a = angleAt(i);
-      const r = (score / 5) * radius;
+      const r = (score / LIKERT_MAX) * radius;
       return [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
     };
 
     let grid = '';
-    [1, 2, 3, 4, 5].forEach((level) => {
+    [1, 2, 3, 4, 5, 6, 7].forEach((level) => {
       const pts = domains
         .map((_, i) => {
           const [x, y] = pointAt(i, level);
@@ -1456,11 +1217,13 @@ function selectTab(selected) {
     let axes = '';
     let labelsSvg = '';
     domains.forEach((d, i) => {
-      const [x, y] = pointAt(i, 5);
+      const [x, y] = pointAt(i, LIKERT_MAX);
       axes += `<line class="radar-axis" x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" />`;
-      const [lx, ly] = pointAt(i, 5.85);
-      const meta = domainsMeta.find((m) => m.id === d.id);
-      labelsSvg += `<text class="radar-label" x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle">${meta?.short || d.label}</text>`;
+      const [lx, ly] = pointAt(i, LIKERT_MAX * 1.12);
+      const meta = DOMAINS_META.find((m) => m.id === d.id);
+      labelsSvg += `<text class="radar-label" x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle">${escapeHtml(
+        meta?.short || d.label
+      )}</text>`;
     });
 
     const areaPts = domains
@@ -1473,10 +1236,12 @@ function selectTab(selected) {
     let dots = '';
     domains.forEach((d, i) => {
       const [x, y] = pointAt(i, d.score);
-      dots += `<circle class="radar-point" cx="${x}" cy="${y}" r="4"><title>${d.label}: ${d.score.toFixed(2)} / 5</title></circle>`;
+      dots += `<circle class="radar-point" cx="${x}" cy="${y}" r="4"><title>${escapeHtml(d.label)}: ${d.score.toFixed(
+        2
+      )} / ${LIKERT_MAX}</title></circle>`;
     });
 
-    radarChartEl.innerHTML = `<svg viewBox="0 0 ${size} ${size}" role="img" aria-label="Radar of five domain scores from 1 to 5">
+    radarChartEl.innerHTML = `<svg viewBox="0 0 ${size} ${size}" role="img" aria-label="Radar of five domain scores from 1 to 7">
       ${grid}${axes}
       <polygon class="radar-area" points="${areaPts}" />
       ${dots}${labelsSvg}
@@ -1484,55 +1249,44 @@ function selectTab(selected) {
   }
 
   function renderRecordSummary(record) {
+    if (!summary) return;
     summary.innerHTML = '';
-    const tel = record.assessment?.telemetry || {};
+    const dem = record.responses?.quantitative?.demographics || {};
+    const qual = record.responses?.qualitative || {};
     const rows = [
-      { title: 'Role', value: labels.role[record.profile.role] || record.profile.role },
+      { title: 'Gender', value: optionLabel('gender', dem.gender) },
+      { title: 'Age', value: optionLabel('age', dem.age) },
+      { title: 'Education', value: optionLabel('education', dem.education) },
+      { title: 'Institution', value: optionLabel('institutionType', dem.institutionType) },
+      { title: 'Position', value: optionLabel('position', dem.position) },
+      { title: 'Years in lending', value: optionLabel('yearsLending', dem.yearsLending) },
       {
-        title: 'Institution type',
-        value: labels.institutionType[record.profile.institutionType] || record.profile.institutionType,
+        title: 'Years in financial services',
+        value: optionLabel('yearsFinancialServices', qual.yearsFinancialServices),
       },
-      { title: 'Region', value: labels.region[record.profile.region] || record.profile.region },
+      { title: 'Area of operation', value: optionLabel('areaOperation', dem.areaOperation) },
+      { title: 'Involvement', value: optionLabel('involvement', dem.involvement) },
       {
-        title: 'Experience',
-        value: labels.yearsExperience[record.profile.yearsExperience] || record.profile.yearsExperience,
+        title: 'Uses alternative indicators',
+        value: optionLabel('usesAltIndicators', dem.usesAltIndicators),
       },
-      {
-        title: 'Familiarity',
-        value: labels.familiarity[record.profile.familiarity] || record.profile.familiarity,
-      },
+      { title: 'Country / region', value: dem.countryRegion || '—' },
     ];
 
     if (record.assessment?.playStyle) {
-      rows.push({ title: 'Play style', value: record.assessment.playStyle.title });
+      rows.push({ title: 'Desk style', value: record.assessment.playStyle.title });
     }
 
-    if (tel.tokensStart != null) {
-      rows.push({ title: 'Tokens spent', value: `${tel.tokensSpent} / ${tel.tokensStart}` });
-      rows.push({ title: 'Risk budget left', value: String(tel.riskEnd) });
+    if (qual.roleDescription) {
+      rows.push({ title: 'Role description', value: qual.roleDescription });
     }
-    if (tel.metersEnd) {
-      rows.push({
-        title: 'Final meters',
-        value: `Risk ${Math.round(tel.metersEnd.portfolioRisk)} · Incl ${Math.round(tel.metersEnd.inclusion)} · Gov ${Math.round(tel.metersEnd.governance)}`,
-      });
-    }
-    if (tel.softTimeouts != null) {
-      rows.push({ title: 'Soft timeouts', value: String(tel.softTimeouts) });
+    if (qual.altIndicatorsExplain) {
+      rows.push({ title: 'Alt. indicators note', value: qual.altIndicatorsExplain });
     }
 
-    (record.gameplay?.cases || []).forEach((play, i) => {
-      const signals = play.unlocked?.length ? play.unlocked.join(', ') : 'none';
-      const to = play.timedOut ? ' · soft timeout' : '';
-      rows.push({
-        title: `Case ${i + 1} · ${play.caseName}`,
-        value: `${labels.decision[play.decision] || play.decision} · signals: ${signals}${to}`,
-      });
+    Object.entries(qual.openResponses || {}).forEach(([id, text]) => {
+      rows.push({ title: id, value: text });
     });
-
-    if (record.gameplay?.comment) {
-      rows.push({ title: 'Reflection', value: record.gameplay.comment });
-    }
 
     rows.forEach(({ title, value }) => {
       const row = document.createElement('div');
@@ -1547,12 +1301,11 @@ function selectTab(selected) {
 
   function renderAssessment(record) {
     const { assessment } = record;
-    if (!assessment.playStyle && record.gameplay?.cases) {
-      assessment.playStyle = derivePlayStyle(record.gameplay.cases, assessment);
+    if (overallSummary) overallSummary.textContent = assessment.overall.summary;
+    if (overallScoreEl) {
+      overallScoreEl.textContent = `${assessment.overall.score.toFixed(2)} / ${assessment.overall.max}`;
     }
-    overallSummary.textContent = assessment.overall.summary;
-    overallScoreEl.textContent = `${assessment.overall.score.toFixed(2)} / 5`;
-    overallLevelEl.textContent = assessment.overall.levelLabel;
+    if (overallLevelEl) overallLevelEl.textContent = assessment.overall.levelLabel;
 
     if (assessment.playStyle) {
       if (playStyleTitle) playStyleTitle.textContent = assessment.playStyle.title;
@@ -1561,61 +1314,160 @@ function selectTab(selected) {
     }
 
     renderRadar(assessment.domains);
-    domainScoresEl.innerHTML = '';
-
-    assessment.domains.forEach((domain) => {
-      const article = document.createElement('article');
-      article.className = 'domain-score';
-      article.setAttribute('role', 'listitem');
-      article.innerHTML = `
-        <div class="domain-score-head">
-          <strong>${domain.label}</strong>
-          <span>${domain.score.toFixed(2)} / 5</span>
-        </div>
-        <div class="domain-bar" aria-hidden="true"><i style="width:0%"></i></div>
-        <span class="domain-level">${domain.levelLabel}</span>
-        <p>${domain.interpretation}</p>
-      `;
-      domainScoresEl.append(article);
-      requestAnimationFrame(() => {
-        const bar = article.querySelector('.domain-bar > i');
-        if (bar) bar.style.width = `${domain.percent}%`;
+    if (domainScoresEl) {
+      domainScoresEl.innerHTML = '';
+      assessment.domains.forEach((domain) => {
+        const article = document.createElement('article');
+        article.className = 'domain-score';
+        article.setAttribute('role', 'listitem');
+        article.innerHTML = `
+          <div class="domain-score-head">
+            <strong>${escapeHtml(domain.label)}</strong>
+            <span>${domain.score.toFixed(2)} / ${domain.max}</span>
+          </div>
+          <div class="domain-bar" aria-hidden="true"><i style="width:0%"></i></div>
+          <span class="domain-level">${escapeHtml(domain.levelLabel)}</span>
+          <p>${escapeHtml(domain.interpretation)}</p>
+        `;
+        domainScoresEl.append(article);
+        requestAnimationFrame(() => {
+          const bar = article.querySelector('.domain-bar > i');
+          if (bar) bar.style.width = `${domain.percent}%`;
+        });
       });
-    });
+    }
 
     renderRecordSummary(record);
   }
 
   function showResults(record, { submitArchive = false } = {}) {
+    stageIndex = STAGES.length - 1;
+    updateProgress();
     flow.hidden = true;
     if (footnote) footnote.hidden = true;
-    results.hidden = false;
+    if (results) results.hidden = false;
     renderAssessment(record);
-    updateProgress('results');
+
+    const stamp = results?.querySelector('.decision-stamp') || document.getElementById('decision-stamp');
+    if (stamp) {
+      stamp.hidden = false;
+      stamp.classList.add('show', 'approve');
+      const text = stamp.querySelector('#decision-stamp-text') || stamp;
+      if (text !== stamp) text.textContent = 'COMPLETE';
+    } else if (results && !reduceMotion) {
+      results.classList.add('desk-complete');
+    }
+
     if (submitArchive) {
-      // Fire-and-forget; results UI must not wait on network
       void submitToResearchArchive(record);
     } else if (archiveStatusEl) {
       archiveStatusEl.hidden = true;
       archiveStatusEl.textContent = '';
       delete archiveStatusEl.dataset.state;
     }
-    results.focus({ preventScroll: true });
-    results.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+
+    try {
+      if (results && typeof results.focus === 'function') results.focus({ preventScroll: true });
+    } catch (e) {
+      /* ignore */
+    }
+    scrollElementIntoView(results);
   }
 
-  function restoreLatest() {
+  function finishAssessment() {
+    const record = buildRecord();
+    saveRecord(record);
+    showResults(record, { submitArchive: true });
+  }
+
+  function goToStage(index, options) {
+    const opts = options || {};
+    stageIndex = Math.max(0, Math.min(index, STAGES.length - 1));
+    updateProgress();
+
+    if (results) results.hidden = true;
+    flow.hidden = false;
+    if (footnote) footnote.hidden = false;
+
+    const stage = STAGES[stageIndex];
+    if (stage.key === 'profile') renderProfileStage();
+    else if (stage.key === 'case') renderCaseStage();
+    else if (stage.section) renderLikertStage(stage.section);
+    else if (stage.key === 'qual-adoption') renderQualStage('adoption');
+    else if (stage.key === 'qual-governance') renderQualStage('governance');
+    else if (stage.key === 'results' && latestRecord) {
+      showResults(latestRecord, { submitArchive: false });
+      return;
+    }
+
+    if (opts.focus !== false) focusStageTitle();
+    if (opts.scroll !== false) scrollElementIntoView(flow);
+  }
+
+  function resetState() {
+    startedAt = new Date().toISOString();
+    latestRecord = null;
+    state = {
+      profile: {},
+      quantitative: {
+        demographics: {},
+        vignetteAcknowledged: false,
+        vignetteAcknowledgedAt: null,
+        likert: {},
+      },
+      qualitative: {
+        yearsFinancialServices: '',
+        roleDescription: '',
+        altIndicatorsExplain: '',
+        openResponses: {},
+      },
+    };
+  }
+
+  function readSavedLatest() {
     try {
       const saved = localStorage.getItem(LATEST_KEY);
-      if (!saved) return;
+      if (!saved) return null;
       const record = JSON.parse(saved);
-      if (record?.instrumentType === 'behavioral-game-assessment' && record?.assessment?.domains) {
-        latestRecord = record;
-        showResults(record, { submitArchive: false });
+      if (
+        record?.instrument === INSTRUMENT &&
+        record?.instrumentType === INSTRUMENT_TYPE &&
+        record?.assessment?.domains
+      ) {
+        return record;
       }
     } catch {
       /* ignore */
     }
+    return null;
+  }
+
+  function offerResumeIfSaved() {
+    const record = readSavedLatest();
+    if (!record) return;
+    latestRecord = record;
+    if (document.getElementById('survey-resume-banner')) return;
+
+    const banner = document.createElement('div');
+    banner.id = 'survey-resume-banner';
+    banner.className = 'survey-resume-banner';
+    banner.setAttribute('role', 'status');
+    banner.innerHTML = `
+      <p>A previous result is saved in this browser.</p>
+      <div class="survey-resume-actions">
+        <button type="button" class="button ghost" id="survey-view-saved">View last result</button>
+        <button type="button" class="button ghost" id="survey-dismiss-saved">Play a new round</button>
+      </div>
+    `;
+    flow.before(banner);
+
+    document.getElementById('survey-view-saved')?.addEventListener('click', () => {
+      banner.remove();
+      showResults(record, { submitArchive: false });
+    });
+    document.getElementById('survey-dismiss-saved')?.addEventListener('click', () => {
+      banner.remove();
+    });
   }
 
   function downloadRecord() {
@@ -1629,110 +1481,69 @@ function selectTab(selected) {
     URL.revokeObjectURL(url);
   }
 
-  profileForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (!validateProfile()) {
-      profileForm.querySelector('.field.invalid select, .field.invalid input')?.focus();
-      return;
-    }
-    profile = collectProfile();
-    showPhase('briefing');
-  });
+  downloadBtn && downloadBtn.addEventListener('click', downloadRecord);
 
-  document.getElementById('briefing-back').addEventListener('click', () => {
-    showPhase('profile');
-  });
-
-  document.getElementById('briefing-start').addEventListener('click', () => {
-    resetGameState();
-    showPhase('play');
-    renderCase();
-  });
-
-  document.getElementById('signal-actions').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-signal]');
-    if (!btn || btn.disabled) return;
-    unlockSignal(btn.dataset.signal);
-  });
-
-  document.querySelector('.decision-actions').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-decision]');
-    if (!btn || btn.disabled) return;
-    decide(btn.dataset.decision);
-  });
-
-  // Keyboard: 1/2/3 unlock signals; A/H/D decisions (when focus is in the desk)
-  phasePlay.addEventListener('keydown', (e) => {
-    if (phasePlay.hidden || deciding) return;
-    const tag = e.target?.tagName;
-    if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return;
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    const key = e.key.toLowerCase();
-    if (key === '1') {
-      e.preventDefault();
-      unlockSignal('psych');
-    } else if (key === '2') {
-      e.preventDefault();
-      unlockSignal('social');
-    } else if (key === '3') {
-      e.preventDefault();
-      unlockSignal('behavior');
-    } else if (key === 'a') {
-      e.preventDefault();
-      decide('approve');
-    } else if (key === 'h') {
-      e.preventDefault();
-      decide('hold');
-    } else if (key === 'd') {
-      e.preventDefault();
-      decide('decline');
-    }
-  });
-
-  document.getElementById('debrief-finish').addEventListener('click', () => {
-    const comment = String(document.getElementById('survey-comment').value || '').trim();
-    const record = buildRecord(comment);
-    saveRecord(record);
-    showResults(record, { submitArchive: true });
-  });
-
-  if (sfxToggle) {
-    sfxToggle.addEventListener('click', () => {
-      sfxEnabled = !sfxEnabled;
-      if (sfxEnabled) ensureAudio();
-      updateSfxToggleUi();
-      if (sfxEnabled) playSfx('token');
+  resetBtn &&
+    resetBtn.addEventListener('click', () => {
+      try {
+        localStorage.removeItem(LATEST_KEY);
+      } catch (e) {
+        /* ignore */
+      }
+      if (archiveStatusEl) {
+        archiveStatusEl.hidden = true;
+        archiveStatusEl.textContent = '';
+        delete archiveStatusEl.dataset.state;
+      }
+      if (results) results.hidden = true;
+      flow.hidden = false;
+      if (footnote) footnote.hidden = false;
+      const resume = document.getElementById('survey-resume-banner');
+      if (resume) resume.remove();
+      resetState();
+      goToStage(0);
     });
-    updateSfxToggleUi();
+
+  if (footnote) {
+    footnote.textContent =
+      'Your answers are saved privately in this browser so you can finish the desk and download a copy of your record. Nothing is published on this page.';
   }
 
-  downloadBtn.addEventListener('click', downloadRecord);
-
-  resetBtn.addEventListener('click', () => {
+  function startDeskAssessment(event) {
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
     try {
-      localStorage.removeItem(LATEST_KEY);
-    } catch {
-      /* ignore */
+      if (results) results.hidden = true;
+      flow.hidden = false;
+      if (footnote) footnote.hidden = false;
+      if (!state) resetState();
+      goToStage(0);
+      scrollElementIntoView(document.getElementById('survey') || flow);
+    } catch (err) {
+      const note = document.querySelector('.survey-fallback-note');
+      if (note) {
+        note.textContent =
+          'The challenge could not start in this preview. Open http://localhost:5500/#survey in Chrome, Edge, or Firefox.';
+      }
+      if (typeof console !== 'undefined' && console.error) console.error(err);
     }
-    latestRecord = null;
-    state = null;
-    profile = {};
-    clearTimer();
-    profileForm.reset();
-    document.getElementById('survey-comment').value = '';
-    if (archiveStatusEl) {
-      archiveStatusEl.hidden = true;
-      archiveStatusEl.textContent = '';
-      delete archiveStatusEl.dataset.state;
-    }
-    results.hidden = true;
-    flow.hidden = false;
-    if (footnote) footnote.hidden = false;
-    clearErrors(profileForm);
-    showPhase('profile');
-    flow.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
-  });
+  }
 
-  showPhase('profile');
-  restoreLatest();
+  window.startDeskAssessment = startDeskAssessment;
+
+  const startFallback = document.getElementById('survey-start-fallback');
+  if (startFallback) {
+    startFallback.addEventListener('click', startDeskAssessment);
+  }
+
+  try {
+    goToStage(0, { focus: false, scroll: false });
+    offerResumeIfSaved();
+  } catch (err) {
+    if (typeof console !== 'undefined' && console.error) console.error(err);
+    const note = document.querySelector('.survey-fallback-note');
+    if (note) {
+      note.textContent =
+        'The challenge could not start automatically. Click “Unlock my profile”, or open this page in Chrome, Edge, or Firefox.';
+    }
+  }
 })();
