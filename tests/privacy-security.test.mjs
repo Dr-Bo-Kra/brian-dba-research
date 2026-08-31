@@ -106,6 +106,18 @@ test('database RLS and privilege revocation are present with no public SELECT', 
   assert.match(schemaSql, /researcher_audit_events/);
 });
 
+test('researcher API RLS policies are drop-then-create so the schema is re-runnable', () => {
+  const created = [...schemaSql.matchAll(/create policy (researcher_api_\w+)/gi)].map((match) => match[1]);
+  assert.ok(created.includes('researcher_api_insert_rate_limits'));
+  assert.ok(created.includes('researcher_api_update_rate_limits'));
+  for (const name of created) {
+    const drop = new RegExp(`drop policy if exists ${name}\\b`, 'i');
+    const create = new RegExp(`create policy ${name}\\b`, 'i');
+    assert.match(schemaSql, drop, `${name} must be dropped before recreate`);
+    assert.ok(schemaSql.search(drop) < schemaSql.search(create), `${name} drop must precede create`);
+  }
+});
+
 test('inquiry archive is a disconnected future workspace without secrets', () => {
   assert.match(researcherHtml, /Inquiry archive/);
   assert.match(researcherHtml, /future interface/i);

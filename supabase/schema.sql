@@ -315,6 +315,8 @@ begin
       on public.researcher_auth_states for update to researcher_api using (true) with check (true);
 
     drop policy if exists researcher_api_select_rate_limits on public.researcher_rate_limits;
+    drop policy if exists researcher_api_insert_rate_limits on public.researcher_rate_limits;
+    drop policy if exists researcher_api_update_rate_limits on public.researcher_rate_limits;
     drop policy if exists researcher_api_write_rate_limits on public.researcher_rate_limits;
     create policy researcher_api_select_rate_limits
       on public.researcher_rate_limits for select to researcher_api using (true);
