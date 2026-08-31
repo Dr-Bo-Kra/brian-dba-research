@@ -1,0 +1,25 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: node --check script.js
+      - run: node --check researcher/dashboard.js
+      - run: node --check api/researcher/_server.mjs
+      - run: node --check api/researcher/_vercel.mjs
+      - run: node --check api/researcher/index.mjs
+      - run: node --check api/researcher/_lib/app.mjs
+      - run: node --check api/researcher/_lib/oidc.mjs
+      - run: node --check api/researcher/_lib/query.mjs
+      - run: node --check api/researcher/_lib/audit.mjs
+      - run: node --test tests/*.test.mjs

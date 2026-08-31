@@ -5,11 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Brian E Pereira’s DBA research on organizational adoption of psychometric, social-capital and behavioral indicators for responsible inclusive lending.">
   <meta name="theme-color" content="#071c2c">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; upgrade-insecure-requests">
   <title>Beyond the Credit File | Brian E Pereira’s DBA Research</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=15">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to main content</a>
@@ -279,7 +278,7 @@
           <div class="ethics-icon" aria-hidden="true">
             <svg viewBox="0 0 48 48" width="40" height="40" focusable="false"><path d="M24 8l14 6v10c0 9-6 16-14 18-8-2-14-9-14-18V14l14-6z" fill="none" stroke="#b9acff" stroke-width="1.75"/><path d="M18 24h12M24 18v12" stroke="#b9acff" stroke-width="1.75"/></svg>
           </div>
-          <span>04</span><h3>Data protection</h3><p>Compliance with GDPR and applicable protections in participating regions.</p>
+          <span>04</span><h3>Data protection</h3><p>Treat data protection as a design requirement. Live collection stays off until the institution approves the notice, lawful basis, and controls.</p>
         </article>
       </div>
     </section>
@@ -329,7 +328,27 @@
         <p>Most lending stops at paperwork. Here you face one thin-file borrower and decide which human signals you’d actually trust. Finish the challenge and unlock your <strong>lending-instinct profile</strong>—a five-domain radar and a named play style that shows how you weigh mindset, community, behavior, readiness and inclusion.</p>
       </div>
 
-      <div class="survey-shell">
+      <section class="participant-gate" id="participant-gate" aria-labelledby="participant-gate-title">
+        <p class="kicker">Participant information</p>
+        <h3 id="participant-gate-title">Before you take part</h3>
+        <p>This voluntary DBA research activity asks lending professionals about alternative creditworthiness models. It takes approximately 10–12 minutes. Your responses are not used to make a credit, employment, or clinical decision about you.</p>
+        <ul>
+          <li>The form collects broad professional demographics, a regional category, ratings, and free-text reflections.</li>
+          <li>Do not include names, employer names, borrower details, client information, or other confidential information in free-text answers.</li>
+          <li>A completed result is kept only in this browser tab unless protected research collection has been explicitly enabled.</li>
+          <li>If collection is enabled, your response and consent record are sent to the research archive. Your browser type, IP address, and page URL are not included in the research payload.</li>
+          <li>You may stop before submitting. After submission, use the participant reference in your downloaded record to request withdrawal before anonymisation.</li>
+        </ul>
+        <p>Read the <a href="privacy.html" target="_blank" rel="noopener noreferrer">privacy and participant information notice</a> before continuing.</p>
+        <div class="consent-checks">
+          <label><input type="checkbox" id="eligibility-confirm"> I confirm that I am at least 18 years old and participate in a professional capacity.</label>
+          <label><input type="checkbox" id="consent-confirm"> I have read the notice and voluntarily agree to participate and to the processing described there.</label>
+        </div>
+        <button type="button" class="button primary" id="survey-consent-continue" disabled>Continue to the research activity</button>
+        <p class="survey-hint">Server-side collection remains disabled unless the researcher completes the ethics, privacy, and protected-endpoint configuration.</p>
+      </section>
+
+      <div class="survey-shell" id="survey-shell" hidden>
         <div class="survey-progress" role="status" aria-live="polite" aria-atomic="true">
           <div class="survey-progress-meta">
             <span id="survey-progress-label">Your profile</span>
@@ -349,12 +368,12 @@
               <p class="survey-hint"><strong>JavaScript is required</strong> to play. Enable scripts for this site, then reload.</p>
             </noscript>
             <div class="survey-actions">
-              <button type="button" class="button primary" id="survey-start-fallback" onclick="if (window.startDeskAssessment) { window.startDeskAssessment(event); } else { window.location.hash='survey'; window.location.reload(); }">Unlock my profile</button>
+              <button type="button" class="button primary" id="survey-start-fallback">Unlock my profile</button>
             </div>
           </div>
         </div>
 
-        <p class="survey-footnote" id="survey-footnote">Your answers are saved privately in this browser so you can finish the desk and download a copy of your record. Nothing is published on this page.</p>
+        <p class="survey-footnote" id="survey-footnote">A completed result is kept only in this browser tab. If protected collection is enabled, the page will clearly show whether submission to the research archive succeeded.</p>
 
         <div class="survey-results" id="survey-results" hidden tabindex="-1" aria-labelledby="results-title">
           <p class="kicker">You unlocked it</p>
@@ -398,7 +417,7 @@
 
           <div class="survey-actions results-actions">
             <button type="button" class="button primary" id="survey-download">Download my profile</button>
-            <button type="button" class="button ghost" id="survey-reset">Play again</button>
+            <button type="button" class="button ghost" id="survey-reset">Delete local data and restart</button>
           </div>
         </div>
       </div>
@@ -423,11 +442,11 @@
   </main>
 
   <footer>
-    <p>Brian E Pereira · DBA Research · <a class="footer-linkedin" data-linkedin href="https://www.linkedin.com/in/brianpereira/" target="_blank" rel="noopener noreferrer">Contact via LinkedIn</a></p>
+    <p>Brian E Pereira · DBA Research · <a class="footer-linkedin" data-linkedin href="https://www.linkedin.com/in/brianpereira/" target="_blank" rel="noopener noreferrer">Contact via LinkedIn</a> · <a href="privacy.html">Privacy and participant information</a></p>
     <a href="#top">Back to top ↑</a>
     <p>Research evolves. This page will evolve with it.</p>
   </footer>
-  <script src="config.js?v=9"></script>
-  <script src="script.js?v=9"></script>
+  <script src="config.js?v=14"></script>
+  <script src="script.js?v=14"></script>
 </body>
 </html>

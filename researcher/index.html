@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Private inquiry archive for Brian E Pereira’s DBA research. Authorised researchers only. Not an access-control boundary.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#071c2c">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; upgrade-insecure-requests">
+  <title>Inquiry archive | Brian E Pereira DBA Research</title>
+  <link rel="stylesheet" href="../styles.css?v=15">
+  <link rel="stylesheet" href="dashboard.css?v=2">
+</head>
+<body class="workspace-body">
+  <a class="skip-link" href="#workspace-main">Skip to inquiry archive</a>
+
+  <section class="auth-gate" id="auth-gate" hidden>
+    <p class="kicker">Private research workspace</p>
+    <h1>Inquiry archive</h1>
+    <p class="auth-lede">This is a future researcher workspace for authorised researcher roles. It is not the initial-release results interface. Authentication is through the protected researcher API and an MFA-backed identity. Crawl hints such as noindex do not restrict who can fetch these static files.</p>
+    <p class="field-error" id="auth-error" hidden role="alert"></p>
+    <div class="survey-actions">
+      <button type="button" class="button primary" id="auth-start" disabled>Sign in with authorised identity</button>
+    </div>
+    <p class="survey-hint" id="auth-hint">Sign-in is disabled until a same-site HTTPS researcher API is configured. There is no local password, no mock login, and no public-data fallback.</p>
+  </section>
+
+  <div class="workspace" id="workspace" hidden>
+    <header class="workspace-header">
+      <a class="brand" href="#workspace-main" aria-label="Inquiry archive home">
+        <span class="brand-mark" aria-hidden="true">BP</span>
+        <span><strong>Inquiry archive</strong><small>Future interface · disconnected</small></span>
+      </a>
+      <div class="workspace-header-meta">
+        <p class="workspace-session" id="session-meta">No live session</p>
+        <button type="button" class="button ghost header-ghost" id="sign-out" hidden>Sign out</button>
+      </div>
+    </header>
+
+    <div class="workspace-status" id="workspace-status" role="status" aria-live="polite" data-state="disconnected">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span id="status-copy">Protected researcher API is not connected. Live collection is disabled.</span>
+    </div>
+
+    <main id="workspace-main">
+      <section class="workspace-intro">
+        <p class="kicker">DBA 2027-10384 · Inclusive lending desk</p>
+        <h1>Read the field without leaving the study.</h1>
+        <p>If a protected researcher API is later approved and hosted off GitHub Pages, authorised researchers would review accepted responses here after MFA sign-in. Until then this workspace stays disconnected. Initial review, if collection is enabled, is through the authenticated Supabase dashboard—not this page.</p>
+      </section>
+
+      <section class="glance-band" aria-label="Study at a glance">
+        <div><strong id="kpi-count">0</strong><span>Accepted responses</span></div>
+        <div><strong id="kpi-recent">0</strong><span>Last 24 hours</span></div>
+        <div><strong id="kpi-orientation">—</strong><span>Mean orientation</span></div>
+        <div><strong id="kpi-updated">—</strong><span>Last intake</span></div>
+      </section>
+
+      <div class="workspace-grid">
+        <section class="workspace-panel" aria-labelledby="pulse-title">
+          <p class="kicker">Recent intake</p>
+          <h2 id="pulse-title">Live activity</h2>
+          <ol class="intake-list" id="intake-list"></ol>
+          <p class="empty-copy" id="intake-empty">No accepted responses have arrived in this workspace yet.</p>
+        </section>
+
+        <section class="workspace-panel" aria-labelledby="rhythm-title">
+          <p class="kicker">Arrival rhythm</p>
+          <h2 id="rhythm-title">Responses over time</h2>
+          <div class="chart-frame" id="trend-chart" role="img" aria-label="Response counts by day"></div>
+        </section>
+      </div>
+
+      <section class="workspace-panel" aria-labelledby="refine-title">
+        <p class="kicker">Refine the field</p>
+        <h2 id="refine-title">Filters</h2>
+        <form id="filter-form" class="filter-grid" novalidate>
+          <div class="field">
+            <label for="filter-from">From date</label>
+            <input id="filter-from" name="from" type="date">
+          </div>
+          <div class="field">
+            <label for="filter-to">To date</label>
+            <input id="filter-to" name="to" type="date">
+          </div>
+          <div class="field">
+            <label for="filter-region">Broad geography</label>
+            <select id="filter-region" name="region">
+              <option value="">All regions</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="filter-role">Position category</label>
+            <select id="filter-role" name="role">
+              <option value="">All roles</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="filter-experience">Lending experience</label>
+            <select id="filter-experience" name="experience">
+              <option value="">All bands</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="filter-search">Participant reference</label>
+            <input id="filter-search" name="q" type="search" placeholder="resp_…" autocomplete="off">
+          </div>
+        </form>
+      </section>
+
+      <section class="workspace-panel" aria-labelledby="compass-title">
+        <p class="kicker">Aggregate stance</p>
+        <h2 id="compass-title">Research-domain scores</h2>
+        <div class="domain-scores" id="domain-scores"></div>
+        <p class="empty-copy" id="domain-empty">Domain means appear after accepted Likert responses are in the archive.</p>
+      </section>
+
+      <section class="workspace-panel" aria-labelledby="items-title">
+        <p class="kicker">Item field</p>
+        <h2 id="items-title">Question-level distributions</h2>
+        <div id="item-distributions"></div>
+        <p class="empty-copy" id="items-empty">Distributions appear once rating items have been accepted.</p>
+      </section>
+
+      <section class="workspace-panel" aria-labelledby="ledger-title">
+        <p class="kicker">Record ledger</p>
+        <h2 id="ledger-title">Accepted responses</h2>
+        <div class="table-wrap">
+          <table class="record-table">
+            <thead>
+              <tr>
+                <th scope="col">Participant reference</th>
+                <th scope="col">Accepted</th>
+                <th scope="col">Region</th>
+                <th scope="col">Role</th>
+                <th scope="col">Experience</th>
+                <th scope="col">Orientation</th>
+              </tr>
+            </thead>
+            <tbody id="record-rows"></tbody>
+          </table>
+        </div>
+        <p class="empty-copy" id="ledger-empty">The ledger is empty until the protected researcher API returns authorised records.</p>
+        <div class="survey-actions">
+          <button type="button" class="button primary" id="export-csv" disabled>Request controlled CSV export</button>
+        </div>
+        <p class="survey-footnote">Export is a privileged API action. It is disabled until institutional policy enables it. The browser does not build CSV from a public dump. Crawl hints are not access controls.</p>
+      </section>
+
+      <section class="workspace-panel restricted-panel" aria-labelledby="reflections-title">
+        <p class="kicker">Restricted reader</p>
+        <h2 id="reflections-title">Qualitative responses</h2>
+        <p class="survey-hint">Free-text is requested from the API only when needed. It is hidden by default and audit-logged server-side.</p>
+        <label class="reveal-check">
+          <input type="checkbox" id="reveal-reflections">
+          I need to read reflections for analysis or a withdrawal request.
+        </label>
+        <div id="reflection-list" hidden></div>
+        <p class="empty-copy" id="reflection-empty">No reflections are loaded.</p>
+      </section>
+
+      <section class="workspace-panel" aria-labelledby="withdrawal-title">
+        <p class="kicker">Stewardship</p>
+        <h2 id="withdrawal-title">Delete by participant reference</h2>
+        <form id="delete-form" class="survey-form" novalidate>
+          <div class="field">
+            <label for="delete-reference">Participant reference</label>
+            <input id="delete-reference" name="reference" type="text" placeholder="resp_…" autocomplete="off">
+          </div>
+          <label class="reveal-check">
+            <input type="checkbox" id="delete-confirm">
+            I confirm this deletion is authorised, policy-approved, and will be audit-logged.
+          </label>
+          <p class="field-error" id="delete-error" hidden role="alert"></p>
+          <div class="survey-actions">
+            <button type="submit" class="button ghost" id="delete-submit" disabled>Request deletion</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <footer>
+      <p>Inquiry archive · future interface only · not the initial-release results system · collection remains disabled until the protected submission endpoint and institutional approvals are complete</p>
+      <p>Must not be treated as protected if hosted on GitHub Pages · privacy-hardened workspace · not a claim of legal compliance</p>
+    </footer>
+  </div>
+
+  <script src="config.js?v=2"></script>
+  <script src="dashboard.js?v=2"></script>
+</body>
+</html>
