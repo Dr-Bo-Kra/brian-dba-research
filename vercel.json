@@ -40,12 +40,10 @@
   ],
   "functions": {
     "api/researcher/index.mjs": {
-      "runtime": "nodejs20.x",
       "maxDuration": 15,
       "includeFiles": "api/researcher/_lib/**"
     },
     "api/researcher/[...path].mjs": {
-      "runtime": "nodejs20.x",
       "maxDuration": 15,
       "includeFiles": "api/researcher/_lib/**"
     }

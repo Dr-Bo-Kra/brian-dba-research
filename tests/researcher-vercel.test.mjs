@@ -125,8 +125,12 @@ test('Vercel adapters are thin Node wrappers with no duplicate auth logic', () =
   const indexSrc = read('api/researcher/index.mjs');
   const catchAll = read('api/researcher/[...path].mjs');
   const vercel = read('api/researcher/_vercel.mjs');
-  assert.match(indexSrc, /runtime:\s*'nodejs20\.x'/);
-  assert.match(catchAll, /runtime:\s*'nodejs20\.x'/);
+  assert.match(indexSrc, /maxDuration:\s*15/);
+  assert.match(catchAll, /maxDuration:\s*15/);
+  assert.doesNotMatch(indexSrc, /runtime:\s*'edge'/);
+  assert.doesNotMatch(catchAll, /runtime:\s*'edge'/);
+  assert.doesNotMatch(indexSrc, /nodejs20\.x/);
+  assert.doesNotMatch(catchAll, /nodejs20\.x/);
   assert.match(indexSrc, /handleVercelResearcherRequest/);
   assert.match(catchAll, /handleVercelResearcherRequest/);
   assert.doesNotMatch(indexSrc, /authorize\(/);
@@ -134,7 +138,7 @@ test('Vercel adapters are thin Node wrappers with no duplicate auth logic', () =
   assert.match(vercel, /createResearcherApp/);
   assert.doesNotMatch(vercel, /runtime:\s*'edge'/);
   const vercelJson = read('vercel.json');
-  assert.match(vercelJson, /nodejs20\.x/);
+  assert.doesNotMatch(vercelJson, /"runtime"\s*:/);
   assert.doesNotMatch(vercelJson, /Access-Control-Allow-Origin/);
   assert.match(vercelJson, /\/api\/researcher\/\(\.\*\)/);
   assert.match(vercelJson, /no-store/);

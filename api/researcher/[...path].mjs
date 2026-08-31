@@ -1,7 +1,6 @@
 import { handleVercelResearcherRequest } from './_vercel.mjs';
 
 export const config = {
-  runtime: 'nodejs20.x',
   maxDuration: 15,
 };
 
