@@ -10,8 +10,10 @@ import {
   DIAGNOSTIC_SQL,
   DIAGNOSTIC_TABLES,
   isDbDiagnosticAllowed,
+  logDiagnosticFailure,
   runDbDiagnostic,
 } from '../api/researcher/_lib/db-diagnostic.mjs';
+import { classifyQueryError, unavailableFromQueryError } from '../api/researcher/_lib/query.mjs';
 import {
   handleVercelResearcherRequest,
   resetResearcherAppForTests,
@@ -97,10 +99,16 @@ function createCatalogQuery(identityOverrides = {}, extra = {}) {
   const query = async (statement, params = []) => {
     const text = typeof statement === 'string' ? statement : statement.text;
     statements.push({ text, params });
+    if (/select 1 as ok/.test(text)) {
+      if (extra.failStage === 'connect') throw extra.failError;
+      return { rows: [{ ok: 1 }] };
+    }
     if (/current_user as database_user/.test(text)) {
+      if (extra.failStage === 'identity') throw extra.failError;
       return { rows: extra.identityRows || [identity] };
     }
     if (/relrowsecurity/.test(text)) {
+      if (extra.failStage === 'rls') throw extra.failError;
       return {
         rows: extra.rlsRows || DIAGNOSTIC_TABLES.map((table_name) => ({
           table_name,
@@ -282,7 +290,8 @@ test('wrong DB user fails without echoing the identity', async () => {
   const { query, statements } = createCatalogQuery({ database_user: 'postgres' });
   const check = await runDbDiagnostic(query);
   assert.equal(check.ok, false);
-  assert.equal(check.reason, 'wrong_user');
+  assert.equal(check.stage, 'identity');
+  assert.equal(check.category, 'query_failed');
   assert.equal(check.result, undefined);
   assert.equal(statements.some((row) => SURVEY_FROM.test(row.text)), false);
 
@@ -332,10 +341,10 @@ test('correct researcher_api user passes compact catalog checks', async () => {
     rlsVerified: true,
     grantsVerified: true,
   });
-  assert.equal(statements.length, 6);
+  assert.equal(statements.length, 7);
   assert.equal(statements.some((row) => SURVEY_FROM.test(row.text)), false);
   assert.equal(
-    statements.some((row) => /current_user as database_user/.test(row.text)),
+    statements.some((row) => /select 1 as ok/.test(row.text)),
     true
   );
   assertNoSecrets(res.body);
@@ -476,4 +485,160 @@ test('Vercel Preview rewrite can reach the diagnostic without auth bypass', asyn
   );
   assert.ok([401, 403, 503].includes(protectedData.status));
   assert.doesNotMatch(String(protectedData.body), /resp_/);
+});
+
+function leakyError(code, extra = {}) {
+  return Object.assign(new Error('password authentication failed for user "researcher_api" at db.abcdefghijkl.supabase.co:6543'), {
+    code,
+    detail: SECRET_URL,
+    hint: 'check DATABASE_URL postgresql://researcher_api:diag-secret-do-not-leak@db.abcdefghijkl.supabase.co:6543/postgres',
+    ...extra,
+  });
+}
+
+async function withCapturedErrors(fn) {
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => {
+    lines.push(args.map((item) => (typeof item === 'string' ? item : String(item))).join(' '));
+  };
+  try {
+    return { result: await fn(), lines };
+  } finally {
+    console.error = original;
+  }
+}
+
+function assertSafeLog(line, stage, category) {
+  const payload = JSON.parse(line);
+  assert.deepEqual(payload, {
+    diagnostic: 'db',
+    ok: false,
+    stage,
+    category,
+  });
+  assert.deepEqual(Object.keys(payload).sort(), ['category', 'diagnostic', 'ok', 'stage']);
+  assertNoSecrets(line);
+  assert.doesNotMatch(line, /password authentication failed/);
+  assert.doesNotMatch(line, /detail/i);
+  assert.doesNotMatch(line, /hint/i);
+  assert.doesNotMatch(line, /select 1/);
+}
+
+test('connect/auth failure logs stage=connect and stays generic on the wire', async () => {
+  const { query } = createCatalogQuery({}, {
+    failStage: 'connect',
+    failError: leakyError('28P01'),
+  });
+  const app = createResearcherApp({
+    allowMemoryStores: true,
+    query,
+    config: closedConfig({
+      dbDiagnosticEnabled: true,
+      vercelEnv: 'preview',
+    }),
+  });
+  const { result, lines } = await withCapturedErrors(() =>
+    app.handle({ method: 'GET', url: '/diagnostics/db', headers: {}, ip: '1' })
+  );
+  assert.equal(result.status, 503);
+  assert.deepEqual(JSON.parse(result.body), { ok: false });
+  assert.equal(lines.length, 1);
+  assertSafeLog(lines[0], 'connect', 'authentication_failed');
+  assertNoSecrets(result.body);
+});
+
+test('identity query failure logs stage=identity', async () => {
+  const { query } = createCatalogQuery({}, {
+    failStage: 'identity',
+    failError: leakyError('XX000'),
+  });
+  const check = await runDbDiagnostic(query);
+  assert.equal(check.ok, false);
+  assert.equal(check.stage, 'identity');
+  assert.equal(check.category, 'query_failed');
+  const { result, lines } = await withCapturedErrors(() => {
+    const app = createResearcherApp({
+      allowMemoryStores: true,
+      query,
+      config: closedConfig({
+        dbDiagnosticEnabled: true,
+        vercelEnv: 'preview',
+      }),
+    });
+    return app.handle({ method: 'GET', url: '/diagnostics/db', headers: {}, ip: '1' });
+  });
+  assert.deepEqual(JSON.parse(result.body), { ok: false });
+  assertSafeLog(lines[0], 'identity', 'query_failed');
+});
+
+test('later RLS failure logs stage=rls', async () => {
+  const { query } = createCatalogQuery({}, {
+    failStage: 'rls',
+    failError: leakyError('42501'),
+  });
+  const { result, lines } = await withCapturedErrors(() => {
+    const app = createResearcherApp({
+      allowMemoryStores: true,
+      query,
+      config: closedConfig({
+        dbDiagnosticEnabled: true,
+        vercelEnv: 'preview',
+      }),
+    });
+    return app.handle({ method: 'GET', url: '/diagnostics/db', headers: {}, ip: '1' });
+  });
+  assert.equal(result.status, 503);
+  assert.deepEqual(JSON.parse(result.body), { ok: false });
+  assertSafeLog(lines[0], 'rls', 'permission_denied');
+});
+
+test('SQLSTATE and network/TLS codes map to fixed categories without leaking messages', () => {
+  assert.equal(classifyQueryError({ code: '28P01' }), 'authentication_failed');
+  assert.equal(classifyQueryError({ code: '28000' }), 'authentication_failed');
+  assert.equal(classifyQueryError({ code: '42501' }), 'permission_denied');
+  assert.equal(classifyQueryError({ code: '08006' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: '08P01' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: 'ECONNREFUSED' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: 'ETIMEDOUT' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: 'ENOTFOUND' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: 'ENETUNREACH' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: 'ECONNRESET' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: 'CERT_HAS_EXPIRED' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: 'DEPTH_ZERO_SELF_SIGNED_CERT' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: 'SELF_SIGNED_CERT_IN_CHAIN' }), 'connection_failed');
+  assert.equal(classifyQueryError({ code: '42P01', message: SECRET_URL }), 'query_failed');
+  assert.equal(classifyQueryError({ code: 'unavailable', category: 'authentication_failed' }), 'authentication_failed');
+
+  const mapped = unavailableFromQueryError(leakyError('28P01'));
+  assert.equal(mapped.message, 'unavailable');
+  assert.equal(mapped.code, 'unavailable');
+  assert.equal(mapped.category, 'authentication_failed');
+  assert.equal(mapped.detail, undefined);
+  assert.equal(mapped.hint, undefined);
+  assert.doesNotMatch(mapped.message, /postgresql/i);
+  assertNoSecrets(JSON.stringify({ category: mapped.category, code: mapped.code, reason: mapped.reason }));
+});
+
+test('raw error message/detail never appear in diagnostic logs', () => {
+  const { lines } = (() => {
+    const captured = [];
+    const original = console.error;
+    console.error = (...args) => captured.push(args.join(' '));
+    try {
+      logDiagnosticFailure({
+        stage: 'connect',
+        category: 'authentication_failed',
+        message: leakyError('28P01').message,
+        detail: SECRET_URL,
+      });
+    } finally {
+      console.error = original;
+    }
+    return { lines: captured };
+  })();
+  assert.equal(lines.length, 1);
+  assertSafeLog(lines[0], 'connect', 'authentication_failed');
 });

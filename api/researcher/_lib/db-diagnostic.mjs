@@ -3,9 +3,27 @@
  * Catalog metadata only. Never SELECT survey rows or return secrets.
  */
 import { assertBoundQuery } from './db.mjs';
+import { classifyQueryError } from './query.mjs';
 
 export const RESEARCHER_API_ROLE = 'researcher_api';
 export const EXPECTED_DATABASE = 'postgres';
+
+export const DIAGNOSTIC_STAGES = Object.freeze([
+  'connect',
+  'identity',
+  'rls',
+  'policies',
+  'grants',
+  'browser_grants',
+  'function_privilege',
+]);
+
+export const DIAGNOSTIC_CATEGORIES = Object.freeze([
+  'authentication_failed',
+  'permission_denied',
+  'connection_failed',
+  'query_failed',
+]);
 
 export const DIAGNOSTIC_TABLES = Object.freeze([
   'assessment_responses',
@@ -42,6 +60,9 @@ const EXPECTED_POLICIES = Object.freeze([
 ]);
 
 export const DIAGNOSTIC_SQL = Object.freeze({
+  connect: {
+    text: `select 1 as ok`,
+  },
   identity: {
     text: `select current_user as database_user,
                   current_database() as database_name,
@@ -102,6 +123,7 @@ export const DIAGNOSTIC_SQL = Object.freeze({
   },
 });
 
+Object.freeze(DIAGNOSTIC_SQL.connect);
 Object.freeze(DIAGNOSTIC_SQL.identity);
 Object.freeze(DIAGNOSTIC_SQL.rls);
 Object.freeze(DIAGNOSTIC_SQL.privileges);
@@ -115,8 +137,23 @@ export function isDbDiagnosticAllowed(config = {}) {
   return vercelEnv === 'preview' || vercelEnv === 'development';
 }
 
-export function logDiagnosticFailure(reason) {
-  console.error(JSON.stringify({ diagnostic: 'db', ok: false, reason: String(reason || 'failed') }));
+function safeStage(stage) {
+  return DIAGNOSTIC_STAGES.includes(stage) ? stage : 'connect';
+}
+
+function safeCategory(category) {
+  return DIAGNOSTIC_CATEGORIES.includes(category) ? category : 'query_failed';
+}
+
+export function logDiagnosticFailure({ stage, category } = {}) {
+  console.error(
+    JSON.stringify({
+      diagnostic: 'db',
+      ok: false,
+      stage: safeStage(stage),
+      category: safeCategory(category),
+    })
+  );
 }
 
 function compactSuccess({ databaseUser, database, superuser, bypassRls, rlsVerified, grantsVerified }) {
@@ -149,67 +186,90 @@ function privilegesMatch(row) {
   );
 }
 
+function failedCheck(stage, category = 'query_failed') {
+  return { ok: false, stage: safeStage(stage), category: safeCategory(category) };
+}
+
+function stagedFailure(err, stage) {
+  const wrapped = Object.assign(new Error('unavailable'), {
+    code: 'unavailable',
+    stage: safeStage(stage),
+    category: classifyQueryError(err),
+  });
+  throw wrapped;
+}
+
+async function stagedQuery(query, spec, params, stage) {
+  try {
+    return await query(spec, params);
+  } catch (err) {
+    stagedFailure(err, stage);
+  }
+}
+
 export async function runDbDiagnostic(query) {
   if (typeof query !== 'function') {
-    return { ok: false, reason: 'missing_query' };
+    return failedCheck('connect', 'connection_failed');
   }
   for (const spec of Object.values(DIAGNOSTIC_SQL)) {
     assertBoundQuery(spec);
   }
 
-  const identity = await query(DIAGNOSTIC_SQL.identity, []);
-  const identityRow = identity?.rows?.[0];
-  if (!identityRow) return { ok: false, reason: 'identity' };
-  if (identityRow.database_user !== RESEARCHER_API_ROLE) {
-    return { ok: false, reason: 'wrong_user' };
+  try {
+    await stagedQuery(query, DIAGNOSTIC_SQL.connect, [], 'connect');
+
+    const identity = await stagedQuery(query, DIAGNOSTIC_SQL.identity, [], 'identity');
+    const identityRow = identity?.rows?.[0];
+    if (!identityRow) return failedCheck('identity');
+    if (identityRow.database_user !== RESEARCHER_API_ROLE) return failedCheck('identity');
+    if (identityRow.database_name !== EXPECTED_DATABASE) return failedCheck('identity');
+    if (asBool(identityRow.is_superuser)) return failedCheck('identity');
+    if (asBool(identityRow.bypass_rls)) return failedCheck('identity');
+
+    const tables = [...DIAGNOSTIC_TABLES];
+    const rls = await stagedQuery(query, DIAGNOSTIC_SQL.rls, [tables], 'rls');
+    const rlsRows = rls?.rows || [];
+    const rlsByTable = new Map(rlsRows.map((row) => [row.table_name, row]));
+    const rlsVerified =
+      tables.every((name) => {
+        const row = rlsByTable.get(name);
+        return row && asBool(row.rls) && asBool(row.force_rls);
+      }) && rlsRows.length === tables.length;
+    if (!rlsVerified) return failedCheck('rls');
+
+    const policies = await stagedQuery(query, DIAGNOSTIC_SQL.policies, [tables], 'policies');
+    const presentPolicies = new Set((policies?.rows || []).map((row) => row.policy_name));
+    const policiesVerified = EXPECTED_POLICIES.every((name) => presentPolicies.has(name));
+    if (!policiesVerified) return failedCheck('policies');
+
+    const privileges = await stagedQuery(query, DIAGNOSTIC_SQL.privileges, [tables], 'grants');
+    const privilegeRows = privileges?.rows || [];
+    const privilegeByTable = new Map(privilegeRows.map((row) => [row.table_name, row]));
+    const tableGrantsVerified =
+      tables.every((name) => privilegesMatch(privilegeByTable.get(name) || { table_name: name })) &&
+      privilegeRows.length === tables.length;
+    if (!tableGrantsVerified) return failedCheck('grants');
+
+    const browserGrants = await stagedQuery(query, DIAGNOSTIC_SQL.browserGrants, [tables], 'browser_grants');
+    const browserGrantsVerified = (browserGrants?.rows || []).length === 0;
+    if (!browserGrantsVerified) return failedCheck('browser_grants');
+
+    const deleteExecute = await stagedQuery(query, DIAGNOSTIC_SQL.deleteExecute, [], 'function_privilege');
+    const deleteExecuteVerified = asBool(deleteExecute?.rows?.[0]?.can_execute) === false;
+    if (!deleteExecuteVerified) return failedCheck('function_privilege');
+
+    return {
+      ok: true,
+      result: compactSuccess({
+        databaseUser: RESEARCHER_API_ROLE,
+        database: EXPECTED_DATABASE,
+        superuser: false,
+        bypassRls: false,
+        rlsVerified: true,
+        grantsVerified: true,
+      }),
+    };
+  } catch (err) {
+    return failedCheck(err?.stage, classifyQueryError(err));
   }
-  if (identityRow.database_name !== EXPECTED_DATABASE) {
-    return { ok: false, reason: 'wrong_database' };
-  }
-  if (asBool(identityRow.is_superuser)) return { ok: false, reason: 'superuser' };
-  if (asBool(identityRow.bypass_rls)) return { ok: false, reason: 'bypass_rls' };
-
-  const tables = [...DIAGNOSTIC_TABLES];
-  const rls = await query(DIAGNOSTIC_SQL.rls, [tables]);
-  const rlsRows = rls?.rows || [];
-  const rlsByTable = new Map(rlsRows.map((row) => [row.table_name, row]));
-  const rlsVerified =
-    tables.every((name) => {
-      const row = rlsByTable.get(name);
-      return row && asBool(row.rls) && asBool(row.force_rls);
-    }) && rlsRows.length === tables.length;
-
-  const policies = await query(DIAGNOSTIC_SQL.policies, [tables]);
-  const presentPolicies = new Set((policies?.rows || []).map((row) => row.policy_name));
-  const policiesVerified = EXPECTED_POLICIES.every((name) => presentPolicies.has(name));
-
-  const privileges = await query(DIAGNOSTIC_SQL.privileges, [tables]);
-  const privilegeRows = privileges?.rows || [];
-  const privilegeByTable = new Map(privilegeRows.map((row) => [row.table_name, row]));
-  const tableGrantsVerified =
-    tables.every((name) => privilegesMatch(privilegeByTable.get(name) || { table_name: name })) &&
-    privilegeRows.length === tables.length;
-
-  const browserGrants = await query(DIAGNOSTIC_SQL.browserGrants, [tables]);
-  const browserGrantsVerified = (browserGrants?.rows || []).length === 0;
-
-  const deleteExecute = await query(DIAGNOSTIC_SQL.deleteExecute, []);
-  const deleteExecuteVerified = asBool(deleteExecute?.rows?.[0]?.can_execute) === false;
-
-  const grantsVerified = tableGrantsVerified && browserGrantsVerified && deleteExecuteVerified;
-  const rlsOk = rlsVerified && policiesVerified;
-  if (!rlsOk) return { ok: false, reason: 'rls' };
-  if (!grantsVerified) return { ok: false, reason: 'grants' };
-
-  return {
-    ok: true,
-    result: compactSuccess({
-      databaseUser: RESEARCHER_API_ROLE,
-      database: EXPECTED_DATABASE,
-      superuser: false,
-      bypassRls: false,
-      rlsVerified: true,
-      grantsVerified: true,
-    }),
-  };
 }

@@ -243,18 +243,18 @@ export function createResearcherApp(overrides = {}) {
         return respond(fail('unavailable'));
       }
       if (!query || !config.databaseUrl) {
-        logDiagnosticFailure('missing_database');
+        logDiagnosticFailure({ stage: 'connect', category: 'connection_failed' });
         return respond(fail('unavailable'));
       }
       try {
         const check = await runDbDiagnostic(query);
         if (!check.ok) {
-          logDiagnosticFailure(check.reason);
+          logDiagnosticFailure({ stage: check.stage, category: check.category });
           return respond(json(503, { ok: false }));
         }
         return respond(json(200, check.result));
       } catch {
-        logDiagnosticFailure('query_failed');
+        logDiagnosticFailure({ stage: 'connect', category: 'query_failed' });
         return respond(json(503, { ok: false }));
       }
     }

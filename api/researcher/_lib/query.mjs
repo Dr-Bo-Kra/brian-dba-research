@@ -12,8 +12,49 @@
 import pg from 'pg';
 import { assertBoundQuery } from './db.mjs';
 
-function unavailable(reason) {
-  return Object.assign(new Error('unavailable'), { code: 'unavailable', reason });
+export const QUERY_ERROR_CATEGORIES = Object.freeze([
+  'authentication_failed',
+  'permission_denied',
+  'connection_failed',
+  'query_failed',
+]);
+
+const AUTH_CODES = new Set(['28P01', '28000']);
+const PERMISSION_CODES = new Set(['42501']);
+const NETWORK_CODES = new Set(['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'ENETUNREACH', 'ECONNRESET']);
+const TLS_CODES = new Set([
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'CERT_HAS_EXPIRED',
+  'CERT_UNTRUSTED',
+  'CERT_SIGNATURE_FAILURE',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'ERR_TLS_HANDSHAKE_TIMEOUT',
+  'ERR_SSL_WRONG_VERSION_NUMBER',
+  'ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR',
+]);
+
+function unavailable(reason, extra = {}) {
+  return Object.assign(new Error('unavailable'), { code: 'unavailable', reason, ...extra });
+}
+
+export function classifyQueryError(err) {
+  const existing = String(err?.category || '');
+  if (QUERY_ERROR_CATEGORIES.includes(existing)) return existing;
+  const code = String(err?.code || '').toUpperCase();
+  if (AUTH_CODES.has(code)) return 'authentication_failed';
+  if (PERMISSION_CODES.has(code)) return 'permission_denied';
+  if (code.startsWith('08')) return 'connection_failed';
+  if (NETWORK_CODES.has(code)) return 'connection_failed';
+  if (TLS_CODES.has(code)) return 'connection_failed';
+  return 'query_failed';
+}
+
+export function unavailableFromQueryError(err) {
+  return unavailable('database_query_failed', { category: classifyQueryError(err) });
 }
 
 export function wrapQuery(rawQuery) {
@@ -56,8 +97,8 @@ export function createSupabasePostgresAdapter(config = {}) {
   return wrapQuery(async (text, params) => {
     try {
       return await pool.query({ text, values: params });
-    } catch {
-      throw unavailable('database_query_failed');
+    } catch (err) {
+      throw unavailableFromQueryError(err);
     }
   });
 }
