@@ -83,6 +83,7 @@ test('researcher API is fail-closed by default', () => {
   assert.equal(config.enabled, false);
   assert.equal(config.exportsEnabled, false);
   assert.equal(config.deletionsEnabled, false);
+  assert.equal(config.dbDiagnosticEnabled, false);
   assert.equal(config.dataReady, false);
   assert.equal(config.authReady, false);
   assert.equal(config.allowMemoryStores, false);

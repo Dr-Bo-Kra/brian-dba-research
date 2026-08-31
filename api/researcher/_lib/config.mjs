@@ -55,6 +55,8 @@ export function loadConfig(env = process.env) {
     enabled,
     exportsEnabled: env.EXPORTS_ENABLED === 'true',
     deletionsEnabled: env.DELETIONS_ENABLED === 'true',
+    dbDiagnosticEnabled: env.RESEARCHER_DB_DIAGNOSTIC_ENABLED === 'true',
+    vercelEnv: String(env.VERCEL_ENV || '').trim().toLowerCase(),
     databaseUrl,
     sessionSecret,
     oidcIssuer,

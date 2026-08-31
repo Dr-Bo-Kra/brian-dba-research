@@ -25,6 +25,7 @@ import {
   createOidcClient,
   createUnavailableAuthStateStore,
 } from './oidc.mjs';
+import { isDbDiagnosticAllowed, logDiagnosticFailure, runDbDiagnostic } from './db-diagnostic.mjs';
 import { resolveQueryAdapter } from './query.mjs';
 import { RATE_CATEGORIES, clientRateKey, resolveRateLimiter } from './rate-limit.mjs';
 import { resolveSessionStore } from './sessions.mjs';
@@ -235,6 +236,27 @@ export function createResearcherApp(overrides = {}) {
 
     if (path === '/health' && method === 'GET') {
       return respond(json(200, { ok: true }));
+    }
+
+    if (path === '/diagnostics/db' && method === 'GET') {
+      if (!isDbDiagnosticAllowed(config)) {
+        return respond(fail('unavailable'));
+      }
+      if (!query || !config.databaseUrl) {
+        logDiagnosticFailure('missing_database');
+        return respond(fail('unavailable'));
+      }
+      try {
+        const check = await runDbDiagnostic(query);
+        if (!check.ok) {
+          logDiagnosticFailure(check.reason);
+          return respond(json(503, { ok: false }));
+        }
+        return respond(json(200, check.result));
+      } catch {
+        logDiagnosticFailure('query_failed');
+        return respond(json(503, { ok: false }));
+      }
     }
 
     if ((!runtimeStoresReady || limiter.backend === 'unavailable') && !isolated) {
