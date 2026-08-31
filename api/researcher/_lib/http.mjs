@@ -3,9 +3,10 @@ import { GENERIC_ERRORS } from './constants.mjs';
 
 const SESSION_COOKIE = '__Host-dba-researcher';
 const CSRF_COOKIE = '__Host-dba-csrf';
+const AUTH_TX_COOKIE = '__Host-dba-auth-tx';
 const OIDC_TX_COOKIE = '__Host-dba-oidc-tx';
 
-export { SESSION_COOKIE, CSRF_COOKIE, OIDC_TX_COOKIE };
+export { SESSION_COOKIE, CSRF_COOKIE, AUTH_TX_COOKIE, OIDC_TX_COOKIE };
 
 export function securityHeaders() {
   return {

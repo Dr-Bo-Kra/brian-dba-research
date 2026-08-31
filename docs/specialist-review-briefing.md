@@ -196,7 +196,7 @@ These are **engineering controls in the working tree**. They reduce risk. They d
 | `sessionStorage` only for latest result | `script.js` | Key `brian-dba-survey-latest`. |
 | `localStorage` purge | `script.js` | Removes `brian-dba-*` keys; no `localStorage.setItem`. |
 | No UA / page URL / precise geography in research payload | `script.js`, `supabase/schema.sql` | Regional category only; schema drops `user_agent` and `page_url` if present. |
-| No anon Supabase key | browser files + tests | Tests reject `SUPABASE_ANON_KEY`, `service_role`, and JWT-like `eyJ…` blobs. |
+| No anon/publishable/secret Supabase keys | browser files + tests | Tests reject `SUPABASE_ANON_KEY`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `service_role`, and JWT-like `eyJ…` blobs in browser files. |
 | No `/rest/v1` insert | `script.js`, `researcher/dashboard.js` | Endpoint helpers reject that path. |
 | Collection disabled unless HTTPS protected endpoint | `config.js`, `script.js` | Both flag and URL checks required. |
 | No inline handlers | HTML | Tests assert no `onclick=`. |
@@ -271,12 +271,13 @@ A **future** researcher UI that reuses the public visual system (`../styles.css`
 | Qualitative viewer | Hidden until `#reveal-reflections` is checked |
 | CSV export | Disabled without an authenticated API session; requests `POST /v1/exports`; no client-side public dump |
 | Delete by participant reference | `resp_…` format + confirmation; `POST /v1/deletions`; disabled without session and until policy is enabled |
-| Auth gate | “Sign in with authorised identity” (OIDC start). No password field, no mock login |
+| Auth gate | Email, password, then authenticator MFA. No mock login |
 | Empty / disconnected / loading / error | `showDisconnectedWorkspace()` is the current default |
 
 **Client expectations of a future API (scaffolded, disabled)**
 
-- `GET /v1/session/start` — redirect to MFA IdP (unavailable until configured)
+- `POST /v1/session/login` — email + password (unavailable until configured)
+- `POST /v1/session/mfa` — TOTP challenge
 - `GET /v1/session` — `{ authenticated, role, expiresAt, csrfToken }` with credentials included
 - `GET /v1/summary` and `GET /v1/responses` — allowlisted DTOs only
 - `POST /v1/exports` and `POST /v1/deletions` — policy-gated, CSRF-protected
@@ -379,7 +380,7 @@ See `docs/launch-readiness.md` for the same list in table form and a proposed go
 - Is refusing `/rest/v1/` and omitting anon keys sufficient, or could a future operator re-enable a public table path by mistake? What operational control prevents that?
 - Are CSP meta tags acceptable for a GitHub Pages demonstration, given that `frame-ancestors` is not enforced there?
 - When collection is enabled, who updates `connect-src` (meta **and** HTTP headers) to a single allowlisted origin?
-- The Inquiry archive no longer collects a password. Sign-in is an OIDC start against the protected researcher API. Is that the right identity source for the institution?
+- The Inquiry archive signs in with email, password, and TOTP through the protected researcher API (Supabase Auth). AIM / Entra is not used. Is that the right identity source for the institution?
 - Researcher sessions are designed as HttpOnly cookies; participant survey copies remain in `sessionStorage`. Is that split the right trade-off?
 - GitHub Pages would expose `researcher/` static files. That is a future-interface issue. Initial-release review is the authenticated Supabase dashboard. Crawl hints are not access controls.
 - In-memory rate limiting and session maps in the API scaffold are not production-safe across instances. What durable stores will the institution require?
@@ -461,7 +462,7 @@ brian-dba-research-local/
 │   └── researcher-dashboard-architecture.md     Six-layer researcher access design
 ├── api/researcher/                     Fail-closed researcher API scaffold (disabled)
 ├── researcher/
-│   ├── index.html                      Inquiry archive markup; noindex; OIDC start gate + empty panels
+│   ├── index.html                      Inquiry archive markup; noindex; sign-in gate + empty panels
 │   ├── dashboard.js                    Archive client: disconnected default; cookie session later
 │   ├── dashboard.css                   Archive layout on top of styles.css
 │   ├── config.js                       Researcher config; empty endpoint; no secrets

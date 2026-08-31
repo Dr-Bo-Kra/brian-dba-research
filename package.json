@@ -9,6 +9,10 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
     "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "jose": "^6.2.10"
   }
 }

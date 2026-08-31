@@ -163,7 +163,7 @@ alter table public.researcher_auth_states
   add column if not exists transaction_id text not null default '';
 
 comment on table public.researcher_auth_states is
-  'Short-lived OIDC state/nonce/PKCE verifier and transaction id. Server-side only. Never store tokens or survey answers.';
+  'Short-lived MFA login tickets. Server-side only. May hold encrypted Auth bootstrap material. Never store plaintext tokens, MFA secrets, TOTP codes, or survey answers.';
 
 alter table public.researcher_auth_states enable row level security;
 alter table public.researcher_auth_states force row level security;

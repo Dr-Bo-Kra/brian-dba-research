@@ -21,7 +21,6 @@ function readyConfig(extra = {}) {
     deletionsEnabled: false,
     databaseUrl: 'postgresql://researcher-api:unused@127.0.0.1/unused',
     sessionSecret: 'test-session-secret-32-bytes-min',
-    oidcReady: true,
     mfaAssuranceReady: true,
     authReady: false,
     dataReady: true,
@@ -93,15 +92,24 @@ test('researcher API is fail-closed by default', () => {
     RATE_LIMIT_STORE: 'memory',
     DATABASE_URL: 'postgresql://researcher-api:unused@127.0.0.1/unused',
     SESSION_SECRET: 'test-session-secret-32-bytes-min',
-    OIDC_ISSUER: 'https://idp.example',
-    OIDC_CLIENT_ID: 'id',
-    OIDC_CLIENT_SECRET: 'secret',
-    OIDC_REDIRECT_URI: 'https://app.example/callback',
-    OIDC_REQUIRED_ACR: 'phr',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test_not_a_jwt',
   });
   assert.equal(memoryIgnored.sessionStore, '');
   assert.equal(memoryIgnored.rateLimitStore, '');
   assert.equal(memoryIgnored.authReady, false);
+  const jwtSecretNotRequired = loadConfig({
+    RESEARCHER_API_ENABLED: 'true',
+    SESSION_STORE: 'database',
+    RATE_LIMIT_STORE: 'database',
+    DATABASE_URL: 'postgresql://researcher-api:unused@127.0.0.1/unused',
+    SESSION_SECRET: 'test-session-secret-32-bytes-min',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test_not_a_jwt',
+  });
+  assert.equal(jwtSecretNotRequired.authReady, true);
+  assert.equal(jwtSecretNotRequired.supabasePublishableKey, 'sb_publishable_test_not_a_jwt');
+  assert.equal(jwtSecretNotRequired.supabaseJwtSecret, undefined);
 });
 
 test('authorisation denies by default and uses roles not a named person', () => {
@@ -174,8 +182,14 @@ test('unauthenticated callers never receive survey records', async () => {
   const disabled = await closed.handle({ method: 'GET', url: '/v1/responses', headers: {}, ip: '1' });
   assert.equal(disabled.status, 503);
   assert.doesNotMatch(disabled.body, /resp_/);
-  const start = await app.handle({ method: 'GET', url: '/v1/session/start', headers: {}, ip: '2' });
-  assert.equal(start.status, 503);
+  const login = await app.handle({
+    method: 'POST',
+    url: '/v1/session/login',
+    headers: {},
+    body: { email: 'researcher@example.test', password: 'x' },
+    ip: '2',
+  });
+  assert.equal(login.status, 503);
 });
 
 test('authenticated reads return allowlisted ledger fields only', async () => {
@@ -284,13 +298,14 @@ test('researcher UI fails closed and never stores tokens in web storage', () => 
   assert.match(js, /showDisconnectedWorkspace/);
   assert.match(js, /credentials: 'include'/);
   assert.match(js, /X-CSRF-Token/);
-  assert.match(js, /\/v1\/session\/start/);
+  assert.match(js, /\/v1\/session\/login/);
   assert.doesNotMatch(js, /localStorage\.setItem/);
   assert.doesNotMatch(js, /sessionStorage\.setItem/);
   assert.doesNotMatch(js, /auth-secret/);
-  assert.doesNotMatch(html, /type="password"/);
+  assert.match(html, /type="password"/);
   assert.doesNotMatch(js, /service_role/);
   assert.match(html, /no mock login/i);
+  assert.doesNotMatch(html, /correct-horse-battery|default password/i);
   assert.match(js, /\/v1\/exports/);
   assert.match(js, /\/v1\/deletions/);
 });

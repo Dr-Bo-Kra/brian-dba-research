@@ -197,6 +197,11 @@
 .workspace-panel .field input[type="password"],
 .workspace-panel .field input[type="search"],
 .workspace-panel .field input[type="date"],
+.auth-gate .field {
+  display: block;
+  margin: 0 0 16px;
+}
+
 .auth-gate .field input {
   width: 100%;
   font: inherit;
@@ -205,6 +210,18 @@
   border: 1px solid #bbc7c3;
   padding: 14px 16px;
   border-radius: 0;
+}
+
+.auth-gate .survey-actions {
+  margin-top: 8px;
+}
+
+#auth-qr {
+  display: block;
+  width: min(100%, 220px);
+  height: auto;
+  margin: 12px 0 18px;
+  background: #fff;
 }
 
 .workspace-panel .field input:focus,

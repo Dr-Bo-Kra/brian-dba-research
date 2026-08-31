@@ -43,11 +43,21 @@ The dashboard must **never** rely on obscurity, `robots.txt`, `noindex`, an unli
 | 1. Public survey browser | Untrusted | Public copy, `COLLECTION_ENABLED`, empty or HTTPS submission URL | Anon key, service-role key, DB URL, JWT secret, researcher session |
 | 2. Submission API | Trusted server | Server credential with **INSERT-only** on `assessment_responses` | Browser-readable keys; researcher read role |
 | 3. Database | Trusted store | Research rows, audit rows, researcher-role directory | Public/anon policies; Realtime on research tables |
-| 4. Researcher API | Trusted server | Session store, OIDC client secret, **read** role, optional delete function | Anything shipped to `researcher/config.js` |
+| 4. Researcher API | Trusted server | Session store, `supabase.auth.getClaims()` + publishable Auth apikey, **read** role, optional delete function | Anything shipped to `researcher/config.js` |
 | 5. Inquiry Archive browser | Untrusted UI | Same-origin API calls with **HttpOnly** cookies; non-secret UI state | Tokens, passwords, service-role, record dumps without a session |
 | 6. Supabase dashboard | Privileged operator UI | Named dashboard users with MFA | Shared logins; SQL for untrained roles if the institution can avoid it |
 
-Deny access **by default**. A request is authorised only after the researcher API (or the dashboard operator path) has confirmed an **active authorised-researcher role**. Brian may be the only provisioned authorised researcher at first. Application code must **not** hard-code his name or email as an access check.
+**Research authentication:** Supabase Auth with mandatory TOTP MFA. There is no technical dependency on AIM Microsoft/Entra SSO or AIM ICT.
+
+**Application authorization:** exactly one active `authorised_researchers` row. The verified Supabase user id (`auth_subject`) must match that row. Role may be `researcher_admin`. Email is not an authorization check.
+
+**Database access:** Vercel researcher API using the `researcher_api` role. The browser never SELECTs research tables.
+
+**Researcher interface:** Inquiry Archive.
+
+**Supabase dashboard:** administrative / fallback only.
+
+Deny access **by default**. A request is authorised only after the researcher API has confirmed an **active authorised-researcher role**, MFA assurance (`aal2` + TOTP), and the single-active-directory invariant. Brian may be the only provisioned authorised researcher. Application code must **not** hard-code his name, email, or user id as an access check.
 
 ## What is implemented now
 
@@ -61,7 +71,7 @@ Deny access **by default**. A request is authorised only after the researcher AP
 
 - HTTP routes, validation, authorisation checks, rate-limit hooks, CSV export builder, deletion workflow, audit event shape.
 - Database roles, `authorised_researchers`, legal-hold / anonymisation columns, append-only audit trigger.
-- Cookie session and CSRF header contract. There is **no** live identity provider, **no** live session store, and **no** live database connection in this repository.
+- Cookie session, CSRF, revocation, rate limits, and audit. Production still needs server env (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWT_AUD`, `SESSION_SECRET`, `DATABASE_URL`, `DATABASE_CA_CERT`, `SESSION_STORE=database`, `RATE_LIMIT_STORE=database`) before authentication can succeed. A JWT secret is not required.
 
 ## What remains disabled
 
@@ -74,7 +84,7 @@ Deny access **by default**. A request is authorised only after the researcher AP
 
 ## What requires institutional approval
 
-Lawful basis, consent wording, ethics reference, controller/DPO, recruitment countries, retention and anonymisation periods, processor agreements, transfer safeguards, hosting region, export/deletion policy, MFA identity source, and whether the Inquiry Archive (layer 5) may be used at all.
+Lawful basis, consent wording, ethics reference, controller/DPO, recruitment countries, retention and anonymisation periods, processor agreements, transfer safeguards, hosting region, export/deletion policy, and whether the Inquiry Archive (layer 5) may be used at all. Research authentication is Supabase Auth + TOTP MFA; AIM is not a technical dependency.
 
 Until those exist, **do not enable collection** and **do not enable the researcher API**.
 
@@ -102,13 +112,14 @@ Role-based, server-side, deny by default:
 | `authorised_researcher` | Review aggregates and records, export if policy allows, delete if policy allows |
 | `researcher_admin` | Same, plus provisioning/revocation of researcher identities (not a database admin console) |
 
-Provisioning uses an **opaque IdP subject** (`auth_subject`) in `authorised_researchers`, not a browser check for a person’s name or email. Additional researchers are added by inserting an active row with a role. Revocation sets `revoked_at` and invalidates sessions.
+Provisioning uses an **opaque Supabase Auth subject** (`auth_subject`) in `authorised_researchers`, not a browser check for a person’s name or email. Exactly one active row is expected. Additional active rows cause login to fail closed. Revocation sets `revoked_at` and invalidates sessions. There is no researcher invitation or team-management UI.
 
-Mandatory MFA is enforced by the identity provider and re-checked server-side (`mfa_ok` on the session). A session without MFA is rejected.
+Mandatory MFA is enforced by Supabase Auth TOTP and re-checked server-side (`aal2` plus TOTP in `amr`, then `mfa_ok` on the application session). A password-only session is rejected.
 
 ## Authentication and sessions
 
-- Individual identity from an MFA-capable OIDC/OAuth source (institution or project IdP). No local password form in the static UI. No mock login.
+- Individual identity from **Supabase Auth** (email + password + mandatory TOTP). The Inquiry Archive posts credentials to the same-origin researcher API. The API talks to Supabase Auth. Access tokens are verified with `supabase.auth.getClaims()` (JWKS for asymmetric keys; Auth `getUser()` for legacy HS256). The browser does not receive the publishable key, JWT secret, service-role key, or research-table access.
+- AIM Microsoft/Entra SSO is **not** a technical authentication dependency.
 - Short-lived server sessions (default 20 minutes, hard cap). Opaque session id in a `__Host-` **HttpOnly; Secure; SameSite=Strict; Path=/** cookie.
 - Session metadata (role, expiry) is returned by `GET /v1/session` and is **not** a secret. **No access token is stored in `localStorage` or `sessionStorage`.**
 - Logout is `POST /v1/session/logout` (server revocation + cookie expiry).

@@ -1,6 +1,6 @@
 # Protected researcher API specification
 
-**Status:** Specification plus implemented read-only researcher path. Production authentication stays fail-closed until an institutional IdP, MFA assurance values, durable session store, durable rate-limit store, and `researcher_api` database credentials are configured. Not deployed. Not enabled. Not approved for live research access.
+**Status:** Specification plus implemented read-only researcher path. Production authentication stays fail-closed until Supabase Auth, JWT verification, mandatory TOTP MFA, durable session store, durable rate-limit store, and `researcher_api` database credentials are configured. Not deployed. Not enabled. Not approved for live research access.
 
 This API is layer 4 in `docs/researcher-dashboard-architecture.md`. Browser files must never contain its credentials.
 
@@ -16,17 +16,18 @@ This API is layer 4 in `docs/researcher-dashboard-architecture.md`. Browser file
 
 ## Identity
 
-Authentication is OIDC/OAuth with **mandatory MFA**. The API does not accept a browser-posted password.
+Authentication is **Supabase Auth** with **mandatory TOTP MFA**. The Inquiry Archive posts email, password, and authenticator codes to the Vercel researcher API. The API verifies the Supabase-issued JWT (issuer, audience, expiry, subject, `aal2`, TOTP `amr`) and then looks up `authorised_researchers`. Browser-provided email, role, subject, and MFA flags are ignored for authorization.
 
-After the identity provider returns, the API:
+After authentication succeeds, the API:
 
-1. Verifies the IdP assertion.
-2. Looks up `authorised_researchers` by opaque `auth_subject`.
-3. Denies the request if there is no active row, `revoked_at` is set, or MFA is not confirmed.
-4. Creates a server-side session and sets `__Host-dba-researcher` (HttpOnly, Secure, SameSite=Strict, Path=/).
-5. Issues a CSRF token for subsequent mutations.
+1. Cryptographically verifies the Supabase access token with `supabase.auth.getClaims()` on a server-only client (`SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`, no session persistence). Asymmetric tokens are verified against the project JWKS; legacy HS256 tokens are accepted only when Auth `getUser()` confirms them. Issuer, audience, expiry, subject, and role are then checked. A JWT secret is not used.
+2. Requires MFA assurance (`aal2` and TOTP). Password-only tokens cannot create a researcher session.
+3. Looks up `authorised_researchers` by opaque `auth_subject`.
+4. Denies the request if there is no active row, `revoked_at` / `disabled_at` is set, or more than one active researcher exists.
+5. Creates a server-side session and sets `__Host-dba-researcher` (HttpOnly, Secure, SameSite=Strict, Path=/).
+6. Issues a CSRF token for subsequent mutations.
 
-Role comes from the directory table (`authorised_researcher` or `researcher_admin`), not from matching a person’s name or email in application code.
+Role comes from the directory table (`authorised_researcher` or `researcher_admin`), not from matching a person’s name or email in application code. AIM / Entra is not used.
 
 ## Common headers
 
@@ -61,8 +62,8 @@ Do not include stack traces, SQL, whether a participant reference exists on dele
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/health` | No | Liveness. No configuration secrets. No data. |
-| GET | `/v1/session/start` | No (rate-limited) | Redirect to IdP. `unavailable` if IdP or API disabled. |
-| GET | `/v1/session/callback` | No (rate-limited) | Complete OIDC; rotate session; redirect to archive. |
+| POST | `/v1/session/login` | No (rate-limited) | Email + password to Supabase Auth. `unavailable` if Auth or API disabled. Returns MFA step or an application session. |
+| POST | `/v1/session/mfa` | No (rate-limited) | Verify TOTP against the pending Auth ticket; rotate application session. |
 | GET | `/v1/session` | Session optional | `{ authenticated, role, expiresAt, csrfToken }` or unauthenticated. Never a raw access token. |
 | POST | `/v1/session/logout` | CSRF if cookie present | Revoke session; expire cookies. |
 | GET | `/v1/summary` | Authorised researcher | Aggregates for the approved filters. |
@@ -119,8 +120,8 @@ Production must use a durable limiter (gateway or shared store). An in-memory Ma
 
 ## Fail-closed behaviour
 
-If `RESEARCHER_API_ENABLED` is not `true`, or database/session/OIDC/MFA-assurance/durable-store configuration is missing, or a query adapter is not injected, authentication and data routes return `unavailable` and empty bodies. `SESSION_STORE=memory` and `RATE_LIMIT_STORE=memory` are ignored. The UI must show zero records.
+If `RESEARCHER_API_ENABLED` is not `true`, or database/session/Supabase Auth/durable-store configuration is missing, or a query adapter is not injected, authentication and data routes return `unavailable` and empty bodies. `SESSION_STORE=memory` and `RATE_LIMIT_STORE=memory` are ignored. The UI must show zero records.
 
-OIDC login uses a short-lived `__Host-dba-oidc-tx` SameSite=Lax transaction cookie. It is not a session and cannot read research data. The authenticated session cookie remains `__Host-dba-researcher` SameSite=Strict.
+MFA login uses a short-lived `__Host-dba-auth-tx` SameSite=Strict ticket cookie plus an encrypted server-side Auth bootstrap. It is not a session and cannot read research data. The authenticated session cookie remains `__Host-dba-researcher` SameSite=Strict.
 
 See `docs/researcher-production-dependencies.md`.

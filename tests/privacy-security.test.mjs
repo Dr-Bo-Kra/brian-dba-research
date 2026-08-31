@@ -51,6 +51,9 @@ test('collection defaults to disabled', () => {
 test('no Supabase anonymous key or direct REST table endpoint in browser code', () => {
   for (const source of allBrowser) {
     assert.doesNotMatch(source, /SUPABASE_ANON_KEY/);
+    assert.doesNotMatch(source, /SUPABASE_PUBLISHABLE_KEY/);
+    assert.doesNotMatch(source, /SUPABASE_SECRET_KEY/);
+    assert.doesNotMatch(source, /SUPABASE_JWT_SECRET/);
     assert.doesNotMatch(source, /service_role/);
     assert.doesNotMatch(source, /eyJ[A-Za-z0-9_-]{20,}/);
     assert.doesNotMatch(source, /\/rest\/v1\/assessment_responses/);

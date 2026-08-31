@@ -4,7 +4,8 @@
  * Client: `pg` (node-postgres). Chosen because it is a server-only Node
  * driver, uses bound parameters (`$1`), and works with Supabase's
  * transaction pooler. It is not Edge-compatible, which is intentional:
- * OIDC, HMAC cookies, and this driver stay on the Node.js runtime.
+ * HMAC cookies, Supabase Auth JWT verification, and this driver stay on
+ * the Node.js runtime.
  *
  * The browser never imports this module. The service-role key is rejected.
  * Named prepared statements are not sent (transaction-mode poolers reject them).

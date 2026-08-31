@@ -14,6 +14,14 @@
   const authError = document.getElementById('auth-error');
   const authHint = document.getElementById('auth-hint');
   const authStart = document.getElementById('auth-start');
+  const authForm = document.getElementById('auth-form');
+  const authEmail = document.getElementById('auth-email');
+  const authPassword = document.getElementById('auth-password');
+  const authPasswordStep = document.getElementById('auth-password-step');
+  const authMfaStep = document.getElementById('auth-mfa-step');
+  const authMfaCode = document.getElementById('auth-mfa-code');
+  const authEnroll = document.getElementById('auth-enroll');
+  const authQr = document.getElementById('auth-qr');
   const filterForm = document.getElementById('filter-form');
   const revealBox = document.getElementById('reveal-reflections');
   const deleteForm = document.getElementById('delete-form');
@@ -89,6 +97,7 @@
   ];
 
   let session = null;
+  let pendingTicket = '';
   let records = [];
   let summary = null;
   let qualitative = [];
@@ -375,6 +384,7 @@
 
   function clearWorkspaceData() {
     session = null;
+    pendingTicket = '';
     records = [];
     summary = null;
     qualitative = [];
@@ -500,10 +510,126 @@
     }, 30000);
   }
 
+  function showPasswordStep() {
+    pendingTicket = '';
+    if (authPasswordStep) authPasswordStep.hidden = false;
+    if (authMfaStep) authMfaStep.hidden = true;
+    if (authEnroll) authEnroll.hidden = true;
+    if (authQr) {
+      authQr.hidden = true;
+      authQr.removeAttribute('src');
+    }
+    if (authMfaCode) authMfaCode.value = '';
+    if (authPassword) authPassword.value = '';
+  }
+
+  function showMfaStep({ enrollmentRequired, qr }) {
+    if (authPasswordStep) authPasswordStep.hidden = true;
+    if (authMfaStep) authMfaStep.hidden = false;
+    if (authPassword) authPassword.value = '';
+    if (authMfaCode) authMfaCode.value = '';
+    const canShowQr = Boolean(enrollmentRequired && qr && String(qr).startsWith('data:image/'));
+    if (authEnroll) authEnroll.hidden = !canShowQr;
+    if (authQr) {
+      if (canShowQr) {
+        authQr.src = qr;
+        authQr.hidden = false;
+      } else {
+        authQr.hidden = true;
+        authQr.removeAttribute('src');
+      }
+    }
+  }
+
+  function applySessionPayload(payload) {
+    session = {
+      role: payload.role || 'authorised_researcher',
+      expiresAt: payload.expiresAt,
+      csrfToken: payload.csrfToken,
+    };
+    showWorkspace();
+    startPolling();
+    void refreshWorkspace();
+  }
+
+  async function authPost(path, body) {
+    const response = await fetch(apiUrl(path), {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    return { response, payload };
+  }
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    if (!apiConfigured) return;
+    if (authError) {
+      authError.hidden = true;
+      authError.textContent = '';
+    }
+    try {
+      if (authMfaStep && !authMfaStep.hidden) {
+        const { response, payload } = await authPost('/v1/session/mfa', {
+          ticket: pendingTicket,
+          code: String(authMfaCode?.value || ''),
+        });
+        if (payload?.authenticated) {
+          pendingTicket = '';
+          applySessionPayload(payload);
+          return;
+        }
+        if (authError) {
+          authError.hidden = false;
+          authError.textContent =
+            response.status === 503
+              ? 'Sign-in is unavailable until authentication is configured.'
+              : 'That authenticator code could not be verified.';
+        }
+        return;
+      }
+      const { response, payload } = await authPost('/v1/session/login', {
+        email: String(authEmail?.value || '').trim(),
+        password: String(authPassword?.value || ''),
+      });
+      if (payload?.authenticated) {
+        applySessionPayload(payload);
+        return;
+      }
+      if (payload?.mfaRequired) {
+        pendingTicket = String(payload.ticket || '');
+        showMfaStep({ enrollmentRequired: payload.enrollmentRequired, qr: payload.qr });
+        return;
+      }
+      if (authError) {
+        authError.hidden = false;
+        authError.textContent =
+          response.status === 503
+            ? 'Sign-in is unavailable until authentication is configured.'
+            : 'Sign-in was refused.';
+      }
+    } catch {
+      if (authError) {
+        authError.hidden = false;
+        authError.textContent = 'Sign-in is unavailable.';
+      }
+    }
+  }
+
   function showAuth(message) {
     stopPolling();
     workspace.hidden = true;
     gate.hidden = false;
+    showPasswordStep();
     if (authError) {
       authError.hidden = !message;
       authError.textContent = message || '';
@@ -512,6 +638,9 @@
     if (!apiConfigured && authHint) {
       authHint.textContent =
         'The protected researcher API is not configured. There is no mock login and no public-data fallback. GitHub Pages cannot protect this route.';
+    } else if (authHint) {
+      authHint.textContent =
+        'Use your researcher email, password, and authenticator app. There is no mock login and no public-data fallback.';
     }
   }
 
@@ -643,10 +772,7 @@
   fillSelect(document.getElementById('filter-experience'), EXPERIENCE);
   purgeClientSecrets();
 
-  authStart?.addEventListener('click', () => {
-    if (!apiConfigured) return;
-    window.location.assign(apiUrl('/v1/session/start'));
-  });
+  authForm?.addEventListener('submit', (event) => void handleAuthSubmit(event));
   filterForm?.addEventListener('submit', (event) => event.preventDefault());
   filterForm?.addEventListener('change', () => {
     if (session && apiConfigured) void refreshWorkspace();

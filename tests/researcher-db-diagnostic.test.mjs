@@ -372,7 +372,7 @@ test('secret values never appear in diagnostic responses', async () => {
       vercelEnv: 'preview',
       databaseUrl: SECRET_URL,
       sessionSecret: 'session-secret-must-not-leak',
-      oidcClientSecret: 'oidc-secret-must-not-leak',
+      supabasePublishableKey: 'publishable-key-must-not-leak',
     }),
   });
   const res = await app.handle({
@@ -383,7 +383,7 @@ test('secret values never appear in diagnostic responses', async () => {
   });
   assertNoSecrets(res.body);
   assert.doesNotMatch(res.body, /session-secret-must-not-leak/);
-  assert.doesNotMatch(res.body, /oidc-secret-must-not-leak/);
+  assert.doesNotMatch(res.body, /publishable-key-must-not-leak/);
   const headers = JSON.stringify(res.headers);
   assert.doesNotMatch(headers, /diag-secret-do-not-leak/);
   assert.doesNotMatch(headers, /postgresql:\/\//i);

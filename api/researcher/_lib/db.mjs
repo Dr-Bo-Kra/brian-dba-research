@@ -10,6 +10,12 @@ export const SQL = Object.freeze({
            where auth_subject = $1
            limit 1`,
   },
+  countActiveResearchers: {
+    text: `select count(*)::int as n
+           from public.authorised_researchers
+           where revoked_at is null
+             and disabled_at is null`,
+  },
   insertSession: {
     text: `insert into public.researcher_sessions
              (id, auth_subject, mfa_ok, expires_at)
@@ -155,6 +161,15 @@ export const SQL = Object.freeze({
     text: `insert into public.researcher_auth_states
              (state, nonce, code_verifier, transaction_id, expires_at)
            values ($1, $2, $3, $4, $5::timestamptz)`,
+  },
+  peekAuthState: {
+    name: 'peekAuthState',
+    text: `select state, nonce, code_verifier, transaction_id, expires_at
+           from public.researcher_auth_states
+           where state = $1
+             and consumed_at is null
+             and expires_at > now()
+           limit 1`,
   },
   consumeAuthState: {
     name: 'consumeAuthState',

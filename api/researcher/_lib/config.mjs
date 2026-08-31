@@ -17,16 +17,13 @@ export function loadConfig(env = process.env) {
   const enabled = env.RESEARCHER_API_ENABLED === 'true';
   const databaseUrl = String(env.DATABASE_URL || '').trim();
   const sessionSecret = String(env.SESSION_SECRET || '').trim();
-  const oidcIssuer = String(env.OIDC_ISSUER || '').trim();
-  const oidcClientId = String(env.OIDC_CLIENT_ID || '').trim();
-  const oidcClientSecret = String(env.OIDC_CLIENT_SECRET || '').trim();
-  const oidcRedirectUri = String(env.OIDC_REDIRECT_URI || '').trim();
-  const oidcAudience = String(env.OIDC_AUDIENCE || oidcClientId).trim();
-  const oidcRequiredAcr = String(env.OIDC_REQUIRED_ACR || '').trim();
-  const oidcRequiredAmr = String(env.OIDC_REQUIRED_AMR || '').trim();
-  const oidcLogoutUrl = String(env.OIDC_LOGOUT_URL || '').trim();
-  const oidcReady = Boolean(oidcIssuer && oidcClientId && oidcClientSecret && oidcRedirectUri);
-  const mfaAssuranceReady = Boolean(oidcRequiredAcr || oidcRequiredAmr);
+  const supabaseUrl = String(env.SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const supabasePublishableKey = String(
+    env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || ''
+  ).trim();
+  const supabaseJwtAudience = String(env.SUPABASE_JWT_AUD || 'authenticated').trim() || 'authenticated';
+  const supabaseAuthReady = Boolean(supabaseUrl && supabasePublishableKey);
+  const mfaAssuranceReady = supabaseAuthReady;
   const sessionStore = env.SESSION_STORE === 'database' ? 'database' : '';
   const rateLimitStore = env.RATE_LIMIT_STORE === 'database' ? 'database' : '';
   const durableSessionReady = sessionStore === 'database' && Boolean(databaseUrl);
@@ -34,8 +31,7 @@ export function loadConfig(env = process.env) {
   const authReady = Boolean(
     enabled &&
       sessionSecret &&
-      oidcReady &&
-      mfaAssuranceReady &&
+      supabaseAuthReady &&
       durableSessionReady &&
       durableRateLimitReady
   );
@@ -60,15 +56,10 @@ export function loadConfig(env = process.env) {
     databaseUrl,
     databaseCaCert: String(env.DATABASE_CA_CERT || '').trim(),
     sessionSecret,
-    oidcIssuer,
-    oidcClientId,
-    oidcClientSecret,
-    oidcRedirectUri,
-    oidcAudience,
-    oidcRequiredAcr,
-    oidcRequiredAmr,
-    oidcLogoutUrl,
-    oidcReady,
+    supabaseUrl,
+    supabasePublishableKey,
+    supabaseJwtAudience,
+    supabaseAuthReady,
     mfaAssuranceReady,
     sessionStore,
     rateLimitStore,
@@ -96,7 +87,7 @@ export function loadConfig(env = process.env) {
 
 export const SECRET_CONFIG_KEYS = Object.freeze([
   'sessionSecret',
-  'oidcClientSecret',
+  'supabasePublishableKey',
   'databaseUrl',
   'databaseCaCert',
 ]);

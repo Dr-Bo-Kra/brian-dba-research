@@ -41,7 +41,7 @@ Full trust-boundary notes: `docs/researcher-dashboard-architecture.md`. API cont
 | --- | --- |
 | Interface | Authenticated Supabase dashboard (not `researcher/`) |
 | Accounts | Role-based authorised-researcher identities. Brian may be the only provisioned researcher initially. No shared login. |
-| MFA | Required on the researcher identity |
+| MFA | Required: Supabase Auth TOTP (`aal2`). AIM / Entra is not used |
 | Least privilege | Minimum dashboard permissions to review, export, and delete research rows |
 | Public reads | None. Do not add `anon` or `authenticated` SELECT policies |
 | Aggregate reporting | Dashboard counts and filters only; nothing published on the public site |

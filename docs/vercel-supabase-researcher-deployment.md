@@ -14,7 +14,7 @@ Brian's browser
   → private Supabase survey data
 ```
 
-The browser never receives a Supabase URL, anon key, service-role key, or
+The browser never receives a Supabase URL, publishable key, anon key, service-role key, or
 database password. Same-origin is the default design:
 
 - `https://<future-domain>/researcher/`
@@ -23,14 +23,14 @@ database password. Same-origin is the default design:
 Do not invent the final domain here.
 
 Same-origin benefits: simpler `__Host-` cookies, CSRF on one site, no
-researcher CORS surface, a single OIDC redirect URI, and less chance of
+researcher CORS surface, and less chance of
 credentials leaking across origins.
 
 ## Runtime decision
 
 Use the **Vercel Node.js 20** runtime, not Edge.
 
-The existing API needs Node `crypto` HMAC, OIDC/JWT verification, and the
+The existing API needs Node `crypto` HMAC, Supabase Auth JWT verification, and the
 `pg` driver. Edge would force a different client, weaker session primitives,
 or a rewrite of auth. That is not justified for this low-volume read path.
 
@@ -53,7 +53,7 @@ The adapter:
 
 - Institutional decision that Vercel may host the researcher surface
 - A Supabase project whose region is approved by the university / DPO
-- An IdP that can issue Authorization Code + PKCE with MFA ACR/AMR
+- Supabase Auth with TOTP MFA enabled (no AIM/Entra dependency)
 - An approved HTTPS origin (custom domain still outstanding)
 - Schema applied, including `researcher_api` grants and role-scoped RLS
 
@@ -78,14 +78,9 @@ Never put secrets in `researcher/config.js`, `config.js`, or any `NEXT_PUBLIC_` 
 | `SESSION_SECRET` | HMAC for cookies |
 | `SESSION_STORE` | `database` |
 | `RATE_LIMIT_STORE` | `database` |
-| `OIDC_ISSUER` | Undecided IdP |
-| `OIDC_CLIENT_ID` | Confidential client |
-| `OIDC_CLIENT_SECRET` | Server only |
-| `OIDC_REDIRECT_URI` | `https://<future-domain>/api/researcher/v1/session/callback` |
-| `OIDC_AUDIENCE` | Optional; defaults to client id |
-| `OIDC_REQUIRED_ACR` | MFA claim; required with or instead of AMR |
-| `OIDC_REQUIRED_AMR` | MFA claim; required with or instead of ACR |
-| `OIDC_LOGOUT_URL` | Optional |
+| `SUPABASE_URL` | Project URL; server uses Auth APIs only |
+| `SUPABASE_PUBLISHABLE_KEY` | Server-only Auth apikey (`sb_publishable_…`). Not shipped to the browser. Research tables keep zero anon/authenticated privileges. `SUPABASE_ANON_KEY` is a legacy alias only. |
+| `SUPABASE_JWT_AUD` | Optional; default `authenticated`. Tokens are verified with `supabase.auth.getClaims()`. Do not set `SUPABASE_JWT_SECRET` or `SUPABASE_SECRET_KEY` for this login flow. |
 | `TRUSTED_PROXY` | Leave unset/`false` until Vercel is accepted as the TLS terminator. Then `vercel` to read only `x-vercel-forwarded-for`. |
 | `AUDIT_STORE_RESEARCHER_IP` | Keep `false` until DPO approval |
 | `EXPORTS_ENABLED` | Keep `false` |
@@ -121,8 +116,8 @@ service-role, or administer the database.
 4. Confirm function `api/researcher/index.mjs` runs as Node. Nested `/api/researcher/:path*` is rewritten to that function.
 5. Confirm `_lib`, `_server`, and `_vercel` are not public routes.
 6. Attach the future custom domain only after IT/DPO approval.
-7. Register the OIDC redirect URI with the future IdP.
-8. Keep `RESEARCHER_API_ENABLED=false` until IdP, MFA, region, and DPO items
+7. Create Brian’s Supabase Auth user, enroll TOTP, then insert that exact user id into `authorised_researchers`.
+8. Keep `RESEARCHER_API_ENABLED=false` until Auth, MFA, region, and DPO items
    are closed.
 
 ## Security headers and CORS
@@ -152,12 +147,12 @@ On Vercel, client IP is the function socket address unless
 - Enable exports or deletions
 - Deploy this project to a production Vercel target
 - Choose or hard-code a production region
-- Invent IdP issuer, client, secret, ACR, or AMR values
+- Invent a Supabase user id / `auth_subject` without reading it from Auth
 - Use a Supabase service-role key
 - Give the browser any database credential
 - Weaken RLS so anon/authenticated can SELECT survey rows
 - Trust `X-Forwarded-For` globally
 
-University / DPO / legal decisions still outstanding: IdP product, MFA
-assurance values, geographic region, custom domain, lawful basis, ethics
-approval, researcher-IP audit, and go-live.
+University / DPO / legal decisions still outstanding: geographic region,
+custom domain, lawful basis, ethics approval, researcher-IP audit, and go-live.
+AIM is not a technical authentication dependency.

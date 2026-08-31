@@ -3,7 +3,7 @@
  *
  * Does not enable live collection. Does not load browser credentials.
  * Refuses research data unless RESEARCHER_API_ENABLED=true and durable
- * OIDC, session, MFA-assurance, and rate-limit configuration are present.
+ * Supabase Auth, session, MFA-assurance, and rate-limit configuration are present.
  * Missing production dependencies stay fail-closed. There is no in-memory
  * production fallback and no mock login. The production query adapter is
  * created only when DATABASE_URL is a least-privilege postgres URL.

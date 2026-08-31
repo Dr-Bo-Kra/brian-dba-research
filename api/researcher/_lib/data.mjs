@@ -226,6 +226,9 @@ export function createFixtureResearchStore(records) {
     async lookupResearcher() {
       return null;
     },
+    async countActiveResearchers() {
+      return 0;
+    },
   };
 }
 
@@ -338,6 +341,10 @@ export function createDatabaseResearchStore(query) {
         disabledAt: row.disabled_at || null,
       };
     },
+    async countActiveResearchers() {
+      const result = await query(SQL.countActiveResearchers, []);
+      return Number(result?.rows?.[0]?.n) || 0;
+    },
   };
 }
 
@@ -364,6 +371,9 @@ export function createUnavailableResearchStore() {
     },
     async lookupResearcher() {
       return null;
+    },
+    async countActiveResearchers() {
+      return 0;
     },
   };
 }

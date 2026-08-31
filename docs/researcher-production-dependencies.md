@@ -2,7 +2,7 @@
 
 This is a **decision and wiring contract**, not an approval and not a deployment. Live collection stays **disabled**. Exports and deletions stay **disabled**. GitHub Pages must **not** host the authenticated researcher application.
 
-The **provisional** production stack is Vercel (Inquiry Archive + researcher API) and Supabase Postgres. Identity provider and geographic region are **not** selected. `vercel.json` is not an approval to deploy.
+The **provisional** production stack is Vercel (Inquiry Archive + researcher API) and Supabase (Postgres + Auth). AIM / Entra is not used. Geographic region remains an institutional decision. `vercel.json` is not an approval to deploy.
 
 ## How to read this matrix
 
@@ -24,19 +24,19 @@ The **provisional** production stack is Vercel (Inquiry Archive + researcher API
 | **Failure behaviour** | Do not enable `RESEARCHER_API_ENABLED`. API remains unavailable. |
 | **Who decides** | Sponsoring university / IT / DPO (host and region). |
 
-### B. OIDC / MFA identity provider
+### B. Supabase Auth + mandatory TOTP MFA
 
 | | |
 | --- | --- |
-| **Purpose** | Individual researcher authentication with mandatory MFA. |
-| **Required configuration** | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, `OIDC_AUDIENCE` (defaults to client ID if empty), `OIDC_REQUIRED_ACR` and/or `OIDC_REQUIRED_AMR`. Optional: `OIDC_LOGOUT_URL`. |
-| **Currently selected** | No IdP. No ACR/AMR values. |
-| **Credentials required** | Confidential client secret; never in browser files. |
-| **Security requirements** | Authorization Code + PKCE; server-side token verification; MFA claim check; no password form; no mock IdP. |
-| **Failure behaviour** | `/v1/session/start` and data routes return `unavailable`. |
-| **Who decides** | University identity / IAM + research supervisor. |
+| **Purpose** | Individual researcher authentication with mandatory TOTP MFA. Application authorization remains `authorised_researchers`. |
+| **Required configuration** | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` (server-only Auth apikey; `SUPABASE_ANON_KEY` is a legacy alias), optional `SUPABASE_JWT_AUD` (default `authenticated`). A JWT secret is not required. |
+| **Currently selected** | Supabase Auth for the single researcher. AIM / Entra is not a technical dependency. |
+| **Credentials required** | Publishable Auth apikey; never in browser files. Used only for Auth HTTP from the server. Do not set `SUPABASE_SECRET_KEY` or a service-role key for this login flow. |
+| **Security requirements** | Verify tokens with `supabase.auth.getClaims()` (project JWKS for ES256/RS256; Auth `getUser()` for legacy HS256). Then verify issuer/audience/expiry/subject; reject `service_role` / admin tokens; require `aal2` + TOTP; map subject to exactly one active `authorised_researchers` row; no email-based DB authorization. |
+| **Failure behaviour** | `/v1/session/login`, `/v1/session/mfa`, and data routes return `unavailable`. |
+| **Who decides** | Research supervisor + operator who provisions the Auth user and directory row. |
 
-Administrator must obtain from the future IdP: issuer URL, confidential client, exact redirect URI (`https://<approved-host>/api/researcher/v1/session/callback`), audience, the ACR and/or AMR values that mean MFA, JWKS/discovery availability, and whether a logout endpoint exists.
+Administrator must later: create Brian’s Auth account, enroll TOTP, copy the immutable user id into `authorised_researchers`, and confirm an unauthorized Auth user is denied. Do not insert a guessed subject. Recovery is through Supabase Auth MFA reset with the dashboard operator path — not backup questions.
 
 ### C. Session store
 
@@ -90,12 +90,12 @@ Administrator must obtain from the future IdP: issuer URL, confidential client, 
 
 | | |
 | --- | --- |
-| **Purpose** | `__Host-` cookies, OIDC redirect exact match, same-site archive. |
-| **Required configuration** | Approved HTTPS origin; `OIDC_REDIRECT_URI`; `ARCHIVE_PATH` (default `/researcher/`); `ALLOWED_ORIGIN` empty or exact origin (never `*`). |
+| **Purpose** | `__Host-` cookies, same-site archive and API. |
+| **Required configuration** | Approved HTTPS origin; `ARCHIVE_PATH` (default `/researcher/`); `ALLOWED_ORIGIN` empty or exact origin (never `*`). |
 | **Currently selected** | No production domain. |
 | **Credentials required** | Certificate is a platform concern. |
-| **Security requirements** | Exact redirect URI; no open redirects; HSTS on HTTPS. |
-| **Failure behaviour** | OIDC not ready; authentication unavailable. |
+| **Security requirements** | Same-site HTTPS; no open redirects; HSTS on HTTPS. |
+| **Failure behaviour** | Authentication unavailable until origin and Auth configuration exist. |
 | **Who decides** | University IT / hosting (domain and region). |
 
 ### H. Secret management
@@ -103,19 +103,19 @@ Administrator must obtain from the future IdP: issuer URL, confidential client, 
 | | |
 | --- | --- |
 | **Purpose** | Keep server secrets out of git, browsers, logs, and error bodies. |
-| **Required configuration** | Host secret store for `SESSION_SECRET`, `OIDC_CLIENT_SECRET`, `DATABASE_URL`. |
+| **Required configuration** | Host secret store for `SESSION_SECRET`, `SUPABASE_PUBLISHABLE_KEY`, `DATABASE_URL`, `DATABASE_CA_CERT`. |
 | **Currently selected** | `.env` is gitignored. `api/researcher/env.example` has placeholders only. |
 | **Credentials required** | See §15 of the implementation response / env.example comments. |
 | **Security requirements** | Never copy these into `researcher/config.js`. Startup public snapshot omits secrets. |
 | **Failure behaviour** | Missing secrets → `authReady` false / runtime stores unavailable. |
 | **Who decides** | Hosting operator + researcher who deploys (not this repository). |
 
-## SameSite / OIDC transaction (design)
+## SameSite / MFA ticket (design)
 
-The authenticated session cookie `__Host-dba-researcher` stays **SameSite=Strict**. The IdP callback is a cross-site top-level GET, so that cookie is not used to resume login.
+The authenticated session cookie `__Host-dba-researcher` stays **SameSite=Strict**. Login is a same-origin POST, so no cross-site OIDC callback is required.
 
-Login binding uses a separate, short-lived, **non-authenticating** `__Host-dba-oidc-tx` cookie (**SameSite=Lax**) plus server-side state (state, nonce, PKCE verifier, transaction id, expiry, one-time consume). Browser web storage is not used.
+MFA binding uses a separate, short-lived, **non-authenticating** `__Host-dba-auth-tx` cookie (**SameSite=Strict**) plus server-side state (ticket, encrypted Auth bootstrap, transaction id, expiry, consume-after-success). Browser web storage is not used. Leftover `__Host-dba-oidc-tx` cookies are cleared on logout.
 
 ## What this repository will not decide
 
-Hosting vendor, cloud region, IdP product, ACR/AMR values, lawful basis, ethics approval, and whether researcher IP may be stored.
+Hosting vendor, cloud region, lawful basis, ethics approval, and whether researcher IP may be stored. AIM is not required for authentication.

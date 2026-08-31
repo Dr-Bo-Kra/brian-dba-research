@@ -34,14 +34,10 @@ function readyConfig(extra = {}) {
     deletionsEnabled: false,
     databaseUrl: 'postgresql://researcher-api:unused@127.0.0.1/unused',
     sessionSecret: 'test-session-secret-32-bytes-min',
-    oidcIssuer: 'https://idp.test',
-    oidcClientId: 'researcher-client',
-    oidcClientSecret: 'researcher-secret',
-    oidcRedirectUri: 'https://research.test/api/researcher/v1/session/callback',
-    oidcAudience: 'researcher-client',
-    oidcRequiredAcr: 'phr',
-    oidcRequiredAmr: 'otp',
-    oidcReady: true,
+    supabaseUrl: 'https://test-project.supabase.co',
+    supabasePublishableKey: 'sb_publishable_test_not_a_jwt',
+    supabaseJwtAudience: 'authenticated',
+    supabaseAuthReady: true,
     mfaAssuranceReady: true,
     authReady: true,
     dataReady: true,
@@ -108,11 +104,17 @@ test('Vercel routes share the protected app and do not bypass auth', async () =>
     { app }
   );
   assert.equal(JSON.parse(session.body).authenticated, false);
-  const start = await handleVercelResearcherRequest(
-    ...Object.values(vercelPair({ url: '/api/researcher/v1/session/start' })),
+  const login = await handleVercelResearcherRequest(
+    ...Object.values(
+      vercelPair({
+        method: 'POST',
+        url: '/api/researcher/v1/session/login',
+        body: JSON.stringify({ email: 'researcher@example.test', password: 'x' }),
+      })
+    ),
     { app }
   );
-  assert.ok([302, 503].includes(start.status));
+  assert.ok([401, 403, 503].includes(login.status));
   const { req, res } = vercelPair({ url: '/api/researcher/health' });
   const health = await handleVercelResearcherRequest(req, res, { app });
   assert.equal(health.status, 200);
@@ -148,12 +150,11 @@ test('Vercel nested paths reach the shared app and stay fail-closed', async () =
   assert.doesNotMatch(String(unknown.body), /resp_/);
 
   const restored = resolveResearcherRequestUrl(
-    { url: '/api/researcher?code=abc&state=xyz' },
-    { host: 'example.test', 'x-forwarded-uri': '/api/researcher/v1/session/callback' }
+    { url: '/api/researcher?ticket=abc' },
+    { host: 'example.test', 'x-forwarded-uri': '/api/researcher/v1/session/login' }
   );
-  assert.match(restored, /\/api\/researcher\/v1\/session\/callback/);
-  assert.match(restored, /code=abc/);
-  assert.match(restored, /state=xyz/);
+  assert.match(restored, /\/api\/researcher\/v1\/session\/login/);
+  assert.match(restored, /ticket=abc/);
 });
 
 test('Vercel adapters are thin Node wrappers with no duplicate auth logic', () => {
@@ -290,13 +291,14 @@ test('missing production secrets fail closed and stay out of public config', () 
   const snap = publicConfigSnapshot(
     loadConfig({
       SESSION_SECRET: 'do-not-publish',
-      OIDC_CLIENT_SECRET: 'do-not-publish',
+      SUPABASE_PUBLISHABLE_KEY: 'do-not-publish',
       DATABASE_URL: 'postgresql://researcher-api:unused@127.0.0.1/unused',
       DATABASE_CA_CERT: '-----BEGIN CERTIFICATE-----\nFAKE-TEST-CA-NOT-FOR-PRODUCTION\n-----END CERTIFICATE-----',
     })
   );
   assert.equal(snap.sessionSecret, undefined);
-  assert.equal(snap.oidcClientSecret, undefined);
+  assert.equal(snap.supabasePublishableKey, undefined);
+  assert.equal(snap.supabaseJwtSecret, undefined);
   assert.equal(snap.databaseUrl, undefined);
   assert.equal(snap.databaseCaCert, undefined);
   const example = read('api/researcher/env.example');
@@ -319,6 +321,9 @@ test('browser files have no Supabase credentials or direct database access', () 
     assert.doesNotMatch(source, /createClient\s*\(/);
     assert.doesNotMatch(source, /service_role/);
     assert.doesNotMatch(source, /SUPABASE_SERVICE_ROLE/);
+    assert.doesNotMatch(source, /SUPABASE_SECRET_KEY/);
+    assert.doesNotMatch(source, /SUPABASE_PUBLISHABLE_KEY/);
+    assert.doesNotMatch(source, /SUPABASE_JWT_SECRET/);
     assert.doesNotMatch(source, /DATABASE_URL/);
     assert.doesNotMatch(source, /from\s+['"]pg['"]/);
     assert.doesNotMatch(source, /postgresql:\/\//);

@@ -73,7 +73,7 @@ When collection is eventually enabled:
 2. Provision **authorised researcher** identities in Supabase with MFA. Access is role-based. Brian may be the only provisioned authorised researcher at first; application code must not hard-code his name or email as an access check.
 3. Reject any `/rest/v1/` table URL from the participant browser. The public client already refuses that path.
 4. Update CSP `connect-src` on the public page (meta tag and HTTP headers) to include **only** the submission endpoint origin.
-5. Do not add a database anon key, JWT secret, or service-role key to `config.js` or `researcher/config.js`.
+5. Do not add a database anon key, publishable key, JWT secret, or service-role key to `config.js` or `researcher/config.js`.
 6. Leave `RESEARCHER_ENDPOINT` empty until a later, separately approved researcher API exists. Do not host that API or `researcher/` on GitHub Pages.
 
 ## What the public activity stores
@@ -99,7 +99,7 @@ Required dashboard practice (to be enforced operationally; not implemented as br
 
 | Control | Expectation |
 | --- | --- |
-| Authentication | Individual researcher accounts; MFA required |
+| Authentication | Individual researcher accounts via Supabase Auth; TOTP MFA required. AIM is not used. |
 | Authorisation | Role-based **authorised researcher** access. Brian may be the only provisioned researcher initially. Do not hard-code his name or email in application code. |
 | Least privilege | Named dashboard users with the minimum project permissions needed to review, export, and delete research rows. No shared login. |
 | Public / anonymous reads | None. Keep `anon` and `authenticated` table privileges revoked. Do not add a public SELECT policy. |
@@ -117,7 +117,7 @@ The public website has no results list and no researcher login.
 
 It must stay **disconnected** (`RESEARCHER_ENDPOINT` empty) until all of the following are true:
 
-- the protected researcher API is implemented (not merely scaffolded) with MFA, role-based authorisation, and server-side session cookies
+- the protected researcher API is enabled with Supabase Auth, TOTP MFA, role-based authorisation, and server-side session cookies
 - institutional approval permits its use
 - the hosting platform can protect the route **before** HTML is served (GitHub Pages cannot)
 

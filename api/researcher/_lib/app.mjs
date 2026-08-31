@@ -1,10 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { authorize, sanitizeAuditDetail } from './authorize.mjs';
 import { loadConfig } from './config.mjs';
+import { ROLES } from './constants.mjs';
 import { resolveResearchStore } from './data.mjs';
 import { buildCsv, mapExportRow } from './csv.mjs';
 import { resolveAuditSink } from './audit.mjs';
 import {
+  AUTH_TX_COOKIE,
   CSRF_COOKIE,
   OIDC_TX_COOKIE,
   SESSION_COOKIE,
@@ -14,7 +16,6 @@ import {
   fail,
   json,
   parseCookies,
-  redirect,
   securityHeaders,
   signSessionId,
   verifySignedSession,
@@ -22,9 +23,16 @@ import {
 import {
   createDatabaseAuthStateStore,
   createMemoryAuthStateStore,
-  createOidcClient,
   createUnavailableAuthStateStore,
-} from './oidc.mjs';
+} from './auth-state.mjs';
+import {
+  createSupabaseAuthClient,
+  decodePendingNonce,
+  decryptSecret,
+  encryptSecret,
+  encodePendingNonce,
+  requiredMfaSatisfied,
+} from './supabase-auth.mjs';
 import { isDbDiagnosticAllowed, logDiagnosticFailure, runDbDiagnostic } from './db-diagnostic.mjs';
 import { resolveQueryAdapter } from './query.mjs';
 import { RATE_CATEGORIES, clientRateKey, resolveRateLimiter } from './rate-limit.mjs';
@@ -66,6 +74,7 @@ function clearSessionCookies(headers) {
   headers['Set-Cookie'] = [
     cookieHeader(SESSION_COOKIE, '', { maxAgeSeconds: 0, httpOnly: true }),
     cookieHeader(CSRF_COOKIE, '', { maxAgeSeconds: 0, httpOnly: false }),
+    cookieHeader(AUTH_TX_COOKIE, '', { maxAgeSeconds: 0, httpOnly: true }),
     cookieHeader(OIDC_TX_COOKIE, '', { maxAgeSeconds: 0, httpOnly: true, sameSite: 'Lax' }),
   ];
 }
@@ -104,12 +113,12 @@ export function createResearcherApp(overrides = {}) {
       : query && config.sessionStore === 'database'
         ? createDatabaseAuthStateStore(query)
         : createUnavailableAuthStateStore());
-  const oidc =
-    overrides.oidc ||
-    (overrides.oidcHarness && isolated
-      ? createOidcClient(config, { harness: overrides.oidcHarness, authStates })
-      : config.authReady && authStates.backend !== 'unavailable'
-        ? createOidcClient(config, { authStates })
+  const auth =
+    overrides.auth ||
+    (overrides.authHarness && isolated
+      ? createSupabaseAuthClient(config, { harness: overrides.authHarness })
+      : !isolated && config.authReady && authStates.backend !== 'unavailable'
+        ? createSupabaseAuthClient(config)
         : null);
   const runtimeStoresReady =
     isolated ||
@@ -121,6 +130,20 @@ export function createResearcherApp(overrides = {}) {
   async function lookupResearcher(subject) {
     if (directory.has(subject)) return directory.get(subject);
     return store.lookupResearcher(subject);
+  }
+
+  async function countActiveResearchers() {
+    if (directory.size > 0) {
+      let n = 0;
+      for (const row of directory.values()) {
+        if (!row?.revokedAt && !row?.disabledAt && ROLES.includes(row.role)) n += 1;
+      }
+      return n;
+    }
+    if (typeof store.countActiveResearchers === 'function') {
+      return store.countActiveResearchers();
+    }
+    return 0;
   }
 
   async function currentIdentity(request) {
@@ -199,32 +222,148 @@ export function createResearcherApp(overrides = {}) {
     return { sessionId, signed, csrf, headers, expiresAt };
   }
 
-  function oidcUsable() {
+  function authUsable() {
     return (
-      Boolean(oidc) &&
+      Boolean(auth) &&
       Boolean(config.sessionSecret) &&
       runtimeStoresReady &&
       (config.authReady || isolated)
     );
   }
 
-  function setOidcTxCookie(headers, transactionId) {
+  function setAuthTxCookie(headers, transactionId) {
     const signed = signSessionId(transactionId, config.sessionSecret);
-    const cookie = cookieHeader(OIDC_TX_COOKIE, signed, {
+    const cookie = cookieHeader(AUTH_TX_COOKIE, signed, {
       maxAgeSeconds: 300,
       httpOnly: true,
-      sameSite: 'Lax',
     });
     headers['Set-Cookie'] = [].concat(headers['Set-Cookie'] || [], cookie);
   }
 
-  function clearOidcTxCookie(headers) {
-    const cookie = cookieHeader(OIDC_TX_COOKIE, '', {
+  function clearAuthTxCookie(headers) {
+    const cookie = cookieHeader(AUTH_TX_COOKIE, '', {
       maxAgeSeconds: 0,
       httpOnly: true,
-      sameSite: 'Lax',
     });
     headers['Set-Cookie'] = [].concat(headers['Set-Cookie'] || [], cookie);
+  }
+
+  async function denyLogin(reason, requestId, request, subject = null, role = null) {
+    await writeAudit(
+      subject ? { authSubject: subject, role } : null,
+      'login_failure',
+      { reason },
+      requestId,
+      request
+    );
+    const code =
+      reason === 'unavailable' || reason === 'idp_not_configured' || reason === 'session_store'
+        ? 'unavailable'
+        : reason === 'disabled' ||
+            reason === 'revoked' ||
+            reason === 'unknown' ||
+            reason === 'directory_invariant' ||
+            reason === 'mfa_required' ||
+            reason === 'role'
+          ? 'forbidden'
+          : reason === 'rate_limited'
+            ? 'rate_limited'
+            : 'unauthorized';
+    return fail(code);
+  }
+
+  async function completeAuthorisedLogin(subject, { previousSessionId, requestId, request }) {
+    const researcher = await lookupResearcher(subject);
+    if (!researcher || !researcher.role) {
+      return { ok: false, response: await denyLogin('unknown', requestId, request, subject) };
+    }
+    if (researcher.revokedAt) {
+      return {
+        ok: false,
+        response: await denyLogin('revoked', requestId, request, subject, researcher.role),
+      };
+    }
+    if (researcher.disabledAt) {
+      return {
+        ok: false,
+        response: await denyLogin('disabled', requestId, request, subject, researcher.role),
+      };
+    }
+    const activeCount = await countActiveResearchers();
+    if (activeCount !== 1) {
+      return {
+        ok: false,
+        response: await denyLogin('directory_invariant', requestId, request, subject, researcher.role),
+      };
+    }
+    if (!authorize({ ...researcher, mfaOk: true, authSubject: subject }, 'summary').ok) {
+      return {
+        ok: false,
+        response: await denyLogin('role', requestId, request, subject, researcher.role),
+      };
+    }
+    let established;
+    try {
+      established = await establishSession(subject, {
+        mfaOk: true,
+        previousSessionId,
+      });
+    } catch {
+      return {
+        ok: false,
+        response: await denyLogin('session_store', requestId, request, subject, researcher.role),
+      };
+    }
+    await writeAudit(
+      { authSubject: subject, role: researcher.role },
+      'login',
+      { outcome: 'ok' },
+      requestId,
+      request
+    );
+    clearAuthTxCookie(established.headers);
+    return {
+      ok: true,
+      response: json(
+        200,
+        {
+          authenticated: true,
+          mfaRequired: false,
+          role: researcher.role,
+          expiresAt: established.expiresAt,
+          csrfToken: established.csrf,
+        },
+        established.headers
+      ),
+    };
+  }
+
+  async function startMfaTicket({ subject, accessToken, factorId, enrollmentRequired, qr }) {
+    const state = randomBytes(24).toString('hex');
+    const transactionId = randomBytes(24).toString('hex');
+    await authStates.put({
+      state,
+      nonce: encodePendingNonce(subject, factorId),
+      codeVerifier: encryptSecret(accessToken, config.sessionSecret),
+      transactionId,
+      expiresAt: new Date(Date.now() + (auth.ticketTtlMs || 300000)).toISOString(),
+    });
+    const res = json(200, {
+      authenticated: false,
+      mfaRequired: true,
+      enrollmentRequired: Boolean(enrollmentRequired),
+      ticket: state,
+      qr: qr || undefined,
+    });
+    setAuthTxCookie(res.headers, transactionId);
+    return res;
+  }
+
+  async function readPendingTicket(request, ticket) {
+    const cookies = parseCookies(request.headers?.cookie || request.headers?.Cookie);
+    const transactionId = verifySignedSession(cookies[AUTH_TX_COOKIE], config.sessionSecret);
+    if (!transactionId || !/^[a-f0-9]{16,128}$/i.test(String(ticket || ''))) return null;
+    return { ticket: String(ticket), transactionId };
   }
 
   async function handle(request) {
@@ -263,87 +402,106 @@ export function createResearcherApp(overrides = {}) {
       return respond(fail('unavailable'));
     }
 
-    if (path === '/v1/session/start' && method === 'GET') {
+    if (path === '/v1/session/login' && method === 'POST') {
       if (!(await limiter.allow(RATE_CATEGORIES.login, ipKey))) return respond(fail('rate_limited'));
-      if (!oidcUsable()) {
+      if (!authUsable()) {
         await writeAudit(null, 'login_failure', { reason: 'idp_not_configured' }, requestId);
         return respond(fail('unavailable'));
       }
+      const body = readBody(request);
+      if (body === Symbol.for('invalid_json')) return respond(fail('invalid_request'));
+      const email = String(body?.email || '').trim();
+      const password = String(body?.password || '');
+      if (!email || !password || email.length > 320 || password.length > 256) {
+        return respond(await denyLogin('unauthorized', requestId, request));
+      }
+      let granted;
       try {
-        const started = await oidc.authorizationRedirect();
-        const res = redirect(started.location || started);
-        if (started.transactionId) setOidcTxCookie(res.headers, started.transactionId);
-        return respond(res);
+        granted = await auth.passwordGrant(email, password);
       } catch {
-        await writeAudit(null, 'login_failure', { reason: 'idp_unavailable' }, requestId, request);
-        return respond(fail('unavailable'));
+        return respond(await denyLogin('unavailable', requestId, request));
+      }
+      if (!granted?.ok) {
+        return respond(await denyLogin(granted?.error || 'unauthorized', requestId, request));
+      }
+      if (requiredMfaSatisfied(granted.claims)) {
+        const previous = await currentIdentity(request);
+        const finished = await completeAuthorisedLogin(granted.claims.sub, {
+          previousSessionId: previous?.sessionId,
+          requestId,
+          request,
+        });
+        return respond(finished.response);
+      }
+      try {
+        const listed = await auth.listVerifiedTotpFactors(granted.accessToken);
+        if (!listed.ok) {
+          return respond(await denyLogin(listed.error || 'unavailable', requestId, request));
+        }
+        if (listed.factors.length) {
+          return respond(
+            await startMfaTicket({
+              subject: granted.claims.sub,
+              accessToken: granted.accessToken,
+              factorId: listed.factors[0].id,
+              enrollmentRequired: false,
+            })
+          );
+        }
+        const enrolled = await auth.enrollTotp(granted.accessToken);
+        if (!enrolled.ok) {
+          return respond(await denyLogin(enrolled.error || 'unavailable', requestId, request));
+        }
+        return respond(
+          await startMfaTicket({
+            subject: granted.claims.sub,
+            accessToken: granted.accessToken,
+            factorId: enrolled.factorId,
+            enrollmentRequired: true,
+            qr: enrolled.qr,
+          })
+        );
+      } catch {
+        return respond(await denyLogin('unavailable', requestId, request));
       }
     }
 
-    if (path === '/v1/session/callback' && method === 'GET') {
+    if (path === '/v1/session/mfa' && method === 'POST') {
       if (!(await limiter.allow(RATE_CATEGORIES.login, ipKey))) return respond(fail('rate_limited'));
-      if (!oidcUsable()) return respond(fail('unavailable'));
-      const query = queryOf(request);
-      const cookies = parseCookies(request.headers?.cookie || request.headers?.Cookie);
-      const transactionId = verifySignedSession(cookies[OIDC_TX_COOKIE], config.sessionSecret);
+      if (!authUsable()) return respond(fail('unavailable'));
+      const body = readBody(request);
+      if (body === Symbol.for('invalid_json')) return respond(fail('invalid_request'));
+      const pendingIds = await readPendingTicket(request, body?.ticket);
+      if (!pendingIds) {
+        return respond(await denyLogin('tampered', requestId, request));
+      }
+      const pending = await authStates.peek(pendingIds.ticket);
+      if (!pending || pending.transactionId !== pendingIds.transactionId) {
+        return respond(await denyLogin('tampered', requestId, request));
+      }
+      const accessToken = decryptSecret(pending.codeVerifier, config.sessionSecret);
+      const { subject, factorId } = decodePendingNonce(pending.nonce);
+      if (!accessToken || !subject || !factorId) {
+        return respond(await denyLogin('tampered', requestId, request));
+      }
+      let verified;
+      try {
+        verified = await auth.verifyTotp(accessToken, factorId, body?.code);
+      } catch {
+        return respond(await denyLogin('unavailable', requestId, request));
+      }
+      if (!verified?.ok || !requiredMfaSatisfied(verified.claims) || verified.claims.sub !== subject) {
+        return respond(await denyLogin(verified?.error || 'unauthorized', requestId, request));
+      }
+      const consumed = await authStates.consume(pendingIds.ticket, pendingIds.transactionId);
+      if (!consumed) return respond(await denyLogin('tampered', requestId, request));
       const previous = await currentIdentity(request);
-      let completed;
-      try {
-        completed = await oidc.completeCallback(query, { transactionId });
-      } catch {
-        await writeAudit(null, 'login_failure', { reason: 'idp_unavailable' }, requestId, request);
-        const failed = redirect(config.archivePath);
-        clearOidcTxCookie(failed.headers);
-        return respond(failed);
-      }
-      if (!completed.ok) {
-        await writeAudit(null, 'login_failure', { reason: completed.error }, requestId, request);
-        const failed = redirect(config.archivePath);
-        clearOidcTxCookie(failed.headers);
-        return respond(failed);
-      }
-      const researcher = await lookupResearcher(completed.subject);
-      if (!researcher || researcher.revokedAt || researcher.disabledAt || !researcher.role) {
-        await writeAudit(
-          { authSubject: completed.subject, role: researcher?.role || null },
-          'login_failure',
-          { reason: researcher?.disabledAt ? 'disabled' : researcher?.revokedAt ? 'revoked' : 'unknown' },
-          requestId
-        );
-        const denied = redirect(config.archivePath);
-        clearOidcTxCookie(denied.headers);
-        return respond(denied);
-      }
-      if (!authorize({ ...researcher, mfaOk: completed.mfaOk, authSubject: completed.subject }, 'summary').ok) {
-        await writeAudit(
-          { authSubject: completed.subject, role: researcher.role },
-          'login_failure',
-          { reason: 'role' },
-          requestId
-        );
-        const denied = redirect(config.archivePath);
-        clearOidcTxCookie(denied.headers);
-        return respond(denied);
-      }
-      let established;
-      try {
-        established = await establishSession(completed.subject, {
-          mfaOk: true,
-          previousSessionId: previous?.sessionId,
-        });
-      } catch {
-        await writeAudit(null, 'login_failure', { reason: 'session_store' }, requestId);
-        return respond(fail('unavailable'));
-      }
-      await writeAudit(
-        { authSubject: completed.subject, role: researcher.role },
-        'login',
-        { outcome: 'ok' },
+      const finished = await completeAuthorisedLogin(verified.claims.sub, {
+        previousSessionId: previous?.sessionId,
         requestId,
-        request
-      );
-      clearOidcTxCookie(established.headers);
-      return respond(redirect(config.archivePath, established.headers));
+        request,
+      });
+      return respond(finished.response);
     }
 
     if (path === '/v1/session' && method === 'GET') {
@@ -491,7 +649,7 @@ export function createResearcherApp(overrides = {}) {
     records,
     auditLog,
     store,
-    oidc,
+    auth,
     signInForTests: async (subject, { role = 'authorised_researcher', minutes, disabledAt = null, revokedAt = null } = {}) => {
       if (!isolated) {
         throw Object.assign(new Error('unavailable'), { code: 'unavailable' });

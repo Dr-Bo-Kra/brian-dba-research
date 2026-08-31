@@ -8,8 +8,17 @@ import { loadConfig } from '../api/researcher/_lib/config.mjs';
 import { publicConfigSnapshot } from '../api/researcher/_lib/config.mjs';
 import { createDatabaseResearchStore, createFixtureResearchStore } from '../api/researcher/_lib/data.mjs';
 import { SQL, assertBoundQuery } from '../api/researcher/_lib/db.mjs';
-import { OIDC_TX_COOKIE, SESSION_COOKIE, verifySignedSession } from '../api/researcher/_lib/http.mjs';
-import { createMemoryAuthStateStore, createOidcTestHarness, requiredMfaSatisfied, verifyIdToken } from '../api/researcher/_lib/oidc.mjs';
+import { AUTH_TX_COOKIE, SESSION_COOKIE, verifySignedSession } from '../api/researcher/_lib/http.mjs';
+import { createMemoryAuthStateStore } from '../api/researcher/_lib/auth-state.mjs';
+import {
+  createClaimsVerifier,
+  createSupabaseAuthClient,
+  requiredMfaSatisfied,
+  supabaseIssuer,
+  supabaseJwksUrl,
+  verifyAccessToken,
+} from '../api/researcher/_lib/supabase-auth.mjs';
+import { createSupabaseAuthTestHarness } from './helpers/supabase-auth-harness.mjs';
 import { createPostgresQueryAdapter, wrapQuery } from '../api/researcher/_lib/query.mjs';
 import { clientRateKey } from '../api/researcher/_lib/rate-limit.mjs';
 
@@ -25,14 +34,10 @@ function readyConfig(extra = {}) {
     deletionsEnabled: false,
     databaseUrl: 'postgresql://researcher-api:unused@127.0.0.1/unused',
     sessionSecret: 'test-session-secret-32-bytes-min',
-    oidcIssuer: 'https://idp.test',
-    oidcClientId: 'researcher-client',
-    oidcClientSecret: 'researcher-secret',
-    oidcRedirectUri: 'https://research.test/api/researcher/v1/session/callback',
-    oidcAudience: 'researcher-client',
-    oidcRequiredAcr: 'phr',
-    oidcRequiredAmr: 'otp',
-    oidcReady: true,
+    supabaseUrl: 'https://test-project.supabase.co',
+    supabasePublishableKey: 'sb_publishable_test_not_a_jwt',
+    supabaseJwtAudience: 'authenticated',
+    supabaseAuthReady: true,
     mfaAssuranceReady: true,
     authReady: true,
     dataReady: true,
@@ -74,11 +79,11 @@ function sampleRecord(ref = 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
 }
 
 function testApp(extra = {}) {
-  const { records = [sampleRecord()], config, oidcHarness, ...rest } = extra;
+  const { records = [sampleRecord()], config, authHarness, ...rest } = extra;
   return createResearcherApp({
     allowMemoryStores: true,
     records,
-    oidcHarness,
+    authHarness: authHarness || createSupabaseAuthTestHarness(),
     config: readyConfig(config),
     ...rest,
   });
@@ -102,38 +107,50 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-async function oidcLogin(app, { sub = 'subject-1', role = 'authorised_researcher', acr = 'phr', amr = ['pwd', 'otp'], priorCookie } = {}) {
-  app.directory.set(sub, { role, mfaRequired: true, revokedAt: null, disabledAt: null });
-  const start = await app.handle({
-    method: 'GET',
-    url: '/v1/session/start',
+async function researcherLogin(
+  app,
+  {
+    email = 'researcher@example.test',
+    password = 'correct-horse-battery',
+    sub = 'subject-1',
+    role = 'authorised_researcher',
+    totpCode = '123456',
+    enrolled = true,
+    aal = 'aal1',
+    priorCookie,
+    spoofBody = {},
+    directory = true,
+  } = {}
+) {
+  app.auth.harness.addUser({ email, password, sub, aal, totpCode, enrolled });
+  if (directory) {
+    app.directory.set(sub, { role, mfaRequired: true, revokedAt: null, disabledAt: null });
+  }
+  const login = await app.handle({
+    method: 'POST',
+    url: '/v1/session/login',
     headers: priorCookie ? { cookie: priorCookie } : {},
+    body: { email, password, ...spoofBody },
     ip: '10.0.0.8',
   });
-  assert.equal(start.status, 302);
-  const location = new URL(start.headers.Location);
-  const state = location.searchParams.get('state');
-  const callbackUrl = await app.oidc.issueTestCallback(state, { sub, acr, amr });
-  assert.ok(callbackUrl);
-  const tx = cookiePair(cookieFrom(start.headers['Set-Cookie'], OIDC_TX_COOKIE));
-  const callback = await app.handle({
-    method: 'GET',
-    url: callbackUrl,
+  const loginBody = JSON.parse(login.body || '{}');
+  if (!loginBody.mfaRequired) return { login, mfa: null, loginBody };
+  const tx = cookiePair(cookieFrom(login.headers['Set-Cookie'], AUTH_TX_COOKIE));
+  const mfa = await app.handle({
+    method: 'POST',
+    url: '/v1/session/mfa',
     headers: { cookie: [priorCookie, tx].filter(Boolean).join('; ') },
+    body: { ticket: loginBody.ticket, code: totpCode, ...spoofBody },
     ip: '10.0.0.8',
   });
-  return { start, callback, state, tx };
+  return { login, mfa, tx, ticket: loginBody.ticket, loginBody, mfaBody: JSON.parse(mfa.body || '{}') };
 }
 
-test('production stays fail-closed without durable OIDC, MFA, session, and rate-limit backends', async () => {
+test('production stays fail-closed without durable Supabase Auth, MFA, session, and rate-limit backends', async () => {
   const config = loadConfig({
     RESEARCHER_API_ENABLED: 'true',
     DATABASE_URL: 'postgresql://researcher-api:unused@127.0.0.1/unused',
     SESSION_SECRET: 'test-session-secret-32-bytes-min',
-    OIDC_ISSUER: 'https://idp.example',
-    OIDC_CLIENT_ID: 'id',
-    OIDC_CLIENT_SECRET: 'secret',
-    OIDC_REDIRECT_URI: 'https://app.example/callback',
     SESSION_STORE: 'memory',
     RATE_LIMIT_STORE: 'memory',
   });
@@ -148,8 +165,14 @@ test('production stays fail-closed without durable OIDC, MFA, session, and rate-
   const data = await production.handle({ method: 'GET', url: '/v1/responses', headers: {}, ip: '1' });
   assert.equal(data.status, 503);
   assert.doesNotMatch(data.body, /resp_/);
-  const start = await production.handle({ method: 'GET', url: '/v1/session/start', headers: {}, ip: '1' });
-  assert.equal(start.status, 503);
+  const login = await production.handle({
+    method: 'POST',
+    url: '/v1/session/login',
+    headers: {},
+    body: { email: 'researcher@example.test', password: 'correct-horse-battery' },
+    ip: '1',
+  });
+  assert.equal(login.status, 503);
 });
 
 test('missing, expired, revoked, disabled, unknown, and wrong-role sessions receive no data', async () => {
@@ -205,7 +228,7 @@ test('missing, expired, revoked, disabled, unknown, and wrong-role sessions rece
   assert.equal(app.auditLog.some((row) => row.action === 'authz_failure'), true);
 });
 
-test('browser-provided role and identity headers are ignored', async () => {
+test('browser-provided role, subject, email, and MFA state are ignored', async () => {
   const app = testApp();
   const spoofed = await app.handle({
     method: 'GET',
@@ -228,77 +251,80 @@ test('browser-provided role and identity headers are ignored', async () => {
     ip: '3',
   });
   assert.equal(JSON.parse(stillResearcher.body).role, 'authorised_researcher');
+
+  const { login, mfa } = await researcherLogin(app, {
+    sub: 'subject-1',
+    spoofBody: {
+      sub: 'forged-subject',
+      role: 'researcher_admin',
+      aal: 'aal2',
+      mfaOk: true,
+      access_token: 'forged',
+    },
+  });
+  assert.equal(login.status, 200);
+  assert.equal(JSON.parse(login.body).mfaRequired, true);
+  assert.equal(cookieFrom(login.headers['Set-Cookie'], SESSION_COOKIE), '');
+  assert.equal(mfa.status, 200);
+  assert.equal(JSON.parse(mfa.body).role, 'authorised_researcher');
 });
 
-test('OIDC rejects malformed, tampered, implicit-flow, and missing-MFA callbacks', async () => {
-  const harness = createOidcTestHarness();
-  const app = testApp({ oidcHarness: harness });
+test('password-only sessions cannot access data until TOTP MFA completes', async () => {
+  const app = testApp();
+  app.auth.harness.addUser({
+    email: 'researcher@example.test',
+    password: 'correct-horse-battery',
+    sub: 'subject-1',
+    aal: 'aal1',
+    totpCode: '123456',
+    enrolled: true,
+  });
   app.directory.set('subject-1', {
     role: 'authorised_researcher',
     mfaRequired: true,
     revokedAt: null,
     disabledAt: null,
   });
-
-  const malformed = await app.handle({
-    method: 'GET',
-    url: '/v1/session/callback?state=bad&code=short',
+  const login = await app.handle({
+    method: 'POST',
+    url: '/v1/session/login',
     headers: {},
+    body: { email: 'researcher@example.test', password: 'correct-horse-battery', aal: 'aal2' },
     ip: '4',
   });
-  assert.equal(malformed.status, 302);
-  assert.equal(malformed.headers.Location, '/researcher/');
-  assert.equal(cookieFrom(malformed.headers['Set-Cookie'], SESSION_COOKIE), '');
-
-  const implicit = await app.handle({
+  const body = JSON.parse(login.body);
+  assert.equal(login.status, 200);
+  assert.equal(body.authenticated, false);
+  assert.equal(body.mfaRequired, true);
+  assert.equal(cookieFrom(login.headers['Set-Cookie'], SESSION_COOKIE), '');
+  const tx = cookiePair(cookieFrom(login.headers['Set-Cookie'], AUTH_TX_COOKIE));
+  const withTicket = await app.handle({
     method: 'GET',
-    url: '/v1/session/callback?code=aaaaaaaaaa&state=bbbbbbbbbb&id_token=aaaa.bbbb.cccc',
-    headers: {},
-    ip: '4',
-  });
-  assert.equal(implicit.status, 302);
-  assert.equal(cookieFrom(implicit.headers['Set-Cookie'], SESSION_COOKIE), '');
-
-  const start = await app.handle({ method: 'GET', url: '/v1/session/start', headers: {}, ip: '4' });
-  const state = new URL(start.headers.Location).searchParams.get('state');
-  const tx = cookiePair(cookieFrom(start.headers['Set-Cookie'], OIDC_TX_COOKIE));
-  assert.match(cookieFrom(start.headers['Set-Cookie'], OIDC_TX_COOKIE), /SameSite=Lax/);
-  const tampered = await app.handle({
-    method: 'GET',
-    url: `/v1/session/callback?code=aaaaaaaaaa&state=${state}tamper`,
+    url: '/v1/responses',
     headers: { cookie: tx },
     ip: '4',
   });
-  assert.equal(tampered.status, 302);
-  assert.equal(cookieFrom(tampered.headers['Set-Cookie'], SESSION_COOKIE), '');
+  assert.equal(withTicket.status, 401);
+  assert.doesNotMatch(withTicket.body, /resp_/);
 
-  const noMfaUrl = await app.oidc.issueTestCallback(state, {
-    sub: 'subject-1',
-    acr: 'pwd',
-    amr: ['pwd'],
-  });
-  const noMfa = await app.handle({
-    method: 'GET',
-    url: noMfaUrl,
+  const wrong = await app.handle({
+    method: 'POST',
+    url: '/v1/session/mfa',
     headers: { cookie: tx },
+    body: { ticket: body.ticket, code: '000000', aal: 'aal2', sub: 'subject-1' },
     ip: '4',
   });
-  assert.equal(noMfa.status, 302);
-  assert.equal(cookieFrom(noMfa.headers['Set-Cookie'], SESSION_COOKIE), '');
-  assert.equal(
-    app.auditLog.some((row) => row.action === 'login_failure' && !JSON.stringify(row).includes('alert(1)')),
-    true
-  );
+  assert.equal(cookieFrom(wrong.headers['Set-Cookie'], SESSION_COOKIE), '');
+  assert.ok([401, 403].includes(wrong.status));
 });
 
-test('successful OIDC login rotates the session and then serves allowlisted data only', async () => {
-  const harness = createOidcTestHarness();
-  const app = testApp({ oidcHarness: harness });
-  const prior = await app.signInForTests('subject-old');
-  const { callback } = await oidcLogin(app, { sub: 'subject-1', priorCookie: prior.cookie });
-  assert.equal(callback.status, 302);
-  assert.equal(callback.headers.Location, '/researcher/');
-  const cookieHeader = cookieFrom(callback.headers['Set-Cookie']);
+test('successful Supabase Auth + MFA login rotates the session and then serves allowlisted data only', async () => {
+  const app = testApp();
+  const prior = await app.signInForTests('subject-1');
+  const { mfa } = await researcherLogin(app, { sub: 'subject-1', priorCookie: prior.cookie });
+  assert.equal(mfa.status, 200);
+  assert.equal(JSON.parse(mfa.body).authenticated, true);
+  const cookieHeader = cookieFrom(mfa.headers['Set-Cookie']);
   assert.match(cookieHeader, new RegExp(SESSION_COOKIE));
   assert.match(cookieHeader, /HttpOnly/i);
   assert.match(cookieHeader, /Secure/);
@@ -321,42 +347,64 @@ test('successful OIDC login rotates the session and then serves allowlisted data
   assert.equal(app.auditLog.some((row) => row.action === 'login'), true);
 });
 
-test('unknown, disabled, and revoked researchers cannot complete OIDC into a data session', async () => {
-  const harness = createOidcTestHarness();
-  const app = testApp({ oidcHarness: harness });
-  const unknownStart = await app.handle({
-    method: 'GET',
-    url: '/v1/session/start',
-    headers: {},
-    ip: '6',
+test('unknown, disabled, revoked, and extra active researchers cannot complete login', async () => {
+  const app = testApp();
+  const unknown = await researcherLogin(app, {
+    sub: 'nobody',
+    email: 'nobody@example.test',
+    directory: false,
   });
-  const unknownState = new URL(unknownStart.headers.Location).searchParams.get('state');
-  const unknownUrl = await app.oidc.issueTestCallback(unknownState, { sub: 'nobody' });
-  const unknownTx = cookiePair(cookieFrom(unknownStart.headers['Set-Cookie'], OIDC_TX_COOKIE));
-  const unknown = await app.handle({
-    method: 'GET',
-    url: unknownUrl,
-    headers: { cookie: unknownTx },
-    ip: '6',
-  });
-  assert.equal(cookieFrom(unknown.headers['Set-Cookie'], SESSION_COOKIE), '');
+  assert.equal(cookieFrom(unknown.mfa.headers['Set-Cookie'], SESSION_COOKIE), '');
+  assert.ok([401, 403].includes(unknown.mfa.status));
 
+  app.directory.clear();
   app.directory.set('disabled-user', {
     role: 'authorised_researcher',
     mfaRequired: true,
     revokedAt: null,
     disabledAt: new Date().toISOString(),
   });
-  const start = await app.handle({ method: 'GET', url: '/v1/session/start', headers: {}, ip: '6' });
-  const state = new URL(start.headers.Location).searchParams.get('state');
-  const url = await app.oidc.issueTestCallback(state, { sub: 'disabled-user' });
-  const disabled = await app.handle({
-    method: 'GET',
-    url,
-    headers: { cookie: cookiePair(cookieFrom(start.headers['Set-Cookie'], OIDC_TX_COOKIE)) },
-    ip: '6',
+  const disabled = await researcherLogin(app, {
+    sub: 'disabled-user',
+    email: 'disabled@example.test',
+    directory: false,
   });
-  assert.equal(cookieFrom(disabled.headers['Set-Cookie'], SESSION_COOKIE), '');
+  assert.equal(cookieFrom(disabled.mfa.headers['Set-Cookie'], SESSION_COOKIE), '');
+
+  app.directory.clear();
+  app.directory.set('revoked-user', {
+    role: 'authorised_researcher',
+    mfaRequired: true,
+    revokedAt: new Date().toISOString(),
+    disabledAt: null,
+  });
+  const revoked = await researcherLogin(app, {
+    sub: 'revoked-user',
+    email: 'revoked@example.test',
+    directory: false,
+  });
+  assert.equal(cookieFrom(revoked.mfa.headers['Set-Cookie'], SESSION_COOKIE), '');
+
+  app.directory.clear();
+  app.directory.set('subject-1', {
+    role: 'authorised_researcher',
+    mfaRequired: true,
+    revokedAt: null,
+    disabledAt: null,
+  });
+  app.directory.set('subject-2', {
+    role: 'researcher_admin',
+    mfaRequired: true,
+    revokedAt: null,
+    disabledAt: null,
+  });
+  const multi = await researcherLogin(app, {
+    sub: 'subject-1',
+    email: 'multi@example.test',
+    directory: false,
+  });
+  assert.equal(cookieFrom(multi.mfa.headers['Set-Cookie'], SESSION_COOKIE), '');
+  assert.equal(multi.mfa.status, 403);
 });
 
 test('query safety rejects unknown filters, sort, oversized pages, and dump attempts', async () => {
@@ -442,64 +490,173 @@ test('logout and disabled-researcher revocation invalidate further reads', async
   assert.equal(app.auditLog.some((row) => row.action === 'logout'), true);
 });
 
-test('ID tokens reject bad issuer, audience, signature, expiry, and nonce', async () => {
-  const harness = createOidcTestHarness();
-  const good = harness.issueIdToken({ sub: 'subject-1', nonce: 'abc', acr: 'phr', amr: ['otp'] });
-  const ok = await verifyIdToken(good, {
-    issuer: harness.issuer,
+function claimsOpts(harness, extra = {}) {
+  return {
+    issuer: supabaseIssuer(harness.url),
     audience: harness.audience,
-    nonce: 'abc',
-    getKey: (kid) => harness.getKey(kid),
-  });
-  assert.equal(ok.ok, true);
+    jwtSecret: harness.hs256Secret,
+    getClaims: createClaimsVerifier(
+      {
+        supabaseUrl: harness.url,
+        supabasePublishableKey: harness.publishableKey,
+      },
+      { harness, jwks: extra.jwks === undefined ? harness.jwks : extra.jwks, fetchImpl: extra.fetchImpl }
+    ),
+  };
+}
 
-  const badIss = await verifyIdToken(good, {
-    issuer: 'https://evil.test',
-    audience: harness.audience,
-    nonce: 'abc',
-    getKey: (kid) => harness.getKey(kid),
-  });
-  assert.equal(badIss.ok, false);
-
-  const badAud = await verifyIdToken(good, {
-    issuer: harness.issuer,
-    audience: 'other-client',
-    nonce: 'abc',
-    getKey: (kid) => harness.getKey(kid),
-  });
-  assert.equal(badAud.ok, false);
-
-  const badNonce = await verifyIdToken(good, {
-    issuer: harness.issuer,
-    audience: harness.audience,
-    nonce: 'nope',
-    getKey: (kid) => harness.getKey(kid),
-  });
-  assert.equal(badNonce.ok, false);
-
-  const expired = harness.issueIdToken({
+test('official getClaims path rejects bad signature, wrong project, expired, aal1, missing TOTP, and elevated roles', async () => {
+  const harness = createSupabaseAuthTestHarness();
+  const opts = claimsOpts(harness);
+  const client = createSupabaseAuthClient(
+    {
+      supabaseUrl: harness.url,
+      supabasePublishableKey: harness.publishableKey,
+      supabaseJwtAudience: 'authenticated',
+    },
+    { harness }
+  );
+  const good = await harness.issueAccessToken({
     sub: 'subject-1',
-    nonce: 'abc',
+    aal: 'aal2',
+    email: 'researcher@example.test',
+  });
+  assert.equal((await client.verifyAccessToken(good)).ok, true);
+  assert.equal((await verifyAccessToken(good, opts)).ok, true);
+
+  assert.equal((await verifyAccessToken(`${good.slice(0, -2)}aa`, opts)).ok, false);
+
+  const expired = await harness.issueAccessToken({
+    sub: 'subject-1',
+    aal: 'aal2',
+    email: 'researcher@example.test',
     exp: Math.floor(Date.now() / 1000) - 30,
   });
-  const expiredRes = await verifyIdToken(expired, {
-    issuer: harness.issuer,
-    audience: harness.audience,
-    nonce: 'abc',
-    getKey: (kid) => harness.getKey(kid),
-  });
-  assert.equal(expiredRes.ok, false);
+  assert.equal((await client.verifyAccessToken(expired)).ok, false);
 
-  const tampered = `${good.slice(0, -2)}aa`;
-  const tamperedRes = await verifyIdToken(tampered, {
-    issuer: harness.issuer,
-    audience: harness.audience,
-    nonce: 'abc',
-    getKey: (kid) => harness.getKey(kid),
+  const passwordOnly = await harness.issueAccessToken({
+    sub: 'subject-1',
+    aal: 'aal1',
+    email: 'researcher@example.test',
   });
-  assert.equal(tamperedRes.ok, false);
-  assert.equal(requiredMfaSatisfied({ acr: 'pwd', amr: ['pwd'] }, { oidcRequiredAcr: 'phr' }), false);
-  assert.equal(requiredMfaSatisfied({ acr: 'phr' }, { oidcRequiredAcr: 'phr' }), true);
+  const passwordClaims = await client.verifyAccessToken(passwordOnly);
+  assert.equal(passwordClaims.ok, true);
+  assert.equal(requiredMfaSatisfied(passwordClaims.claims), false);
+  assert.equal(requiredMfaSatisfied((await client.verifyAccessToken(good)).claims), true);
+
+  const missingTotp = await harness.issueAccessToken({
+    sub: 'subject-1',
+    aal: 'aal2',
+    email: 'researcher@example.test',
+    amr: [{ method: 'password', timestamp: Math.floor(Date.now() / 1000) }],
+  });
+  const missingTotpClaims = await client.verifyAccessToken(missingTotp);
+  assert.equal(missingTotpClaims.ok, true);
+  assert.equal(requiredMfaSatisfied(missingTotpClaims.claims), false);
+  assert.equal(requiredMfaSatisfied({ aal: 'aal2', amr: [{ method: 'password' }] }), false);
+
+  assert.equal((await verifyAccessToken(good, { ...opts, issuer: 'https://evil.supabase.co/auth/v1' })).ok, false);
+  assert.equal((await verifyAccessToken(good, { ...opts, audience: 'other' })).ok, false);
+
+  const elevated = await harness.issueAccessToken({
+    sub: 'subject-1',
+    aal: 'aal2',
+    email: 'researcher@example.test',
+    role: 'service_role',
+  });
+  assert.equal((await client.verifyAccessToken(elevated)).ok, false);
+
+  const admin = await harness.issueAccessToken({
+    sub: 'subject-1',
+    aal: 'aal2',
+    email: 'researcher@example.test',
+    role: 'supabase_admin',
+  });
+  assert.equal((await client.verifyAccessToken(admin)).ok, false);
+
+  const otherProject = createSupabaseAuthTestHarness({ url: 'https://other-project.supabase.co' });
+  const foreign = await otherProject.issueAccessToken({
+    sub: 'subject-1',
+    aal: 'aal2',
+    email: 'researcher@example.test',
+  });
+  assert.equal((await client.verifyAccessToken(foreign)).ok, false);
+  assert.equal((await verifyAccessToken(foreign, opts)).ok, false);
+
+  const noneAlg = `${Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')}.${Buffer.from(
+    JSON.stringify({
+      iss: supabaseIssuer(harness.url),
+      aud: harness.audience,
+      sub: 'subject-1',
+      role: 'authenticated',
+      aal: 'aal2',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    })
+  ).toString('base64url')}.`;
+  assert.equal((await client.verifyAccessToken(noneAlg)).ok, false);
+
+  const jwksDown = await verifyAccessToken(good, {
+    issuer: supabaseIssuer(harness.url),
+    audience: harness.audience,
+    getClaims: createClaimsVerifier(
+      { supabaseUrl: harness.url, supabasePublishableKey: harness.publishableKey },
+      {
+        fetchImpl: async () => {
+          throw new Error('jwks down');
+        },
+      }
+    ),
+  });
+  assert.equal(jwksDown.ok, false);
+  assert.equal(supabaseJwksUrl(harness.url), `${supabaseIssuer(harness.url)}/.well-known/jwks.json`);
+});
+
+test('legacy HS256 tokens fail closed unless Auth getUser via getClaims accepts them', async () => {
+  const harness = createSupabaseAuthTestHarness();
+  const hs = await harness.issueAccessToken(
+    { sub: 'subject-1', aal: 'aal2', email: 'researcher@example.test' },
+    { alg: 'HS256' }
+  );
+  const base = {
+    issuer: supabaseIssuer(harness.url),
+    audience: harness.audience,
+    jwtSecret: harness.hs256Secret,
+  };
+  assert.equal((await verifyAccessToken(hs, base)).ok, false);
+
+  const rejected = await verifyAccessToken(hs, {
+    ...base,
+    getClaims: createClaimsVerifier(
+      { supabaseUrl: harness.url, supabasePublishableKey: harness.publishableKey },
+      { fetchImpl: async () => new Response('{}', { status: 401 }) }
+    ),
+  });
+  assert.equal(rejected.ok, false);
+
+  const accepted = await verifyAccessToken(hs, claimsOpts(harness));
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.claims.sub, 'subject-1');
+});
+
+test('login flow never requires a JWT secret or secret/service_role keys', () => {
+  const authSource = readFileSync(join(root, 'api/researcher/_lib/supabase-auth.mjs'), 'utf8');
+  const configSource = readFileSync(join(root, 'api/researcher/_lib/config.mjs'), 'utf8');
+  const appSource = readFileSync(join(root, 'api/researcher/_lib/app.mjs'), 'utf8');
+  assert.match(authSource, /getClaims/);
+  assert.match(authSource, /createClient/);
+  assert.doesNotMatch(authSource, /cryptoVerify|verifyAsymmetricSignature|EdDSA|createHmac/);
+  assert.doesNotMatch(authSource, /supabase\.from\(|\.from\(['"]assessment_responses/);
+  assert.doesNotMatch(authSource, /options\.jwtSecret/);
+  assert.doesNotMatch(authSource, /supabaseJwtSecret/);
+  assert.doesNotMatch(configSource, /SUPABASE_JWT_SECRET/);
+  assert.doesNotMatch(configSource, /SUPABASE_SECRET_KEY/);
+  assert.match(configSource, /SUPABASE_PUBLISHABLE_KEY \|\| env\.SUPABASE_ANON_KEY/);
+  assert.doesNotMatch(appSource, /SUPABASE_SECRET_KEY/);
+  assert.doesNotMatch(appSource, /service_role/);
+  assert.doesNotMatch(dashboardJs, /SUPABASE_PUBLISHABLE_KEY/);
+  assert.doesNotMatch(dashboardJs, /SUPABASE_SECRET_KEY/);
+  assert.doesNotMatch(dashboardJs, /SUPABASE_JWT_SECRET/);
+  assert.doesNotMatch(dashboardJs, /access_token/);
 });
 
 test('dashboard treats qualitative XSS payloads as text and never persists records', () => {
@@ -525,41 +682,86 @@ test('public collection remains disabled and is not coupled to researcher auth',
   assert.doesNotMatch(publicScript, /authorised_researchers/);
 });
 
-test('OIDC transaction cookie is required, one-time, and not a session', async () => {
-  const harness = createOidcTestHarness();
+test('MFA ticket cookie is required, one-time after success, and not a session', async () => {
   const authStates = createMemoryAuthStateStore();
-  const app = testApp({ oidcHarness: harness, authStates });
+  const app = testApp({ authStates });
+  app.auth.harness.addUser({
+    email: 'researcher@example.test',
+    password: 'correct-horse-battery',
+    sub: 'subject-1',
+    totpCode: '123456',
+    enrolled: true,
+  });
+  app.auth.harness.addUser({
+    email: 'pending@example.test',
+    password: 'correct-horse-battery',
+    sub: 'subject-1',
+    totpCode: '123456',
+    enrolled: true,
+  });
   app.directory.set('subject-1', {
     role: 'authorised_researcher',
     mfaRequired: true,
     revokedAt: null,
     disabledAt: null,
   });
-  const start = await app.handle({ method: 'GET', url: '/v1/session/start', headers: {}, ip: '20' });
-  const state = new URL(start.headers.Location).searchParams.get('state');
-  const tx = cookiePair(cookieFrom(start.headers['Set-Cookie'], OIDC_TX_COOKIE));
-  const url = await app.oidc.issueTestCallback(state, { sub: 'subject-1' });
+  const login = await app.handle({
+    method: 'POST',
+    url: '/v1/session/login',
+    headers: {},
+    body: { email: 'researcher@example.test', password: 'correct-horse-battery' },
+    ip: '20',
+  });
+  const body = JSON.parse(login.body);
+  const tx = cookiePair(cookieFrom(login.headers['Set-Cookie'], AUTH_TX_COOKIE));
+  assert.match(cookieFrom(login.headers['Set-Cookie'], AUTH_TX_COOKIE), /SameSite=Strict/);
 
-  const missingTx = await app.handle({ method: 'GET', url, headers: {}, ip: '20' });
+  const missingTx = await app.handle({
+    method: 'POST',
+    url: '/v1/session/mfa',
+    headers: {},
+    body: { ticket: body.ticket, code: '123456' },
+    ip: '20',
+  });
   assert.equal(cookieFrom(missingTx.headers['Set-Cookie'], SESSION_COOKIE), '');
 
-  const start2 = await app.handle({ method: 'GET', url: '/v1/session/start', headers: {}, ip: '20' });
-  const state2 = new URL(start2.headers.Location).searchParams.get('state');
-  const tx2 = cookiePair(cookieFrom(start2.headers['Set-Cookie'], OIDC_TX_COOKIE));
-  const url2 = await app.oidc.issueTestCallback(state2, { sub: 'subject-1' });
-  const first = await app.handle({ method: 'GET', url: url2, headers: { cookie: tx2 }, ip: '20' });
+  const first = await app.handle({
+    method: 'POST',
+    url: '/v1/session/mfa',
+    headers: { cookie: tx },
+    body: { ticket: body.ticket, code: '123456' },
+    ip: '20',
+  });
   assert.match(cookieFrom(first.headers['Set-Cookie'], SESSION_COOKIE), new RegExp(SESSION_COOKIE));
-  const replay = await app.handle({ method: 'GET', url: url2, headers: { cookie: tx2 }, ip: '20' });
+  const replay = await app.handle({
+    method: 'POST',
+    url: '/v1/session/mfa',
+    headers: { cookie: tx },
+    body: { ticket: body.ticket, code: '123456' },
+    ip: '20',
+  });
   assert.equal(cookieFrom(replay.headers['Set-Cookie'], SESSION_COOKIE), '');
 
-  const start3 = await app.handle({ method: 'GET', url: '/v1/session/start', headers: {}, ip: '20' });
-  const state3 = new URL(start3.headers.Location).searchParams.get('state');
-  const tx3 = cookiePair(cookieFrom(start3.headers['Set-Cookie'], OIDC_TX_COOKIE));
-  const url3 = await app.oidc.issueTestCallback(state3, { sub: 'subject-1' });
-  const pending = await authStates.peek(state3);
+  const login2 = await app.handle({
+    method: 'POST',
+    url: '/v1/session/login',
+    headers: {},
+    body: { email: 'pending@example.test', password: 'correct-horse-battery' },
+    ip: '20',
+  });
+  const body2 = JSON.parse(login2.body);
+  const tx2 = cookiePair(cookieFrom(login2.headers['Set-Cookie'], AUTH_TX_COOKIE));
+  assert.equal(body2.mfaRequired, true);
+  const pending = await authStates.peek(body2.ticket);
   pending.expiresAt = new Date(Date.now() - 1000).toISOString();
   await authStates.put(pending);
-  const expired = await app.handle({ method: 'GET', url: url3, headers: { cookie: tx3 }, ip: '20' });
+  const expired = await app.handle({
+    method: 'POST',
+    url: '/v1/session/mfa',
+    headers: { cookie: tx2 },
+    body: { ticket: body2.ticket, code: '123456' },
+    ip: '20',
+  });
   assert.equal(cookieFrom(expired.headers['Set-Cookie'], SESSION_COOKIE), '');
 });
 
@@ -573,9 +775,15 @@ test('production stays fail-closed without an injected query adapter', async () 
     }),
     records: [sampleRecord()],
   });
-  const start = await app.handle({ method: 'GET', url: '/v1/session/start', headers: {}, ip: '21' });
+  const login = await app.handle({
+    method: 'POST',
+    url: '/v1/session/login',
+    headers: {},
+    body: { email: 'researcher@example.test', password: 'x' },
+    ip: '21',
+  });
   const data = await app.handle({ method: 'GET', url: '/v1/responses', headers: {}, ip: '21' });
-  assert.equal(start.status, 503);
+  assert.equal(login.status, 503);
   assert.equal(data.status, 503);
   assert.doesNotMatch(data.body, /resp_/);
   assert.throws(() => createPostgresQueryAdapter(), /unavailable/);
@@ -683,19 +891,23 @@ test('durable audit sink stores metadata only and IP stays off by default', asyn
   const snap = publicConfigSnapshot(
     loadConfig({
       SESSION_SECRET: 'super-secret-session',
-      OIDC_CLIENT_SECRET: 'super-secret-oidc',
+      SUPABASE_PUBLISHABLE_KEY: 'super-secret-publishable',
+      SUPABASE_JWT_SECRET: 'legacy-secret-must-not-be-required',
       DATABASE_URL: 'postgresql://researcher-api:secret@127.0.0.1/db',
       DATABASE_CA_CERT: '-----BEGIN CERTIFICATE-----\nFAKE-TEST-CA-NOT-FOR-PRODUCTION\n-----END CERTIFICATE-----',
     })
   );
   assert.equal(snap.sessionSecret, undefined);
-  assert.equal(snap.oidcClientSecret, undefined);
+  assert.equal(snap.supabasePublishableKey, undefined);
+  assert.equal(snap.supabaseJwtSecret, undefined);
   assert.equal(snap.databaseUrl, undefined);
   assert.equal(snap.databaseCaCert, undefined);
   const example = readFileSync(join(root, 'api/researcher/env.example'), 'utf8');
   assert.doesNotMatch(example, /sk_live_/);
   assert.doesNotMatch(example, /eyJ[A-Za-z0-9_-]{20,}/);
-  assert.match(example, /OIDC_CLIENT_SECRET=/);
+  assert.match(example, /SUPABASE_PUBLISHABLE_KEY=/);
+  assert.doesNotMatch(example, /SUPABASE_JWT_SECRET=/);
+  assert.doesNotMatch(example, /SUPABASE_SECRET_KEY=/);
   assert.equal(loadConfig({}).trustedProxy, false);
   assert.equal(
     clientRateKey({ ip: '10.0.0.1', headers: { 'x-forwarded-for': '9.9.9.9' } }, { trustedProxy: false }),

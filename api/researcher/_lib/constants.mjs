@@ -87,6 +87,14 @@ export const SENSITIVE_AUDIT_KEYS = Object.freeze([
   'access_token',
   'refresh_token',
   'id_token',
+  'totp',
+  'mfa',
+  'aal',
+  'qr',
+  'qr_code',
+  'factor',
+  'factor_id',
+  'challenge_id',
 ]);
 
 export const DEFAULTS = Object.freeze({
