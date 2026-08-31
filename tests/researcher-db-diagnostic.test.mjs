@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createResearcherApp } from '../api/researcher/_lib/app.mjs';
-import { loadConfig } from '../api/researcher/_lib/config.mjs';
+import { loadConfig, publicConfigSnapshot } from '../api/researcher/_lib/config.mjs';
 import { assertBoundQuery } from '../api/researcher/_lib/db.mjs';
 import {
   DIAGNOSTIC_SQL,
@@ -13,7 +13,7 @@ import {
   logDiagnosticFailure,
   runDbDiagnostic,
 } from '../api/researcher/_lib/db-diagnostic.mjs';
-import { classifyQueryError, unavailableFromQueryError } from '../api/researcher/_lib/query.mjs';
+import { classifyQueryError, unavailableFromQueryError, sslConfigForDatabase, createProductionQueryAdapter, createPostgresQueryAdapter } from '../api/researcher/_lib/query.mjs';
 import {
   handleVercelResearcherRequest,
   resetResearcherAppForTests,
@@ -24,6 +24,13 @@ const read = (rel) => readFileSync(join(root, rel), 'utf8');
 
 const SECRET_URL =
   'postgresql://researcher_api:diag-secret-do-not-leak@db.abcdefghijkl.supabase.co:6543/postgres';
+const POOLER_URL =
+  'postgresql://researcher_api.abcdefghijkl:diag-secret-do-not-leak@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require';
+const TEST_CA = [
+  '-----BEGIN CERTIFICATE-----',
+  'FAKE-TEST-CA-NOT-FOR-PRODUCTION',
+  '-----END CERTIFICATE-----',
+].join('\n');
 
 const SURVEY_FROM =
   /\bfrom\s+(only\s+)?(public\.)?(assessment_responses|authorised_researchers|researcher_sessions|researcher_auth_states|researcher_rate_limits|researcher_audit_events)\b/i;
@@ -186,6 +193,9 @@ function assertNoSecrets(body) {
   const text = String(body);
   assert.doesNotMatch(text, /diag-secret-do-not-leak/);
   assert.doesNotMatch(text, /DATABASE_URL/);
+  assert.doesNotMatch(text, /DATABASE_CA_CERT/);
+  assert.doesNotMatch(text, /FAKE-TEST-CA-NOT-FOR-PRODUCTION/);
+  assert.doesNotMatch(text, /BEGIN CERTIFICATE/);
   assert.doesNotMatch(text, /postgresql:\/\//i);
   assert.doesNotMatch(text, /abcdefghijkl/);
   assert.doesNotMatch(text, /supabase\.co/);
@@ -641,4 +651,104 @@ test('raw error message/detail never appear in diagnostic logs', () => {
   })();
   assert.equal(lines.length, 1);
   assertSafeLog(lines[0], 'connect', 'authentication_failed');
+});
+
+test('verified TLS uses DATABASE_CA_CERT and keeps rejectUnauthorized true', () => {
+  const ssl = sslConfigForDatabase({
+    databaseUrl: POOLER_URL,
+    databaseCaCert: '-----BEGIN CERTIFICATE-----\\nFAKE-TEST-CA-NOT-FOR-PRODUCTION\\n-----END CERTIFICATE-----',
+  });
+  assert.equal(ssl.rejectUnauthorized, true);
+  assert.equal(ssl.ca, TEST_CA);
+  assert.equal(ssl.ca.includes('\\n'), false);
+  assert.doesNotMatch(JSON.stringify({ rejectUnauthorized: ssl.rejectUnauthorized }), /FAKE-TEST-CA/);
+
+  const local = sslConfigForDatabase({
+    databaseUrl: 'postgresql://researcher_api:unused@127.0.0.1/unused',
+  });
+  assert.equal(local, false);
+
+  const snap = publicConfigSnapshot(
+    loadConfig({
+      DATABASE_URL: SECRET_URL,
+      DATABASE_CA_CERT: TEST_CA,
+      SESSION_SECRET: 'do-not-publish',
+    })
+  );
+  assert.equal(snap.databaseUrl, undefined);
+  assert.equal(snap.databaseCaCert, undefined);
+  assertNoSecrets(JSON.stringify(snap));
+
+  const example = read('api/researcher/env.example');
+  assert.match(example, /DATABASE_CA_CERT=/);
+  assert.doesNotMatch(example, /BEGIN CERTIFICATE/);
+  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
+  assert.match(read('api/researcher/env.example'), /RESEARCHER_API_ENABLED=false/);
+  assert.match(read('api/researcher/env.example'), /EXPORTS_ENABLED=false/);
+  assert.match(read('api/researcher/env.example'), /DELETIONS_ENABLED=false/);
+});
+
+test('missing or malformed CA fails closed without weakening TLS', () => {
+  assert.throws(
+    () => sslConfigForDatabase({ databaseUrl: POOLER_URL }),
+    (err) => err.code === 'unavailable' && err.reason === 'database_ca_required' && err.category === 'connection_failed'
+  );
+  assert.throws(
+    () => sslConfigForDatabase({ databaseUrl: POOLER_URL, databaseCaCert: '' }),
+    (err) => err.reason === 'database_ca_required'
+  );
+  assert.throws(
+    () => sslConfigForDatabase({ databaseUrl: POOLER_URL, databaseCaCert: '   ' }),
+    (err) => err.reason === 'database_ca_required'
+  );
+  assert.throws(
+    () => sslConfigForDatabase({ databaseUrl: POOLER_URL, databaseCaCert: 'not-a-certificate' }),
+    (err) => err.reason === 'invalid_database_ca' && err.category === 'connection_failed'
+  );
+  assert.throws(
+    () =>
+      sslConfigForDatabase({
+        databaseUrl: POOLER_URL,
+        databaseCaCert: '-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----',
+      }),
+    (err) => err.reason === 'invalid_database_ca'
+  );
+  assert.doesNotMatch(String(sslConfigForDatabase.toString()), /rejectUnauthorized:\s*false/);
+
+  assert.equal(createProductionQueryAdapter({ databaseUrl: SECRET_URL }), null);
+  assert.equal(createProductionQueryAdapter({ databaseUrl: POOLER_URL, databaseCaCert: '' }), null);
+  assert.equal(
+    createProductionQueryAdapter({ databaseUrl: POOLER_URL, databaseCaCert: 'not-a-certificate' }),
+    null
+  );
+  assert.throws(
+    () => createPostgresQueryAdapter({ databaseUrl: POOLER_URL }),
+    /unavailable/
+  );
+
+  const adapter = createProductionQueryAdapter({
+    databaseUrl: 'postgresql://researcher_api:unused@127.0.0.1/unused',
+  });
+  assert.equal(typeof adapter, 'function');
+});
+
+test('CA certificate and DATABASE_URL never appear in diagnostic logs or responses', async () => {
+  const { query } = createCatalogQuery();
+  const app = createResearcherApp({
+    allowMemoryStores: true,
+    query,
+    config: closedConfig({
+      dbDiagnosticEnabled: true,
+      vercelEnv: 'preview',
+      databaseUrl: SECRET_URL,
+      databaseCaCert: TEST_CA,
+    }),
+  });
+  const { result, lines } = await withCapturedErrors(() =>
+    app.handle({ method: 'GET', url: '/diagnostics/db', headers: {}, ip: '1' })
+  );
+  assert.equal(result.status, 200);
+  assertNoSecrets(result.body);
+  assertNoSecrets(JSON.stringify(result.headers));
+  for (const line of lines) assertNoSecrets(line);
 });

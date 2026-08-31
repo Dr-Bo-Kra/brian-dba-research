@@ -292,11 +292,13 @@ test('missing production secrets fail closed and stay out of public config', () 
       SESSION_SECRET: 'do-not-publish',
       OIDC_CLIENT_SECRET: 'do-not-publish',
       DATABASE_URL: 'postgresql://researcher-api:unused@127.0.0.1/unused',
+      DATABASE_CA_CERT: '-----BEGIN CERTIFICATE-----\nFAKE-TEST-CA-NOT-FOR-PRODUCTION\n-----END CERTIFICATE-----',
     })
   );
   assert.equal(snap.sessionSecret, undefined);
   assert.equal(snap.oidcClientSecret, undefined);
   assert.equal(snap.databaseUrl, undefined);
+  assert.equal(snap.databaseCaCert, undefined);
   const example = read('api/researcher/env.example');
   assert.match(example, /SERVER-ONLY/);
   assert.doesNotMatch(example, /eyJ[A-Za-z0-9_-]{20,}/);

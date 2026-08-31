@@ -58,6 +58,7 @@ export function loadConfig(env = process.env) {
     dbDiagnosticEnabled: env.RESEARCHER_DB_DIAGNOSTIC_ENABLED === 'true',
     vercelEnv: String(env.VERCEL_ENV || '').trim().toLowerCase(),
     databaseUrl,
+    databaseCaCert: String(env.DATABASE_CA_CERT || '').trim(),
     sessionSecret,
     oidcIssuer,
     oidcClientId,
@@ -97,6 +98,7 @@ export const SECRET_CONFIG_KEYS = Object.freeze([
   'sessionSecret',
   'oidcClientSecret',
   'databaseUrl',
+  'databaseCaCert',
 ]);
 
 export function publicConfigSnapshot(config) {

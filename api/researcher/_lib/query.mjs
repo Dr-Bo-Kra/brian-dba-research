@@ -79,20 +79,62 @@ export function assertServerDatabaseUrl(url) {
   return value;
 }
 
-function sslForConnection(connectionString) {
-  if (/localhost|127\.0\.0\.1/i.test(connectionString)) return false;
-  return { rejectUnauthorized: true };
+function isLocalDatabaseUrl(connectionString) {
+  return /localhost|127\.0\.0\.1|::1/i.test(String(connectionString || ''));
+}
+
+export function normalizeDatabaseCaCert(raw) {
+  let value = String(raw || '').trim();
+  if (!value) return '';
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1).trim();
+  }
+  return value.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
+}
+
+function isPemCertificate(value) {
+  const begin = value.indexOf('-----BEGIN CERTIFICATE-----');
+  const end = value.indexOf('-----END CERTIFICATE-----');
+  if (begin < 0 || end < 0 || end <= begin) return false;
+  const body = value
+    .slice(begin + '-----BEGIN CERTIFICATE-----'.length, end)
+    .replace(/\s+/g, '');
+  return body.length > 0;
+}
+
+/**
+ * Explicit `ssl` wins over any sslmode query parameter on DATABASE_URL
+ * (node-postgres ConnectionParameters overlay). Do not add sslmode=require;
+ * that mode encrypts without verifying the CA.
+ */
+export function sslConfigForDatabase(config = {}) {
+  const connectionString = String(config.databaseUrl || '');
+  if (!connectionString || isLocalDatabaseUrl(connectionString)) {
+    return false;
+  }
+  const ca = normalizeDatabaseCaCert(config.databaseCaCert);
+  if (!ca) {
+    throw unavailable('database_ca_required', { category: 'connection_failed' });
+  }
+  if (!isPemCertificate(ca)) {
+    throw unavailable('invalid_database_ca', { category: 'connection_failed' });
+  }
+  return { rejectUnauthorized: true, ca };
 }
 
 export function createSupabasePostgresAdapter(config = {}) {
   const connectionString = assertServerDatabaseUrl(config.databaseUrl);
+  const ssl = sslConfigForDatabase({ ...config, databaseUrl: connectionString });
   const pool = new pg.Pool({
     connectionString,
     max: 1,
     idleTimeoutMillis: 5000,
     connectionTimeoutMillis: 5000,
     allowExitOnIdle: true,
-    ssl: sslForConnection(connectionString),
+    ssl,
   });
   return wrapQuery(async (text, params) => {
     try {

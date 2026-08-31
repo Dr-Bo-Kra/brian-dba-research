@@ -685,11 +685,13 @@ test('durable audit sink stores metadata only and IP stays off by default', asyn
       SESSION_SECRET: 'super-secret-session',
       OIDC_CLIENT_SECRET: 'super-secret-oidc',
       DATABASE_URL: 'postgresql://researcher-api:secret@127.0.0.1/db',
+      DATABASE_CA_CERT: '-----BEGIN CERTIFICATE-----\nFAKE-TEST-CA-NOT-FOR-PRODUCTION\n-----END CERTIFICATE-----',
     })
   );
   assert.equal(snap.sessionSecret, undefined);
   assert.equal(snap.oidcClientSecret, undefined);
   assert.equal(snap.databaseUrl, undefined);
+  assert.equal(snap.databaseCaCert, undefined);
   const example = readFileSync(join(root, 'api/researcher/env.example'), 'utf8');
   assert.doesNotMatch(example, /sk_live_/);
   assert.doesNotMatch(example, /eyJ[A-Za-z0-9_-]{20,}/);
