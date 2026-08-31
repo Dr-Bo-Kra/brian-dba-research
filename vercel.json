@@ -38,12 +38,14 @@
       ]
     }
   ],
+  "rewrites": [
+    {
+      "source": "/api/researcher/:path*",
+      "destination": "/api/researcher"
+    }
+  ],
   "functions": {
     "api/researcher/index.mjs": {
-      "maxDuration": 15,
-      "includeFiles": "api/researcher/_lib/**"
-    },
-    "api/researcher/[...path].mjs": {
       "maxDuration": 15,
       "includeFiles": "api/researcher/_lib/**"
     }

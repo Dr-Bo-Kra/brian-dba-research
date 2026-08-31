@@ -7,7 +7,7 @@ This API is layer 4 in `docs/researcher-dashboard-architecture.md`. Browser file
 ## Deployment constraints
 
 - Same-site with the Inquiry Archive (`/api/researcher` + `/researcher/`) on Vercel Node.js 20, not Edge.
-- Thin adapters: `api/researcher/index.mjs` and `api/researcher/[...path].mjs` call shared `createResearcherApp`. Helpers live under `_lib` / `_vercel` so they are not public functions.
+- Thin adapter: `api/researcher/index.mjs` calls shared `createResearcherApp`. Nested `/api/researcher/:path*` requests are rewritten to that function. Helpers live under `_lib` / `_vercel` so they are not public functions.
 - Never on GitHub Pages.
 - TLS required. Do not invent the production domain.
 - Secrets only in the server environment. Browser config may hold `/api/researcher` only.

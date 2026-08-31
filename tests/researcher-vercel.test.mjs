@@ -20,6 +20,7 @@ import { createDatabaseAuditSink } from '../api/researcher/_lib/audit.mjs';
 import {
   handleVercelResearcherRequest,
   resetResearcherAppForTests,
+  resolveResearcherRequestUrl,
   stripWildcardCors,
 } from '../api/researcher/_vercel.mjs';
 
@@ -121,27 +122,57 @@ test('Vercel routes share the protected app and do not bypass auth', async () =>
   assert.ok([200, 403].includes(loggedOut.status));
 });
 
+test('Vercel nested paths reach the shared app and stay fail-closed', async () => {
+  resetResearcherAppForTests();
+  const app = createResearcherApp({
+    allowMemoryStores: true,
+    config: readyConfig(),
+    records: [],
+  });
+
+  const rewritten = vercelPair({
+    url: '/api/researcher',
+    headers: { 'x-forwarded-uri': '/api/researcher/v1/summary' },
+  });
+  const rewrittenSummary = await handleVercelResearcherRequest(rewritten.req, rewritten.res, { app });
+  assert.ok([401, 403, 503].includes(rewrittenSummary.status));
+  assert.doesNotMatch(String(rewrittenSummary.body), /resp_/);
+  assert.match(rewrittenSummary.headers['Cache-Control'], /no-store/);
+
+  const unknown = await handleVercelResearcherRequest(
+    ...Object.values(vercelPair({ url: '/api/researcher/v1/not-a-route' })),
+    { app }
+  );
+  assert.ok([401, 404, 503].includes(unknown.status));
+  assert.equal(typeof JSON.parse(unknown.body).error, 'string');
+  assert.doesNotMatch(String(unknown.body), /resp_/);
+
+  const restored = resolveResearcherRequestUrl(
+    { url: '/api/researcher?code=abc&state=xyz' },
+    { host: 'example.test', 'x-forwarded-uri': '/api/researcher/v1/session/callback' }
+  );
+  assert.match(restored, /\/api\/researcher\/v1\/session\/callback/);
+  assert.match(restored, /code=abc/);
+  assert.match(restored, /state=xyz/);
+});
+
 test('Vercel adapters are thin Node wrappers with no duplicate auth logic', () => {
   const indexSrc = read('api/researcher/index.mjs');
-  const catchAll = read('api/researcher/[...path].mjs');
   const vercel = read('api/researcher/_vercel.mjs');
   assert.match(indexSrc, /maxDuration:\s*15/);
-  assert.match(catchAll, /maxDuration:\s*15/);
   assert.doesNotMatch(indexSrc, /runtime:\s*'edge'/);
-  assert.doesNotMatch(catchAll, /runtime:\s*'edge'/);
   assert.doesNotMatch(indexSrc, /nodejs20\.x/);
-  assert.doesNotMatch(catchAll, /nodejs20\.x/);
   assert.match(indexSrc, /handleVercelResearcherRequest/);
-  assert.match(catchAll, /handleVercelResearcherRequest/);
   assert.doesNotMatch(indexSrc, /authorize\(/);
-  assert.doesNotMatch(catchAll, /createOidcClient/);
   assert.match(vercel, /createResearcherApp/);
   assert.doesNotMatch(vercel, /runtime:\s*'edge'/);
   const vercelJson = read('vercel.json');
   assert.doesNotMatch(vercelJson, /"runtime"\s*:/);
   assert.doesNotMatch(vercelJson, /Access-Control-Allow-Origin/);
-  assert.match(vercelJson, /\/api\/researcher\/\(\.\*\)/);
+  assert.match(vercelJson, /\/api\/researcher\/:path\*/);
+  assert.match(vercelJson, /"destination": "\/api\/researcher"/);
   assert.match(vercelJson, /no-store/);
+  assert.doesNotMatch(vercelJson, /\[\.\.\.path\]/);
 });
 
 test('production query adapter requires DATABASE_URL and rejects service-role', () => {

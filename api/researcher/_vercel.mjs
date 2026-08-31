@@ -54,11 +54,28 @@ async function readNodeBody(req) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-export async function handleVercelResearcherRequest(req, res, overrides = {}) {
-  const headers = normalizeHeaders(req.headers);
+function nestedResearcherPath(pathname) {
+  const path = String(pathname || '').split('?')[0];
+  if (!path.startsWith('/api/researcher/')) return '';
+  if (path === '/api/researcher/' || path === '/api/researcher/index') return '';
+  return path.replace(/\/$/, '') || '';
+}
+
+export function resolveResearcherRequestUrl(req, headers = {}) {
   const host = headers.host || 'vercel.invalid';
   const rawUrl = req.url || '/';
-  const url = rawUrl.startsWith('http') ? rawUrl : `https://${host}${rawUrl}`;
+  const url = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${host}${rawUrl}`);
+  const nested =
+    nestedResearcherPath(url.pathname) ||
+    nestedResearcherPath(headers['x-forwarded-uri']) ||
+    nestedResearcherPath(headers['x-invoke-path']);
+  if (nested) url.pathname = nested;
+  return url.toString();
+}
+
+export async function handleVercelResearcherRequest(req, res, overrides = {}) {
+  const headers = normalizeHeaders(req.headers);
+  const url = resolveResearcherRequestUrl(req, headers);
   const app = getResearcherApp(overrides);
   const result = await app.handle({
     method: req.method,

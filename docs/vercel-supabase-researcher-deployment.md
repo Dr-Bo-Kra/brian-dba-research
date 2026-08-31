@@ -118,8 +118,7 @@ service-role, or administer the database.
 1. Create a Vercel project for this repository after institutional approval.
 2. Framework preset: Other / no framework. Root is this repo.
 3. Set server-only environment variables. Do not expose them to the browser.
-4. Confirm functions `api/researcher/index.mjs` and
-   `api/researcher/[...path].mjs` run as Node 20.
+4. Confirm function `api/researcher/index.mjs` runs as Node. Nested `/api/researcher/:path*` is rewritten to that function.
 5. Confirm `_lib`, `_server`, and `_vercel` are not public routes.
 6. Attach the future custom domain only after IT/DPO approval.
 7. Register the OIDC redirect URI with the future IdP.
