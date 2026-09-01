@@ -10,6 +10,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import { classifyAuthFetchKind, classifyAuthFlowFailure } from './auth-diagnostic.mjs';
 
 const TICKET_TTL_MS = 5 * 60 * 1000;
 const AUTH_AUD = 'authenticated';
@@ -73,19 +74,49 @@ function claimsError(error) {
  * Cryptographically verify a Supabase user access token via getClaims(),
  * then enforce issuer/audience/role/sub. Do not pass a JWT secret.
  */
+function resolveFetchKind(options = {}) {
+  if (typeof options.getFetchKind === 'function') return options.getFetchKind();
+  return options.fetchKind;
+}
+
+function tokenVerifyDiagnostic(category, options) {
+  return classifyAuthFlowFailure({
+    stage: 'token_verify',
+    category,
+    fetchKind: resolveFetchKind(options),
+  });
+}
+
 export async function verifyAccessToken(token, options = {}) {
   if (!token || typeof token !== 'string') return { ok: false, error: 'malformed' };
-  if (typeof options.getClaims !== 'function') return { ok: false, error: 'unavailable' };
+  if (typeof options.getClaims !== 'function') {
+    return {
+      ok: false,
+      error: 'unavailable',
+      diagnostic: tokenVerifyDiagnostic('get_claims_missing', options),
+    };
+  }
 
   let result;
   try {
     result = await options.getClaims(token);
   } catch (error) {
-    return { ok: false, error: claimsError(error) };
+    const code = claimsError(error);
+    return {
+      ok: false,
+      error: code,
+      diagnostic: code === 'unavailable' ? tokenVerifyDiagnostic('get_claims_threw', options) : undefined,
+    };
   }
 
   if (result?.error || !result?.data?.claims) {
-    return { ok: false, error: claimsError(result?.error) };
+    const code = claimsError(result?.error);
+    return {
+      ok: false,
+      error: code,
+      diagnostic:
+        code === 'unavailable' ? tokenVerifyDiagnostic('get_claims_rejected', options) : undefined,
+    };
   }
 
   return assertRegisteredClaims(result.data.claims, options);
@@ -229,18 +260,28 @@ function authHeaders(config, accessToken) {
 export function createSupabaseAuthClient(config, { harness = null, fetchImpl = fetch } = {}) {
   const issuer = supabaseIssuer(config.supabaseUrl);
   const audience = config.supabaseJwtAudience || AUTH_AUD;
+  let lastFetchKind = 'other';
+  const trackedFetch = async (url, init = {}) => {
+    lastFetchKind = classifyAuthFetchKind(url, init.method);
+    return fetchImpl(url, init);
+  };
   const getClaims = createClaimsVerifier(config, {
-    fetchImpl,
+    fetchImpl: trackedFetch,
     harness,
     jwks: harness?.jwks,
   });
 
   function verified(token) {
-    return verifyAccessToken(token, { issuer, audience, getClaims });
+    return verifyAccessToken(token, {
+      issuer,
+      audience,
+      getClaims,
+      getFetchKind: () => lastFetchKind,
+    });
   }
 
   async function gotrue(path, { method = 'GET', accessToken, body } = {}) {
-    const res = await fetchImpl(`${String(config.supabaseUrl).replace(/\/$/, '')}/auth/v1${path}`, {
+    const res = await trackedFetch(`${String(config.supabaseUrl).replace(/\/$/, '')}/auth/v1${path}`, {
       method,
       headers: authHeaders(config, accessToken),
       body: body == null ? undefined : JSON.stringify(body),
@@ -282,7 +323,17 @@ export function createSupabaseAuthClient(config, { harness = null, fetchImpl = f
         return { ok: true, factors: normalizeFactorList(harness.listFactors(checked.claims.email)) };
       }
       const res = await gotrue('/factors', { accessToken });
-      if (!res.ok) return { ok: false, error: 'unavailable' };
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: 'unavailable',
+          diagnostic: classifyAuthFlowFailure({
+            stage: 'factor_list',
+            category: 'list_unavailable',
+            fetchKind: lastFetchKind,
+          }),
+        };
+      }
       return { ok: true, factors: normalizeFactorList(res.json) };
     },
     async enrollTotp(accessToken) {
@@ -300,7 +351,17 @@ export function createSupabaseAuthClient(config, { harness = null, fetchImpl = f
       });
       const factorId = res.json?.id || res.json?.data?.id;
       const qr = safeQr(res.json?.totp?.qr_code || res.json?.data?.totp?.qr_code);
-      if (!res.ok || !factorId) return { ok: false, error: 'unavailable' };
+      if (!res.ok || !factorId) {
+        return {
+          ok: false,
+          error: 'unavailable',
+          diagnostic: classifyAuthFlowFailure({
+            stage: 'totp_enroll',
+            category: 'enroll_unavailable',
+            fetchKind: lastFetchKind,
+          }),
+        };
+      }
       return { ok: true, factorId: String(factorId), qr };
     },
     async verifyTotp(accessToken, factorId, code) {

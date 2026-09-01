@@ -5,11 +5,13 @@ import { loadConfig } from '../api/researcher/_lib/config.mjs';
 import {
   AUTH_DIAGNOSTIC_CATEGORIES,
   AUTH_DIAGNOSTIC_STAGES,
+  classifyAuthFetchKind,
+  classifyAuthFlowFailure,
   classifyLoginUnavailable,
   compactAuthDiagnostic,
   logLoginUnavailable,
 } from '../api/researcher/_lib/auth-diagnostic.mjs';
-import { createSupabaseAuthClient } from '../api/researcher/_lib/supabase-auth.mjs';
+import { createSupabaseAuthClient, verifyAccessToken } from '../api/researcher/_lib/supabase-auth.mjs';
 
 const SECRET_URL =
   'postgresql://researcher_api:login-secret-do-not-leak@db.abcdefghijkl.supabase.co:6543/postgres';
@@ -76,6 +78,10 @@ function assertNoSecrets(body) {
   assert.doesNotMatch(text, new RegExp(BRIAN_SUB));
   assert.doesNotMatch(text, /correct-horse-battery/);
   assert.doesNotMatch(text, /otpauth:/);
+  assert.doesNotMatch(text, /\/auth\/v1/);
+  assert.doesNotMatch(text, /access_token/);
+  assert.doesNotMatch(text, /eyJ/);
+  assert.doesNotMatch(text, /jwks\.json/);
 }
 
 function captureErrors(fn) {
@@ -340,6 +346,149 @@ test('loadConfig still requires an exact true flag and both durable stores', () 
   });
   assert.equal(spaced.enabled, false);
   assert.equal(spaced.authReady, false);
+});
+
+test('auth fetch kinds map to allowlisted names without echoing URLs', () => {
+  const cases = [
+    ['https://example.supabase.co/auth/v1/token?grant_type=password', 'POST', 'password_exchange'],
+    ['https://example.supabase.co/auth/v1/.well-known/jwks.json', 'GET', 'jwks'],
+    ['https://example.supabase.co/auth/v1/user', 'GET', 'get_user'],
+    ['https://example.supabase.co/auth/v1/factors', 'GET', 'factor_list'],
+    ['https://example.supabase.co/auth/v1/factors', 'POST', 'totp_enroll'],
+  ];
+  for (const [url, method, kind] of cases) {
+    assert.equal(classifyAuthFetchKind(url, method), kind);
+    assert.notEqual(classifyAuthFetchKind(url, method), url);
+  }
+  const classified = classifyAuthFlowFailure({
+    stage: 'token_verify',
+    category: 'get_claims_threw',
+    fetchKind: 'jwks',
+  });
+  assert.equal(classified.stage, 'token_verify');
+  assert.equal(classified.category, 'jwks');
+  assert.ok(AUTH_DIAGNOSTIC_STAGES.includes(classified.stage));
+  assert.ok(AUTH_DIAGNOSTIC_CATEGORIES.includes(classified.category));
+});
+
+test('token verification unavailable after JWKS or getUser is classified', async () => {
+  let fetchKind = 'password_exchange';
+  const jwks = await verifyAccessToken('header.payload.sig', {
+    getClaims: async () => {
+      fetchKind = 'jwks';
+      throw Object.assign(new Error('network fetch failed'), { status: 503 });
+    },
+    getFetchKind: () => fetchKind,
+  });
+  assert.equal(jwks.ok, false);
+  assert.equal(jwks.error, 'unavailable');
+  assert.equal(jwks.diagnostic.stage, 'token_verify');
+  assert.equal(jwks.diagnostic.category, 'jwks');
+  assertNoSecrets(JSON.stringify(jwks.diagnostic));
+
+  fetchKind = 'password_exchange';
+  const getUser = await verifyAccessToken('header.payload.sig', {
+    getClaims: async () => {
+      fetchKind = 'get_user';
+      return { error: Object.assign(new Error('network fetch failed'), { status: 503 }) };
+    },
+    getFetchKind: () => fetchKind,
+  });
+  assert.equal(getUser.error, 'unavailable');
+  assert.equal(getUser.diagnostic.category, 'get_user');
+});
+
+test('post-outbound login 503s log allowlisted stages only', async () => {
+  const aal1 = {
+    ok: true,
+    accessToken: 'access-token-must-not-log',
+    claims: { sub: BRIAN_SUB, aal: 'aal1', amr: [{ method: 'password' }] },
+  };
+  const cases = [
+    [
+      { passwordGrant: async () => { throw new Error('network fetch failed'); } },
+      'password_exchange',
+      'exchange_threw',
+    ],
+    [
+      {
+        passwordGrant: async () => ({
+          ok: false,
+          error: 'unavailable',
+          diagnostic: { stage: 'token_verify', category: 'jwks' },
+        }),
+      },
+      'token_verify',
+      'jwks',
+    ],
+    [
+      {
+        passwordGrant: async () => aal1,
+        listVerifiedTotpFactors: async () => ({
+          ok: false,
+          error: 'unavailable',
+          diagnostic: { stage: 'factor_list', category: 'list_unavailable' },
+        }),
+      },
+      'factor_list',
+      'list_unavailable',
+    ],
+    [
+      {
+        passwordGrant: async () => aal1,
+        listVerifiedTotpFactors: async () => ({ ok: true, factors: [] }),
+        enrollTotp: async () => ({
+          ok: false,
+          error: 'unavailable',
+          diagnostic: { stage: 'totp_enroll', category: 'enroll_unavailable' },
+        }),
+      },
+      'totp_enroll',
+      'enroll_unavailable',
+    ],
+  ];
+  for (const [auth, stage, category] of cases) {
+    const { result: login, lines } = await captureErrors(() =>
+      durableApp(productionishConfig({ authReady: true }), { auth }).handle({
+        method: 'POST',
+        url: '/v1/session/login',
+        headers: {},
+        body: { email: 'researcher@example.test', password: 'correct-horse-battery' },
+        ip: '1',
+      })
+    );
+    assert.equal(login.status, 503, stage);
+    assert.equal(JSON.parse(login.body).error, 'unavailable');
+    assert.equal(JSON.parse(login.body).stage, undefined);
+    assert.equal(JSON.parse(login.body).category, undefined);
+    assert.equal(lines.length, 1, stage);
+    const logged = JSON.parse(lines[0]);
+    assert.equal(logged.stage, stage);
+    assert.equal(logged.category, category);
+    assert.deepEqual(Object.keys(logged).sort(), ['category', 'diagnostic', 'ok', 'stage']);
+    assertNoSecrets(lines[0]);
+    assertNoSecrets(login.body);
+  }
+});
+
+test('failed password exchange stays 401 and does not log a post-outbound 503 class', async () => {
+  const { result: login, lines } = await captureErrors(() => {
+    const config = productionishConfig({ authReady: true });
+    return durableApp(config, {
+      auth: createSupabaseAuthClient(config, {
+        fetchImpl: async () => new Response(JSON.stringify({}), { status: 400 }),
+      }),
+    }).handle({
+      method: 'POST',
+      url: '/v1/session/login',
+      headers: {},
+      body: { email: 'researcher@example.test', password: 'correct-horse-battery' },
+      ip: '1',
+    });
+  });
+  assert.equal(login.status, 401);
+  assert.equal(lines.length, 0);
+  assertNoSecrets(login.body);
 });
 
 test('login unavailable logs drop unknown fields and secrets', () => {

@@ -460,9 +460,15 @@ export function createResearcherApp(overrides = {}) {
       try {
         granted = await auth.passwordGrant(email, password);
       } catch {
+        logLoginUnavailable({ stage: 'password_exchange', category: 'exchange_threw' });
         return respond(await denyLogin('unavailable', requestId, request));
       }
       if (!granted?.ok) {
+        if (granted?.error === 'unavailable' || granted?.error === 'session_store') {
+          logLoginUnavailable(
+            granted.diagnostic || { stage: 'token_verify', category: 'get_claims_rejected' }
+          );
+        }
         return respond(await denyLogin(granted?.error || 'unauthorized', requestId, request));
       }
       if (requiredMfaSatisfied(granted.claims)) {
@@ -474,12 +480,23 @@ export function createResearcherApp(overrides = {}) {
         });
         return respond(finished.response);
       }
+      let listed;
       try {
-        const listed = await auth.listVerifiedTotpFactors(granted.accessToken);
-        if (!listed.ok) {
-          return respond(await denyLogin(listed.error || 'unavailable', requestId, request));
+        listed = await auth.listVerifiedTotpFactors(granted.accessToken);
+      } catch {
+        logLoginUnavailable({ stage: 'factor_list', category: 'list_threw' });
+        return respond(await denyLogin('unavailable', requestId, request));
+      }
+      if (!listed.ok) {
+        if (listed.error === 'unavailable' || listed.error === 'session_store') {
+          logLoginUnavailable(
+            listed.diagnostic || { stage: 'factor_list', category: 'list_unavailable' }
+          );
         }
-        if (listed.factors.length) {
+        return respond(await denyLogin(listed.error || 'unavailable', requestId, request));
+      }
+      if (listed.factors.length) {
+        try {
           return respond(
             await startMfaTicket({
               subject: granted.claims.sub,
@@ -488,11 +505,27 @@ export function createResearcherApp(overrides = {}) {
               enrollmentRequired: false,
             })
           );
+        } catch {
+          logLoginUnavailable({ stage: 'factor_list', category: 'ticket_threw' });
+          return respond(await denyLogin('unavailable', requestId, request));
         }
-        const enrolled = await auth.enrollTotp(granted.accessToken);
-        if (!enrolled.ok) {
-          return respond(await denyLogin(enrolled.error || 'unavailable', requestId, request));
+      }
+      let enrolled;
+      try {
+        enrolled = await auth.enrollTotp(granted.accessToken);
+      } catch {
+        logLoginUnavailable({ stage: 'totp_enroll', category: 'enroll_threw' });
+        return respond(await denyLogin('unavailable', requestId, request));
+      }
+      if (!enrolled.ok) {
+        if (enrolled.error === 'unavailable' || enrolled.error === 'session_store') {
+          logLoginUnavailable(
+            enrolled.diagnostic || { stage: 'totp_enroll', category: 'enroll_unavailable' }
+          );
         }
+        return respond(await denyLogin(enrolled.error || 'unavailable', requestId, request));
+      }
+      try {
         return respond(
           await startMfaTicket({
             subject: granted.claims.sub,
@@ -503,6 +536,7 @@ export function createResearcherApp(overrides = {}) {
           })
         );
       } catch {
+        logLoginUnavailable({ stage: 'totp_enroll', category: 'ticket_threw' });
         return respond(await denyLogin('unavailable', requestId, request));
       }
     }

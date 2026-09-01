@@ -8,6 +8,10 @@ export const AUTH_DIAGNOSTIC_STAGES = Object.freeze([
   'auth_client',
   'auth_usable',
   'ready',
+  'password_exchange',
+  'token_verify',
+  'factor_list',
+  'totp_enroll',
 ]);
 
 export const AUTH_DIAGNOSTIC_CATEGORIES = Object.freeze([
@@ -25,6 +29,17 @@ export const AUTH_DIAGNOSTIC_CATEGORIES = Object.freeze([
   'auth_not_constructed',
   'idp_not_configured',
   'ok',
+  'exchange_threw',
+  'jwks',
+  'get_user',
+  'get_claims_missing',
+  'get_claims_threw',
+  'get_claims_rejected',
+  'list_unavailable',
+  'list_threw',
+  'enroll_unavailable',
+  'enroll_threw',
+  'ticket_threw',
 ]);
 
 const BACKENDS = new Set(['database', 'memory', 'unavailable', '']);
@@ -117,6 +132,31 @@ export function compactAuthDiagnostic(input = {}) {
     isolated: input.isolated === true,
     stage: safeStage(classified.stage),
     category: safeCategory(classified.category),
+  };
+}
+
+export function classifyAuthFetchKind(url, method) {
+  const target = String(url || '');
+  const verb = String(method || 'GET').toUpperCase();
+  if (/jwks\.json/i.test(target) || /\/\.well-known\/jwks/i.test(target)) return 'jwks';
+  if (/\/token\b/i.test(target) && (/grant_type=password/i.test(target) || verb === 'POST')) {
+    return 'password_exchange';
+  }
+  if (/\/auth\/v1\/user(?:\?|$)/i.test(target)) return 'get_user';
+  if (/\/factors/i.test(target)) {
+    if (/\/challenge/i.test(target) || /\/verify/i.test(target)) return 'other';
+    return verb === 'POST' ? 'totp_enroll' : 'factor_list';
+  }
+  return 'other';
+}
+
+export function classifyAuthFlowFailure({ stage, category, fetchKind } = {}) {
+  if (stage === 'token_verify' && (fetchKind === 'jwks' || fetchKind === 'get_user')) {
+    category = fetchKind;
+  }
+  return {
+    stage: AUTH_DIAGNOSTIC_STAGES.includes(stage) ? stage : 'token_verify',
+    category: AUTH_DIAGNOSTIC_CATEGORIES.includes(category) ? category : 'get_claims_rejected',
   };
 }
 
