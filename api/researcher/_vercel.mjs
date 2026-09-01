@@ -70,7 +70,30 @@ export function resolveResearcherRequestUrl(req, headers = {}) {
     nestedResearcherPath(headers['x-forwarded-uri']) ||
     nestedResearcherPath(headers['x-invoke-path']);
   if (nested) url.pathname = nested;
+  stripVercelRewritePathParam(url);
   return url.toString();
+}
+
+function normalizeRewritePathCapture(value) {
+  let next = String(value || '');
+  try {
+    next = decodeURIComponent(next);
+  } catch {
+    // keep the raw capture when percent-decoding fails
+  }
+  return next.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function stripVercelRewritePathParam(url) {
+  if (!url.searchParams.has('path')) return;
+  const nested = nestedResearcherPath(url.pathname);
+  if (!nested) return;
+  const expected = nested.slice('/api/researcher/'.length);
+  const capture = url.searchParams.get('path');
+  if (normalizeRewritePathCapture(capture) !== normalizeRewritePathCapture(expected)) {
+    return;
+  }
+  url.searchParams.delete('path');
 }
 
 export async function handleVercelResearcherRequest(req, res, overrides = {}) {

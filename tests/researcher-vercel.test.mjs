@@ -13,6 +13,7 @@ import {
   resolveQueryAdapter,
   wrapQuery,
 } from '../api/researcher/_lib/query.mjs';
+import { parseFilters } from '../api/researcher/_lib/validate.mjs';
 import { clientRateKey } from '../api/researcher/_lib/rate-limit.mjs';
 import { createDatabaseSessionStore } from '../api/researcher/_lib/sessions.mjs';
 import { createDatabaseRateLimiter } from '../api/researcher/_lib/rate-limit.mjs';
@@ -155,6 +156,243 @@ test('Vercel nested paths reach the shared app and stay fail-closed', async () =
   );
   assert.match(restored, /\/api\/researcher\/v1\/session\/login/);
   assert.match(restored, /ticket=abc/);
+});
+
+function rewriteHeaders(nestedPath, extra = {}) {
+  return {
+    host: 'preview.example.test',
+    'x-forwarded-uri': nestedPath,
+    'x-invoke-path': nestedPath,
+    ...extra,
+  };
+}
+
+function sampleLedgerRecord() {
+  return {
+    client_record_id: 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    created_at: '2026-08-01T12:00:00.000Z',
+    profile: { countryRegion: 'india', position: 'credit-manager', yearsLending: '6-10' },
+    assessment: { overall: { score: 5.2 } },
+    qualitative: { openResponses: { G26: 'hidden' } },
+    legal_hold: false,
+  };
+}
+
+async function authedRewriteApp() {
+  resetResearcherAppForTests();
+  const app = createResearcherApp({
+    allowMemoryStores: true,
+    config: readyConfig(),
+    records: [sampleLedgerRecord()],
+  });
+  const signed = await app.signInForTests('subject-1');
+  return { app, signed };
+}
+
+test('rewritten summary drops Vercel path query before parseFilters', async () => {
+  const { app, signed } = await authedRewriteApp();
+  const nested = '/api/researcher/v1/summary';
+  const reconstructed = resolveResearcherRequestUrl(
+    { url: '/api/researcher?path=v1/summary' },
+    rewriteHeaders(nested)
+  );
+  const resolved = new URL(reconstructed);
+  assert.equal(resolved.pathname, nested);
+  assert.equal(resolved.searchParams.has('path'), false);
+  assert.equal(parseFilters({ path: 'v1/summary' }).ok, false);
+
+  const { req, res } = vercelPair({
+    url: '/api/researcher?path=v1/summary',
+    headers: rewriteHeaders(nested, { cookie: signed.cookie }),
+  });
+  const summary = await handleVercelResearcherRequest(req, res, { app });
+  assert.equal(summary.status, 200);
+  assert.equal(JSON.parse(summary.body).total, 1);
+});
+
+test('rewritten responses drops Vercel path query before parseFilters', async () => {
+  const { app, signed } = await authedRewriteApp();
+  const nested = '/api/researcher/v1/responses';
+  const reconstructed = resolveResearcherRequestUrl(
+    { url: '/api/researcher?path=v1/responses' },
+    rewriteHeaders(nested)
+  );
+  assert.equal(new URL(reconstructed).searchParams.has('path'), false);
+
+  const { req, res } = vercelPair({
+    url: '/api/researcher?path=v1/responses',
+    headers: rewriteHeaders(nested, { cookie: signed.cookie }),
+  });
+  const listed = await handleVercelResearcherRequest(req, res, { app });
+  assert.equal(listed.status, 200);
+  assert.equal(JSON.parse(listed.body).records.length, 1);
+  assert.equal(JSON.parse(listed.body).records[0].qualitative, undefined);
+});
+
+test('legitimate query filters survive the Vercel rewrite path capture', async () => {
+  const { app, signed } = await authedRewriteApp();
+  const nested = '/api/researcher/v1/responses';
+  const raw =
+    '/api/researcher?path=v1/responses&from=2026-08-01&to=2026-08-02&region=india&role=credit-manager&experience=6-10&q=resp_&limit=20&cursor=abc12345&sort=created_at&include_qualitative=0';
+  const reconstructed = resolveResearcherRequestUrl({ url: raw }, rewriteHeaders(nested));
+  const query = new URL(reconstructed).searchParams;
+  assert.equal(query.has('path'), false);
+  assert.equal(query.get('from'), '2026-08-01');
+  assert.equal(query.get('to'), '2026-08-02');
+  assert.equal(query.get('region'), 'india');
+  assert.equal(query.get('role'), 'credit-manager');
+  assert.equal(query.get('experience'), '6-10');
+  assert.equal(query.get('q'), 'resp_');
+  assert.equal(query.get('limit'), '20');
+  assert.equal(query.get('cursor'), 'abc12345');
+  assert.equal(query.get('sort'), 'created_at');
+  assert.equal(query.get('include_qualitative'), '0');
+
+  const { req, res } = vercelPair({
+    url: raw,
+    headers: rewriteHeaders(nested, { cookie: signed.cookie }),
+  });
+  const listed = await handleVercelResearcherRequest(req, res, { app });
+  assert.equal(listed.status, 200);
+  assert.equal(JSON.parse(listed.body).records.length, 1);
+});
+
+test('unknown user query parameters are still rejected after rewrite stripping', async () => {
+  const { app, signed } = await authedRewriteApp();
+  assert.equal(parseFilters({ columns: 'responses' }).ok, false);
+  assert.equal(parseFilters({ path: 'v1/summary' }).ok, false);
+
+  const unknown = await handleVercelResearcherRequest(
+    ...Object.values(
+      vercelPair({
+        url: '/api/researcher?path=v1/summary&columns=responses',
+        headers: rewriteHeaders('/api/researcher/v1/summary', { cookie: signed.cookie }),
+      })
+    ),
+    { app }
+  );
+  assert.equal(unknown.status, 400);
+  assert.equal(JSON.parse(unknown.body).error, 'invalid_request');
+
+  const unmatchedPath = await handleVercelResearcherRequest(
+    ...Object.values(
+      vercelPair({
+        url: '/api/researcher/v1/summary?path=not-a-filter',
+        headers: rewriteHeaders('/api/researcher/v1/summary', { cookie: signed.cookie }),
+      })
+    ),
+    { app }
+  );
+  assert.equal(unmatchedPath.status, 400);
+  assert.equal(JSON.parse(unmatchedPath.body).error, 'invalid_request');
+});
+
+test('Vercel rewrite stripping does not change auth, session, or MFA routing', async () => {
+  const loginUrl = resolveResearcherRequestUrl(
+    { url: '/api/researcher?path=v1/session/login' },
+    rewriteHeaders('/api/researcher/v1/session/login')
+  );
+  const mfaUrl = resolveResearcherRequestUrl(
+    { url: '/api/researcher?path=v1/session/mfa' },
+    rewriteHeaders('/api/researcher/v1/session/mfa')
+  );
+  const sessionUrl = resolveResearcherRequestUrl(
+    { url: '/api/researcher?path=v1/session&ticket=abc' },
+    rewriteHeaders('/api/researcher/v1/session')
+  );
+  assert.match(loginUrl, /\/api\/researcher\/v1\/session\/login/);
+  assert.equal(new URL(loginUrl).searchParams.has('path'), false);
+  assert.match(mfaUrl, /\/api\/researcher\/v1\/session\/mfa/);
+  assert.equal(new URL(mfaUrl).searchParams.has('path'), false);
+  assert.match(sessionUrl, /\/api\/researcher\/v1\/session/);
+  assert.equal(new URL(sessionUrl).searchParams.get('ticket'), 'abc');
+
+  const vercel = read('api/researcher/_vercel.mjs');
+  assert.match(vercel, /stripVercelRewritePathParam/);
+  assert.doesNotMatch(vercel, /passwordGrant|verifyTotp|parseFilters/);
+  assert.match(read('api/researcher/_lib/app.mjs'), /parseFilters\(queryOf\(request\)\)/);
+
+  resetResearcherAppForTests();
+  const app = createResearcherApp({
+    allowMemoryStores: true,
+    config: readyConfig(),
+    records: [],
+  });
+  const login = await handleVercelResearcherRequest(
+    ...Object.values(
+      vercelPair({
+        method: 'POST',
+        url: '/api/researcher?path=v1/session/login',
+        headers: {
+          ...rewriteHeaders('/api/researcher/v1/session/login'),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ email: 'researcher@example.test', password: 'x' }),
+      })
+    ),
+    { app }
+  );
+  assert.ok([401, 403, 503].includes(login.status));
+  assert.doesNotMatch(String(login.body), /access_token|refresh_token|ticketSecrets/);
+
+  const session = await handleVercelResearcherRequest(
+    ...Object.values(
+      vercelPair({
+        url: '/api/researcher?path=v1/session',
+        headers: rewriteHeaders('/api/researcher/v1/session'),
+      })
+    ),
+    { app }
+  );
+  assert.equal(session.status, 200);
+  assert.equal(JSON.parse(session.body).authenticated, false);
+});
+
+test('collection, export, and delete remain off after rewrite stripping', async () => {
+  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
+  assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*''/);
+  assert.equal(readyConfig().exportsEnabled, false);
+  assert.equal(readyConfig().deletionsEnabled, false);
+
+  const { app, signed } = await authedRewriteApp();
+  const exported = await handleVercelResearcherRequest(
+    ...Object.values(
+      vercelPair({
+        method: 'POST',
+        url: '/api/researcher?path=v1/exports',
+        headers: {
+          ...rewriteHeaders('/api/researcher/v1/exports'),
+          cookie: signed.cookie,
+          'x-csrf-token': signed.csrf,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ confirm: true }),
+      })
+    ),
+    { app }
+  );
+  assert.equal(exported.status, 503);
+
+  const deleted = await handleVercelResearcherRequest(
+    ...Object.values(
+      vercelPair({
+        method: 'POST',
+        url: '/api/researcher?path=v1/deletions',
+        headers: {
+          ...rewriteHeaders('/api/researcher/v1/deletions'),
+          cookie: signed.cookie,
+          'x-csrf-token': signed.csrf,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          reference: 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          confirm: true,
+        }),
+      })
+    ),
+    { app }
+  );
+  assert.equal(deleted.status, 503);
 });
 
 test('Vercel adapters are thin Node wrappers with no duplicate auth logic', () => {
