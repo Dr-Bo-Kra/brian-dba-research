@@ -124,7 +124,7 @@ function aggregateItems(rows) {
   const counts = Object.fromEntries(ITEM_ORDER.map((id) => [id, [0, 0, 0, 0, 0, 0, 0]]));
   let any = false;
   for (const row of rows) {
-    const likert = row.responses?.likert || row.likert || {};
+    const likert = row.responses?.quantitative?.likert || {};
     for (const id of ITEM_ORDER) {
       const value = Number(likert[id]);
       if (Number.isInteger(value) && value >= 1 && value <= 7) {

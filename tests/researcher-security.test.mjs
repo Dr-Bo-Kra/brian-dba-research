@@ -64,7 +64,7 @@ function sampleRecord(ref = 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
       domains: [{ id: 'psychometric', label: 'Psychometric indicators', score: 5.2 }],
     },
     responses: {
-      likert: { B1: 6 },
+      quantitative: { likert: { B1: 6 } },
       qualitative: {
         openResponses: { G26: '<script>alert(1)</script>' },
         roleDescription: '<img src=x onerror=alert(1)>',
@@ -849,6 +849,40 @@ test('SQL aggregate path matches fixture DTO shape and rejects extra aggregate f
   assert.equal(sqlSummary.domains[0].label, 'Psychometric indicators');
   assert.doesNotMatch(SQL.domainAggregates.text, /\$\{/);
   assert.match(SQL.domainAggregates.text, /psychometric/);
+  assert.match(SQL.itemAggregates.text, /responses -> 'quantitative' -> 'likert'/);
+});
+
+test('item aggregates read quantitative likert only, not root responses.likert', async () => {
+  const canonical = {
+    ...sampleRecord('resp_canonical_only_quantitative'),
+    responses: {
+      quantitative: { likert: { B1: 5, B2: 6 } },
+      qualitative: { openResponses: {} },
+    },
+  };
+  const legacyRoot = {
+    ...sampleRecord('resp_legacy_root_likert_ignored'),
+    responses: {
+      likert: { B1: 1, B2: 1 },
+      qualitative: { openResponses: {} },
+    },
+  };
+  const filters = {
+    from: null,
+    to: null,
+    region: null,
+    role: null,
+    experience: null,
+    q: '',
+    limit: 20,
+  };
+  const summary = await createFixtureResearchStore([canonical, legacyRoot]).summary(filters);
+  const b1 = summary.items.find((row) => row.id === 'B1');
+  const b2 = summary.items.find((row) => row.id === 'B2');
+  assert.equal(b1.counts[4], 1);
+  assert.equal(b2.counts[5], 1);
+  assert.equal(b1.counts[0], 0);
+  assert.equal(b2.counts[0], 0);
 });
 
 test('durable audit sink stores metadata only and IP stays off by default', async () => {

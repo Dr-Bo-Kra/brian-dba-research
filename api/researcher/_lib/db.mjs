@@ -209,7 +209,7 @@ export const SQL = Object.freeze({
                   count(*) filter (where e.value = '6')::int as c6,
                   count(*) filter (where e.value = '7')::int as c7
            from public.assessment_responses r
-           cross join lateral jsonb_each_text(coalesce(r.responses -> 'likert', '{}'::jsonb)) e
+           cross join lateral jsonb_each_text(coalesce(r.responses -> 'quantitative' -> 'likert', '{}'::jsonb)) e
            where r.anonymised_at is null
              and e.key in (
                'B1','B2','B3','B4','B5','C6','C7','C8','C9','C10',
