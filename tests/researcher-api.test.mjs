@@ -290,22 +290,37 @@ test('enabled export uses approved schema and cookies are host-scoped', async ()
   );
 });
 
-test('researcher UI fails closed and never stores tokens in web storage', () => {
+test('researcher UI connects to the same-origin API without secrets or a password-only workspace', () => {
   const html = read('researcher/index.html');
   const js = read('researcher/dashboard.js');
   const config = read('researcher/config.js');
-  assert.match(config, /RESEARCHER_ENDPOINT:\s*''/);
+  assert.match(config, /RESEARCHER_ENDPOINT:\s*'\/api\/researcher'/);
+  assert.doesNotMatch(config, /SUPABASE_/);
+  assert.doesNotMatch(config, /DATABASE_URL/);
+  assert.doesNotMatch(config, /SESSION_SECRET/);
   assert.match(js, /showDisconnectedWorkspace/);
+  assert.match(js, /if \(!apiConfigured\) \{\s*showDisconnectedWorkspace\(\);/);
   assert.match(js, /credentials: 'include'/);
   assert.match(js, /X-CSRF-Token/);
   assert.match(js, /\/v1\/session\/login/);
+  assert.match(js, /\/v1\/session\/mfa/);
+  assert.match(js, /payload\?\.mfaRequired/);
+  assert.match(js, /authenticated !== true/);
+  assert.match(js, /showMfaStep/);
   assert.doesNotMatch(js, /localStorage\.setItem/);
   assert.doesNotMatch(js, /sessionStorage\.setItem/);
   assert.doesNotMatch(js, /auth-secret/);
   assert.match(html, /type="password"/);
+  assert.match(html, />Sign in</);
+  assert.doesNotMatch(html, /Future interface · disconnected/i);
+  assert.doesNotMatch(html, /Protected researcher API is not connected/);
   assert.doesNotMatch(js, /service_role/);
   assert.match(html, /no mock login/i);
   assert.doesNotMatch(html, /correct-horse-battery|default password/i);
+  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
+  assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*''/);
+  assert.match(js, /LIVE_EXPORTS_ENABLED = false/);
+  assert.match(js, /LIVE_DELETIONS_ENABLED = false/);
   assert.match(js, /\/v1\/exports/);
   assert.match(js, /\/v1\/deletions/);
 });

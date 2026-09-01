@@ -1,11 +1,11 @@
 /**
  * Researcher workspace configuration. Never place a service-role key,
- * anon key, password, session secret, or other credential in this file.
+ * anon key, publishable key, password, session secret, UUID, or other
+ * credential in this file.
  *
- * RESEARCHER_ENDPOINT stays empty here so the archive remains disconnected.
- * The intended same-origin path is `/api/researcher` (not a secret).
+ * RESEARCHER_ENDPOINT is the same-origin API path only. It is not a secret.
  * Do not point this at Supabase, `/rest/v1/`, or any database URL.
  */
 window.BRIAN_DBA_RESEARCHER_CONFIG = {
-  RESEARCHER_ENDPOINT: '',
+  RESEARCHER_ENDPOINT: '/api/researcher',
 };

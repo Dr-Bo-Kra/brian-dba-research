@@ -20,9 +20,9 @@ Full trust-boundary notes: `docs/researcher-dashboard-architecture.md`. API cont
 - The submission endpoint (not yet deployed) must authenticate itself to the database with a **server-side** credential.
 - For the **initial release**, authorised researchers review completed results in **Supabase’s authenticated dashboard**. Access is role-based. Brian may be the only provisioned authorised researcher at first. Application code must not hard-code his name or email as an access check.
 - There is no anonymous database read. `anon` and `authenticated` have no table privileges.
-- The protected researcher API is **scaffolded and disabled**. It must not be enabled until implementation, MFA identity, institutional approval, and a host that can protect the route exist.
+- The protected researcher API is **fail-closed** unless the host sets `RESEARCHER_API_ENABLED=true` with durable Auth, session, and database configuration.
 
-`researcher/` is a **future** interface. It stays disconnected until those conditions are met. It is not the production results interface.
+`researcher/` talks only to the same-origin `/api/researcher` path. The browser must not receive secrets. Password sign-in alone cannot open the archive. It is not a GitHub Pages access-control boundary.
 
 ## What this repository hardens
 
@@ -54,7 +54,7 @@ Never put the service-role key in `config.js`, `researcher/config.js`, GitHub Pa
 
 ## Inquiry archive (`researcher/`) and protected researcher API — future only
 
-Static files under `researcher/` may remain in the repository. They must stay disconnected (`RESEARCHER_ENDPOINT` empty). The API scaffold under `api/researcher/` stays fail-closed (`RESEARCHER_API_ENABLED=false`). Do not describe either as the live results system.
+Static files under `researcher/` may remain in the repository. They talk only to `/api/researcher` and still return no research data without a server session. Do not describe GitHub Pages as the live results system.
 
 The archive UI has no password form, no mock login, and no public-data fallback. Unauthenticated callers receive no survey records. Sessions, when later enabled, are HttpOnly cookies — not `localStorage` tokens.
 

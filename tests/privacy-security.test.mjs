@@ -121,9 +121,8 @@ test('researcher API RLS policies are drop-then-create so the schema is re-runna
   }
 });
 
-test('inquiry archive is a disconnected future workspace without secrets', () => {
+test('inquiry archive connects to the same-origin API without secrets or a password-only workspace', () => {
   assert.match(researcherHtml, /Inquiry archive/);
-  assert.match(researcherHtml, /future interface/i);
   assert.match(researcherHtml, /noindex/);
   assert.match(researcherHtml, /href="\.\.\/styles\.css/);
   assert.match(researcherHtml, /href="dashboard\.css/);
@@ -131,18 +130,35 @@ test('inquiry archive is a disconnected future workspace without secrets', () =>
   assert.match(researcherJs, /RESEARCHER_ENDPOINT/);
   assert.match(researcherJs, /sessionStorage\.removeItem/);
   assert.doesNotMatch(researcherJs, /sessionStorage\.setItem/);
-  assert.match(researcherConfig, /RESEARCHER_ENDPOINT:\s*''/);
+  assert.match(researcherConfig, /RESEARCHER_ENDPOINT:\s*'\/api\/researcher'/);
   assert.doesNotMatch(researcherConfig, /service_role/);
+  assert.doesNotMatch(researcherConfig, /SUPABASE_/);
+  assert.doesNotMatch(researcherConfig, /DATABASE_URL/);
+  assert.doesNotMatch(researcherConfig, /sb_publishable_/);
   assert.doesNotMatch(researcherJs, /service_role/);
   assert.doesNotMatch(researcherJs, /Brian-only/i);
   assert.doesNotMatch(researcherHtml, /Brian-only/i);
   assert.doesNotMatch(researcherJs, /brianpereira/i);
   assert.doesNotMatch(indexHtml, /href="researcher\//);
   assert.match(researcherHtml, /id="auth-gate"/);
+  assert.match(researcherHtml, /id="auth-email"/);
+  assert.match(researcherHtml, /id="auth-password"/);
   assert.match(researcherHtml, /id="auth-start"/);
+  assert.match(researcherHtml, />Sign in</);
+  assert.match(researcherHtml, /id="auth-mfa-code"/);
   assert.match(researcherHtml, /id="workspace-status"/);
+  assert.doesNotMatch(researcherHtml, /Future interface · disconnected/i);
+  assert.doesNotMatch(researcherHtml, /Protected researcher API is not connected/);
   assert.match(researcherJs, /showDisconnectedWorkspace/);
-  assert.match(researcherJs, /\/v1\/session/);
+  assert.match(researcherJs, /\/v1\/session\/login/);
+  assert.match(researcherJs, /\/v1\/session\/mfa/);
+  assert.match(researcherJs, /showMfaStep/);
+  assert.match(researcherJs, /enrollmentRequired/);
+  assert.match(researcherJs, /authenticated !== true/);
+  assert.match(
+    researcherJs,
+    /if \(payload\?\.mfaRequired\) \{[\s\S]*showMfaStep[\s\S]*return;/
+  );
   assert.match(schemaSql, /authorised_researchers/);
   assert.match(schemaSql, /delete_assessment_by_reference/);
 });

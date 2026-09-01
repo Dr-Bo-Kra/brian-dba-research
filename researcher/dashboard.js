@@ -542,6 +542,8 @@
   }
 
   function applySessionPayload(payload) {
+    if (payload?.authenticated !== true) return false;
+    if (payload?.mfaRequired) return false;
     session = {
       role: payload.role || 'authorised_researcher',
       expiresAt: payload.expiresAt,
@@ -550,6 +552,7 @@
     showWorkspace();
     startPolling();
     void refreshWorkspace();
+    return true;
   }
 
   async function authPost(path, body) {
@@ -583,7 +586,7 @@
           ticket: pendingTicket,
           code: String(authMfaCode?.value || ''),
         });
-        if (payload?.authenticated) {
+        if (payload?.authenticated === true && !payload?.mfaRequired) {
           pendingTicket = '';
           applySessionPayload(payload);
           return;
@@ -601,13 +604,13 @@
         email: String(authEmail?.value || '').trim(),
         password: String(authPassword?.value || ''),
       });
-      if (payload?.authenticated) {
-        applySessionPayload(payload);
-        return;
-      }
       if (payload?.mfaRequired) {
         pendingTicket = String(payload.ticket || '');
         showMfaStep({ enrollmentRequired: payload.enrollmentRequired, qr: payload.qr });
+        return;
+      }
+      if (payload?.authenticated === true) {
+        applySessionPayload(payload);
         return;
       }
       if (authError) {
@@ -673,7 +676,7 @@
       });
       if (!response.ok) return null;
       const payload = await response.json();
-      if (!payload?.authenticated) return null;
+      if (payload?.authenticated !== true) return null;
       return {
         role: payload.role || 'authorised_researcher',
         expiresAt: payload.expiresAt,

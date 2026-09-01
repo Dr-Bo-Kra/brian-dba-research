@@ -453,7 +453,7 @@ test('normal researcher routes remain unchanged when the diagnostic is enabled',
 test('collection remains disabled and researcher API stays fail-closed', () => {
   assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
   assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*''/);
-  assert.match(read('researcher/config.js'), /RESEARCHER_ENDPOINT:\s*''/);
+  assert.match(read('researcher/config.js'), /RESEARCHER_ENDPOINT:\s*'\/api\/researcher'/);
   const example = read('api/researcher/env.example');
   assert.match(example, /RESEARCHER_API_ENABLED=false/);
   assert.match(example, /EXPORTS_ENABLED=false/);

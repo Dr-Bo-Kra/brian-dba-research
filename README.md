@@ -48,7 +48,7 @@ The public site is static HTML, CSS, and JavaScript. No build step is required.
 - **GitHub Pages** can host the public files. It does **not** provide complete configurable HTTP security headers. Pages include a Content-Security-Policy **meta** tag as a fallback. Some CSP directives, including `frame-ancestors`, are only enforced when sent as HTTP headers. Do not treat the meta tag as a substitute for host-level headers.
 - **Netlify, Cloudflare Pages, or Vercel** can apply `_headers` or `vercel.json`. Prefer a host with configurable headers before enabling collection.
 
-After deploy, confirm that `config.js` still has `COLLECTION_ENABLED: false` and an empty `SUBMISSION_ENDPOINT`, and that `researcher/config.js` has an empty `RESEARCHER_ENDPOINT`. Do not treat `researcher/` as the production results interface.
+After deploy, confirm that `config.js` still has `COLLECTION_ENABLED: false` and an empty `SUBMISSION_ENDPOINT`. Preview `researcher/config.js` uses the same-origin path `/api/researcher`. Do not treat GitHub Pages as the production results interface.
 
 ## Configuration
 
@@ -65,7 +65,7 @@ Researcher workspace configuration lives in `researcher/config.js`.
 
 | Field | Production value until launch is approved |
 | --- | --- |
-| `RESEARCHER_ENDPOINT` | `''` (empty; later same-site `/api/researcher`) |
+| `RESEARCHER_ENDPOINT` | `'/api/researcher'` (same-origin; not a secret) |
 
 When collection is eventually enabled:
 
@@ -74,7 +74,7 @@ When collection is eventually enabled:
 3. Reject any `/rest/v1/` table URL from the participant browser. The public client already refuses that path.
 4. Update CSP `connect-src` on the public page (meta tag and HTTP headers) to include **only** the submission endpoint origin.
 5. Do not add a database anon key, publishable key, JWT secret, or service-role key to `config.js` or `researcher/config.js`.
-6. Leave `RESEARCHER_ENDPOINT` empty until a later, separately approved researcher API exists. Do not host that API or `researcher/` on GitHub Pages.
+6. Keep `RESEARCHER_ENDPOINT` as the same-origin `/api/researcher` path only. Do not host that API or `researcher/` on GitHub Pages.
 
 ## What the public activity stores
 
@@ -111,17 +111,13 @@ Required dashboard practice (to be enforced operationally; not implemented as br
 
 The public website has no results list and no researcher login.
 
-## Inquiry archive (`researcher/`) — future interface only
+## Inquiry archive (`researcher/`)
 
-`researcher/` is a **future** researcher UI kept in the repository. It is **not** the production or initial-release results interface. A fail-closed API scaffold lives in `api/researcher/` and stays disabled (`RESEARCHER_API_ENABLED=false`).
+`researcher/` is the Inquiry Archive UI. It talks only to the same-origin protected API at `/api/researcher`. A fail-closed API lives in `api/researcher/` and stays disabled unless the host sets `RESEARCHER_API_ENABLED=true`. Collection, export, and deletion remain off.
 
-It must stay **disconnected** (`RESEARCHER_ENDPOINT` empty) until all of the following are true:
+The browser must not receive Supabase keys, database URLs, or researcher credentials. Password sign-in alone cannot open the workspace; the API must confirm TOTP MFA (`authenticated: true`) first.
 
-- the protected researcher API is enabled with Supabase Auth, TOTP MFA, role-based authorisation, and server-side session cookies
-- institutional approval permits its use
-- the hosting platform can protect the route **before** HTML is served (GitHub Pages cannot)
-
-`noindex`, `robots.txt`, and `X-Robots-Tag` are **crawl hints only**. They do not restrict who can fetch static files. Do not describe them as access controls.
+GitHub Pages cannot protect this route. `noindex`, `robots.txt`, and `X-Robots-Tag` are **crawl hints only**. They do not restrict who can fetch static files.
 
 The public website does not link to this workspace and must not gain database reads.
 
@@ -182,7 +178,7 @@ Do not enable live collection until the institution has confirmed at least:
 - controlled dashboard export, deletion-by-reference, retention, and audit practice
 - incident contacts
 
-The Inquiry archive is **not** a collection-launch blocker. It stays a disconnected future UI until a later, separately approved API and host exist.
+The Inquiry archive is **not** a collection-launch blocker. Collection stays off. The archive talks only to `/api/researcher` after MFA.
 
 See [docs/launch-readiness.md](docs/launch-readiness.md).
 

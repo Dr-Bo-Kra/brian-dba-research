@@ -61,10 +61,9 @@ The adapter:
 
 ### Public / client-safe
 
-Committed `researcher/config.js` keeps `RESEARCHER_ENDPOINT: ''` (disconnected).
-When operators intentionally connect the same-origin API they set
-`RESEARCHER_ENDPOINT: '/api/researcher'`. That path is not a secret and still
-returns no research data without an authenticated session.
+Committed `researcher/config.js` uses `RESEARCHER_ENDPOINT: '/api/researcher'`
+(same-origin). That path is not a secret and still returns no research data
+without an authenticated MFA session.
 
 Never put secrets in `researcher/config.js`, `config.js`, or any `NEXT_PUBLIC_` /
 `VITE_` / `PUBLIC_` variable.

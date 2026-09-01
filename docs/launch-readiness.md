@@ -23,8 +23,10 @@ This checklist is for a **privacy-hardened** demonstration. Completing engineeri
 
 | Item | Current state |
 | --- | --- |
-| Protected researcher API for `researcher/` | Scaffolded under `api/researcher/`; **disabled**. Inquiry archive stays disconnected |
-| MFA identity provider and durable session store | Not connected. No mock login |
+| Protected researcher API for `researcher/` | Same-origin `/api/researcher`. Host must set `RESEARCHER_API_ENABLED` with Auth/MFA; collection/export/delete stay off |
+| MFA identity provider and durable session store | Supabase Auth + TOTP; opaque application session after MFA |
+| Institutional approval to use the Inquiry archive | Preview-only until the institution says otherwise |
+| Host that can protect the `/researcher/` route | GitHub Pages cannot. `noindex` / `robots.txt` are crawl hints, not access controls. |
 | Institutional approval to use the Inquiry archive | Not granted |
 | Host that can protect the `/researcher/` route | GitHub Pages cannot. `noindex` / `robots.txt` are crawl hints, not access controls. |
 
@@ -38,7 +40,7 @@ Do not treat `researcher/` as the production results interface until those futur
 - No anon key, service-role key, or public table insert from browser code
 - Collection disabled unless an HTTPS protected endpoint (not `/rest/v1/`) is configured
 - Forced RLS and revoked `anon` / `authenticated` table privileges
-- Inquiry archive UI at `researcher/` kept as a disconnected future workspace (no mock login, no token storage)
+- Inquiry archive UI at `researcher/` talks only to `/api/researcher` (no mock login, no token storage)
 - Fail-closed researcher API scaffold (`RESEARCHER_API_ENABLED=false`; export/delete off)
 - CSP meta tags; `_headers` and `vercel.json` for hosts that honour them
 - Automated checks in GitHub Actions
@@ -55,7 +57,7 @@ Do not treat `researcher/` as the production results interface until those futur
 8. Agree dashboard procedure for aggregate review, controlled CSV export, deletion by participant reference, and audit notes.
 9. Update public CSP `connect-src` for the submission endpoint origin only.
 10. Keep `COLLECTION_ENABLED` false until a documented go-live decision. Only then set it to `true` with a filled `SUBMISSION_ENDPOINT`.
-11. Keep `RESEARCHER_ENDPOINT` empty. Do not switch results review to `researcher/` in this launch.
+11. Inquiry Archive uses `RESEARCHER_ENDPOINT: '/api/researcher'`. Do not host it on GitHub Pages. Keep collection, export, and deletion off.
 
 ## Explicit non-goals for this launch
 

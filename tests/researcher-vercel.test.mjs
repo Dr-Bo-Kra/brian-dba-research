@@ -328,7 +328,7 @@ test('browser files have no Supabase credentials or direct database access', () 
     assert.doesNotMatch(source, /from\s+['"]pg['"]/);
     assert.doesNotMatch(source, /postgresql:\/\//);
   }
-  assert.match(read('researcher/config.js'), /RESEARCHER_ENDPOINT:\s*''/);
+  assert.match(read('researcher/config.js'), /RESEARCHER_ENDPOINT:\s*'\/api\/researcher'/);
   assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
   assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*''/);
   assert.doesNotMatch(read('researcher/dashboard.js'), /LIVE_EXPORTS_ENABLED = true/);

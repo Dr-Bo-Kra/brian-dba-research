@@ -16,10 +16,10 @@
 <body class="workspace-body">
   <a class="skip-link" href="#workspace-main">Skip to inquiry archive</a>
 
-  <section class="auth-gate" id="auth-gate" hidden>
+  <section class="auth-gate" id="auth-gate">
     <p class="kicker">Private research workspace</p>
     <h1>Inquiry archive</h1>
-    <p class="auth-lede">Researcher sign-in uses the protected researcher API. Identity is proven with Supabase Auth and mandatory authenticator MFA. Application access still requires the single authorised researcher record. Crawl hints such as noindex do not restrict who can fetch these static files.</p>
+    <p class="auth-lede">Researcher sign-in uses the protected researcher API. Identity is proven with email, password, and mandatory authenticator MFA. Application access still requires the single authorised researcher record. Crawl hints such as noindex do not restrict who can fetch these static files.</p>
     <p class="field-error" id="auth-error" hidden role="alert"></p>
     <form id="auth-form" action="#" method="post" autocomplete="on">
       <div id="auth-password-step">
@@ -30,7 +30,7 @@
           <input type="password" id="auth-password" name="password" autocomplete="current-password" maxlength="256" required>
         </label>
         <div class="survey-actions">
-          <button type="submit" class="button primary" id="auth-start" disabled>Sign in</button>
+          <button type="submit" class="button primary" id="auth-start">Sign in</button>
         </div>
       </div>
       <div id="auth-mfa-step" hidden>
@@ -47,14 +47,14 @@
         </div>
       </div>
     </form>
-    <p class="survey-hint" id="auth-hint">Sign-in is disabled until a same-site HTTPS researcher API is configured. There is no mock login and no public-data fallback.</p>
+    <p class="survey-hint" id="auth-hint">Use your researcher email, password, and authenticator app. Password sign-in alone cannot open the archive. There is no mock login and no public-data fallback.</p>
   </section>
 
   <div class="workspace" id="workspace" hidden>
     <header class="workspace-header">
       <a class="brand" href="#workspace-main" aria-label="Inquiry archive home">
         <span class="brand-mark" aria-hidden="true">BP</span>
-        <span><strong>Inquiry archive</strong><small>Future interface · disconnected</small></span>
+        <span><strong>Inquiry archive</strong><small>Authorised researchers</small></span>
       </a>
       <div class="workspace-header-meta">
         <p class="workspace-session" id="session-meta">No live session</p>
@@ -64,14 +64,14 @@
 
     <div class="workspace-status" id="workspace-status" role="status" aria-live="polite" data-state="disconnected">
       <span class="status-dot" aria-hidden="true"></span>
-      <span id="status-copy">Protected researcher API is not connected. Live collection is disabled.</span>
+      <span id="status-copy">Sign in with email, password, and authenticator MFA. Live collection is disabled.</span>
     </div>
 
     <main id="workspace-main">
       <section class="workspace-intro">
         <p class="kicker">DBA 2027-10384 · Inclusive lending desk</p>
         <h1>Read the field without leaving the study.</h1>
-        <p>If a protected researcher API is later approved and hosted off GitHub Pages, authorised researchers would review accepted responses here after MFA sign-in. Until then this workspace stays disconnected. Initial review, if collection is enabled, is through the authenticated Supabase dashboard—not this page.</p>
+        <p>Authorised researchers review accepted responses here after the protected API confirms identity and TOTP MFA. Password sign-in alone cannot open this workspace. Collection remains disabled. Crawl hints are not access controls. Do not host this archive on GitHub Pages.</p>
       </section>
 
       <section class="glance-band" aria-label="Study at a glance">
@@ -205,12 +205,12 @@
     </main>
 
     <footer>
-      <p>Inquiry archive · future interface only · not the initial-release results system · collection remains disabled until the protected submission endpoint and institutional approvals are complete</p>
+      <p>Inquiry archive · protected same-origin API · collection remains disabled until the protected submission endpoint and institutional approvals are complete</p>
       <p>Must not be treated as protected if hosted on GitHub Pages · privacy-hardened workspace · not a claim of legal compliance</p>
     </footer>
   </div>
 
-  <script src="config.js?v=2"></script>
-  <script src="dashboard.js?v=2"></script>
+  <script src="config.js?v=3"></script>
+  <script src="dashboard.js?v=3"></script>
 </body>
 </html>

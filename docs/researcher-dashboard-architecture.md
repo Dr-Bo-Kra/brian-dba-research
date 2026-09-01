@@ -2,7 +2,7 @@
 
 This document defines the **intended production architecture** for authorised review of Inclusive Lending Desk responses. It is part of a **privacy-hardened** demonstration. It is **not** a claim that the system is hack-proof, legally compliant, approved for live human-subject research, or ready for live collection.
 
-Live collection stays **disabled**. The Inquiry archive at `researcher/` stays **disconnected**. Do not put service-role, anon, database, or other privileged credentials in browser-delivered files.
+Live collection stays **disabled**. The Inquiry archive at `researcher/` talks only to the same-origin `/api/researcher` path. Do not put service-role, anon, database, or other privileged credentials in browser-delivered files.
 
 ## Layers
 
@@ -63,7 +63,7 @@ Deny access **by default**. A request is authorised only after the researcher AP
 
 - Public survey consent gate, sessionStorage-only local result, collection **off**.
 - Schema: forced RLS, revoked `anon` / `authenticated` table privileges, no `CREATE POLICY`, dropped `user_agent` / `page_url`.
-- Inquiry archive **UI** that fails closed when `RESEARCHER_ENDPOINT` is empty (the default).
+- Inquiry archive **UI** that signs in through the same-origin researcher API when `RESEARCHER_ENDPOINT` is `/api/researcher`, and fails closed when that path is empty.
 - Researcher API **scaffold** under `api/researcher/` that refuses data unless explicitly enabled **and** server-side configuration exists. Defaults keep it disabled.
 - Architecture tests for fail-closed behaviour, allowlisted filters, CSV formula escaping, and documentation invariants.
 
@@ -77,10 +77,10 @@ Deny access **by default**. A request is authorised only after the researcher AP
 
 - `COLLECTION_ENABLED`
 - `SUBMISSION_ENDPOINT`
-- `RESEARCHER_ENDPOINT`
-- `RESEARCHER_API_ENABLED`
 - `EXPORTS_ENABLED`
 - `DELETIONS_ENABLED`
+
+`RESEARCHER_ENDPOINT` is the same-origin `/api/researcher` path. `RESEARCHER_API_ENABLED` stays `false` in committed env examples and must be set only in the approved host environment.
 
 ## What requires institutional approval
 
