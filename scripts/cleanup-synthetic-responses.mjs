@@ -9,12 +9,15 @@ import {
   isSyntheticReference,
 } from './lib/synthetic-batch.mjs';
 import {
+  loadOperatorEnv,
+  logOperatorDatabaseIdentity,
+} from './lib/load-operator-env.mjs';
+import {
   SYNTHETIC_REF_SQL_PATTERN,
   countSyntheticRows,
   createOperatorPool,
   listSyntheticRows,
   parseOperatorArgs,
-  safeDatabaseIdentity,
   verifyAssessmentSchema,
 } from './lib/synthetic-db.mjs';
 
@@ -28,15 +31,22 @@ Safety:
   • Requires --confirm-synthetic-cleanup (unless --dry-run)
   • Refuses when matched row count exceeds ${SYNTHETIC_RESPONSE_COUNT}
   • Never deletes rows outside the reserved synthetic prefix
-  • Requires DATABASE_URL with DELETE on assessment_responses`);
+  • Requires DATABASE_URL with DELETE on assessment_responses
+
+Environment (shell or gitignored local file):
+  .env.synthetic.local  preferred operator file (never committed)
+  .env.local            fallback operator file (never committed)`);
 }
 
 async function main() {
+  const loadedFrom = loadOperatorEnv();
   const args = parseOperatorArgs(process.argv.slice(2));
   if (process.argv.includes('--help') || process.argv.includes('-h')) {
     usage();
     return;
   }
+
+  logOperatorDatabaseIdentity(loadedFrom);
 
   let pool;
   try {
@@ -51,9 +61,6 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-
-  const identity = safeDatabaseIdentity(process.env.DATABASE_URL || '');
-  console.log('Target database (no secrets):', identity);
 
   const client = await pool.connect();
   try {

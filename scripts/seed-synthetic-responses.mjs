@@ -13,10 +13,13 @@ import {
   toInsertRow,
 } from './lib/synthetic-batch.mjs';
 import {
+  loadOperatorEnv,
+  logOperatorDatabaseIdentity,
+} from './lib/load-operator-env.mjs';
+import {
   countSyntheticRows,
   createOperatorPool,
   parseOperatorArgs,
-  safeDatabaseIdentity,
   verifyAssessmentSchema,
 } from './lib/synthetic-db.mjs';
 
@@ -32,9 +35,11 @@ Safety:
   • Uses reserved client_record_id prefix resp_00000000-0000-4000-8000-…
   • Requires DATABASE_URL (operator credential with INSERT on assessment_responses)
 
-Environment:
-  DATABASE_URL       PostgreSQL connection string (not service_role)
-  DATABASE_CA_CERT   PEM CA for remote TLS (optional for localhost)`);
+Environment (shell or gitignored local file):
+  .env.synthetic.local  preferred operator file (never committed)
+  .env.local            fallback operator file (never committed)
+  DATABASE_URL          PostgreSQL connection string (not service_role)
+  DATABASE_CA_CERT      PEM CA for remote TLS (optional for localhost)`);
 }
 
 function printDryRunSummary(records) {
@@ -52,6 +57,7 @@ function printDryRunSummary(records) {
 }
 
 async function main() {
+  const loadedFrom = loadOperatorEnv();
   const args = parseOperatorArgs(process.argv.slice(2));
   if (process.argv.includes('--help') || process.argv.includes('-h')) {
     usage();
@@ -76,6 +82,8 @@ async function main() {
     return;
   }
 
+  logOperatorDatabaseIdentity(loadedFrom);
+
   let pool;
   try {
     pool = createOperatorPool();
@@ -84,9 +92,6 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-
-  const identity = safeDatabaseIdentity(process.env.DATABASE_URL || '');
-  console.log('Target database (no secrets):', identity);
 
   const client = await pool.connect();
   try {
