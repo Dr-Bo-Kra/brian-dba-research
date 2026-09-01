@@ -310,6 +310,7 @@ test('missing production secrets fail closed and stay out of public config', () 
 test('browser files have no Supabase credentials or direct database access', () => {
   const files = [
     'researcher/dashboard.js',
+    'researcher/auth-field-mode.mjs',
     'researcher/config.js',
     'researcher/config.example.js',
     'script.js',

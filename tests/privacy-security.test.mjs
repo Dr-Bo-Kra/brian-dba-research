@@ -15,6 +15,7 @@ const configExample = read('config.example.js');
 const schemaSql = read('supabase/schema.sql');
 const researcherHtml = read('researcher/index.html');
 const researcherJs = read('researcher/dashboard.js');
+const researcherAuthFields = read('researcher/auth-field-mode.mjs');
 const researcherConfig = read('researcher/config.js');
 const researcherConfigExample = read('researcher/config.example.js');
 const researcherCss = read('researcher/dashboard.css');
@@ -24,6 +25,7 @@ const allBrowser = [
   ...publicBrowser,
   researcherHtml,
   researcherJs,
+  researcherAuthFields,
   researcherConfig,
   researcherConfigExample,
 ];

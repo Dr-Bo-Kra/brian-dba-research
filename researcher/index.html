@@ -40,7 +40,7 @@
           <img id="auth-qr" alt="Authenticator enrollment QR code" hidden>
         </div>
         <label class="field" for="auth-mfa-code">Authenticator code
-          <input type="text" id="auth-mfa-code" name="mfa" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]*">
+          <input type="text" id="auth-mfa-code" name="mfa" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]*" disabled>
         </label>
         <div class="survey-actions">
           <button type="submit" class="button primary" id="auth-mfa-submit">Continue</button>
@@ -211,6 +211,6 @@
   </div>
 
   <script src="config.js?v=3"></script>
-  <script src="dashboard.js?v=3"></script>
+  <script type="module" src="dashboard.js?v=4"></script>
 </body>
 </html>

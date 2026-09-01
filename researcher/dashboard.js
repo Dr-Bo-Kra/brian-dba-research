@@ -1,3 +1,5 @@
+import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.mjs';
+
 (function initInquiryArchive() {
   const gate = document.getElementById('auth-gate');
   const workspace = document.getElementById('workspace');
@@ -22,6 +24,10 @@
   const authMfaCode = document.getElementById('auth-mfa-code');
   const authEnroll = document.getElementById('auth-enroll');
   const authQr = document.getElementById('auth-qr');
+  applyAuthFieldMode(
+    { email: authEmail, password: authPassword, mfaCode: authMfaCode },
+    'password'
+  );
   const filterForm = document.getElementById('filter-form');
   const revealBox = document.getElementById('reveal-reflections');
   const deleteForm = document.getElementById('delete-form');
@@ -521,6 +527,10 @@
     }
     if (authMfaCode) authMfaCode.value = '';
     if (authPassword) authPassword.value = '';
+    applyAuthFieldMode(
+      { email: authEmail, password: authPassword, mfaCode: authMfaCode },
+      'password'
+    );
   }
 
   function showMfaStep({ enrollmentRequired, qr }) {
@@ -528,6 +538,10 @@
     if (authMfaStep) authMfaStep.hidden = false;
     if (authPassword) authPassword.value = '';
     if (authMfaCode) authMfaCode.value = '';
+    applyAuthFieldMode(
+      { email: authEmail, password: authPassword, mfaCode: authMfaCode },
+      'mfa'
+    );
     const canShowQr = Boolean(enrollmentRequired && qr && String(qr).startsWith('data:image/'));
     if (authEnroll) authEnroll.hidden = !canShowQr;
     if (authQr) {
@@ -581,7 +595,7 @@
       authError.textContent = '';
     }
     try {
-      if (authMfaStep && !authMfaStep.hidden) {
+      if (researcherAuthSubmitPath(authMfaStep?.hidden) === '/v1/session/mfa') {
         const { response, payload } = await authPost('/v1/session/mfa', {
           ticket: pendingTicket,
           code: String(authMfaCode?.value || ''),
