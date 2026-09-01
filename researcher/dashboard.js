@@ -171,6 +171,25 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     statusCopy.textContent = message;
   }
 
+  function setSessionMeta(expiresAt) {
+    if (!sessionMeta) return;
+    if (!session) {
+      sessionMeta.hidden = true;
+      sessionMeta.replaceChildren();
+      return;
+    }
+    sessionMeta.hidden = false;
+    const label = document.createElement('span');
+    label.className = 'workspace-session-label';
+    label.textContent = 'Signed in';
+    sessionMeta.replaceChildren(label);
+    if (!expiresAt) return;
+    const expiry = document.createElement('small');
+    expiry.className = 'workspace-session-expiry';
+    expiry.textContent = `Ends ${formatWhen(expiresAt)}`;
+    sessionMeta.append(expiry);
+  }
+
   function readFilters() {
     const data = new FormData(filterForm);
     return {
@@ -235,7 +254,7 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     const days = summary?.trend || [];
     if (!days.length) {
       host.innerHTML =
-        '<p class="empty-copy">The arrival rhythm is quiet until authorised aggregates exist.</p>';
+        '<p class="empty-copy">No daily counts yet.</p>';
       return;
     }
     const width = 560;
@@ -351,18 +370,18 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     const revealed = Boolean(revealBox?.checked);
     host.hidden = !revealed;
     if (!revealed) {
-      empty.textContent = 'Reflections stay hidden until you confirm a research or withdrawal need.';
+      empty.textContent = 'Turn this on only when you need to read free-text answers.';
       empty.hidden = false;
       qualitative = [];
       return;
     }
     if (!session || !apiConfigured) {
-      empty.textContent = 'Qualitative review requires an authenticated researcher session.';
+      empty.textContent = 'No reflections in the current view.';
       empty.hidden = false;
       return;
     }
     empty.hidden = qualitative.length > 0;
-    empty.textContent = 'No reflections are loaded.';
+    empty.textContent = 'No reflections in the current view.';
     qualitative.forEach((entry) => {
       const article = document.createElement('article');
       article.className = 'reflection-card';
@@ -395,7 +414,7 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     summary = null;
     qualitative = [];
     if (signOutBtn) signOutBtn.hidden = true;
-    if (sessionMeta) sessionMeta.textContent = 'No live session';
+    setSessionMeta(null);
     if (exportBtn) exportBtn.disabled = true;
     if (deleteSubmit) deleteSubmit.disabled = true;
   }
@@ -444,7 +463,7 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
       renderAll();
       return;
     }
-    setStatus('loading', 'Synchronising authorised aggregates…');
+    setStatus('loading', 'Updating…');
     try {
       const filters = queryString(readFilters());
       const [summaryRes, listRes] = await Promise.all([
@@ -454,12 +473,8 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
       summary = await summaryRes.json();
       const payload = await listRes.json();
       records = Array.isArray(payload?.records) ? payload.records : [];
-      setStatus('live', 'Connected to the protected researcher API. Unauthenticated requests receive no records.');
-      if (sessionMeta) {
-        sessionMeta.textContent = `Session · ${session.role || 'authorised_researcher'} · ends ${formatWhen(
-          session.expiresAt
-        )}`;
-      }
+      setStatus('live', 'Live');
+      setSessionMeta(session?.expiresAt);
       if (revealBox?.checked) await loadQualitative();
       renderAll();
     } catch (error) {
@@ -469,10 +484,10 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
       renderAll();
       if (error.code === 'session-expired') {
         showAuth('Your session ended. Sign in again.');
-        setStatus('error', 'Session expired. Sign in again to continue.');
+        setStatus('error', 'Your session ended. Sign in again.');
         return;
       }
-      setStatus('error', 'The workspace could not refresh. No records are shown.');
+      setStatus('error', 'Could not refresh the workspace.');
     }
   }
 
@@ -652,19 +667,14 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
       authError.textContent = message || '';
     }
     if (authStart) authStart.disabled = !apiConfigured;
-    if (!apiConfigured && authHint) {
-      authHint.textContent =
-        'The protected researcher API is not configured. There is no mock login and no public-data fallback. GitHub Pages cannot protect this route.';
-    } else if (authHint) {
-      authHint.textContent =
-        'Use your researcher email, password, and authenticator app. There is no mock login and no public-data fallback.';
-    }
+    if (authHint) authHint.textContent = 'There is no mock login.';
   }
 
   function showWorkspace() {
     gate.hidden = true;
     workspace.hidden = false;
     if (signOutBtn) signOutBtn.hidden = !session;
+    setSessionMeta(session?.expiresAt);
     renderAll();
   }
 
@@ -672,10 +682,7 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     clearWorkspaceData();
     gate.hidden = true;
     workspace.hidden = false;
-    setStatus(
-      'disconnected',
-      'Protected researcher API is not connected. Live collection is disabled. Unauthenticated users never receive survey records.'
-    );
+    setStatus('disconnected', 'This workspace is unavailable.');
     renderAll();
   }
 
@@ -731,7 +738,7 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     if (!LIVE_DELETIONS_ENABLED || !session || !apiConfigured) {
       if (deleteError) {
         deleteError.hidden = false;
-        deleteError.textContent = 'Deletion requires an authenticated researcher session and an enabled API policy.';
+        deleteError.textContent = 'Deletion is unavailable until it is enabled for this study.';
       }
       return;
     }
@@ -755,8 +762,7 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     } catch {
       if (deleteError) {
         deleteError.hidden = false;
-        deleteError.textContent =
-          'Deletion is unavailable. Policy may be disabled, a legal hold may apply, or the API is not enabled.';
+        deleteError.textContent = 'Deletion is unavailable until it is enabled for this study.';
       }
     }
   }
@@ -764,7 +770,7 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
   async function handleExport() {
     const LIVE_EXPORTS_ENABLED = false;
     if (!LIVE_EXPORTS_ENABLED || !session || !apiConfigured) {
-      setStatus('error', 'Export is unavailable until the API policy is enabled for an authenticated session.');
+      setStatus('error', 'CSV export is unavailable until it is enabled for this study.');
       return;
     }
     try {
@@ -780,7 +786,7 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
       link.click();
       URL.revokeObjectURL(url);
     } catch {
-      setStatus('error', 'Export is unavailable until the API policy is enabled for an authenticated session.');
+      setStatus('error', 'CSV export is unavailable until it is enabled for this study.');
     }
   }
 

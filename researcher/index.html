@@ -11,7 +11,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; upgrade-insecure-requests">
   <title>Inquiry archive | Brian E Pereira DBA Research</title>
   <link rel="stylesheet" href="../styles.css?v=15">
-  <link rel="stylesheet" href="dashboard.css?v=3">
+  <link rel="stylesheet" href="dashboard.css?v=4">
 </head>
 <body class="workspace-body">
   <a class="skip-link" href="#workspace-main">Skip to inquiry archive</a>
@@ -19,7 +19,7 @@
   <section class="auth-gate" id="auth-gate">
     <p class="kicker">Private research workspace</p>
     <h1>Inquiry archive</h1>
-    <p class="auth-lede">Researcher sign-in uses the protected researcher API. Identity is proven with email, password, and mandatory authenticator MFA. Application access still requires the single authorised researcher record. Crawl hints such as noindex do not restrict who can fetch these static files.</p>
+    <p class="auth-lede">Sign in with your researcher email, password, and authenticator app.</p>
     <p class="field-error" id="auth-error" hidden role="alert"></p>
     <form id="auth-form" action="#" method="post" autocomplete="on">
       <div id="auth-password-step">
@@ -47,7 +47,7 @@
         </div>
       </div>
     </form>
-    <p class="survey-hint" id="auth-hint">Use your researcher email, password, and authenticator app. Password sign-in alone cannot open the archive. There is no mock login and no public-data fallback.</p>
+    <p class="survey-hint" id="auth-hint">There is no mock login.</p>
   </section>
 
   <div class="workspace" id="workspace" hidden>
@@ -57,21 +57,21 @@
         <span><strong>Inquiry archive</strong><small>Authorised researchers</small></span>
       </a>
       <div class="workspace-header-meta">
-        <p class="workspace-session" id="session-meta">No live session</p>
+        <p class="workspace-session" id="session-meta" hidden></p>
         <button type="button" class="button ghost header-ghost" id="sign-out" hidden>Sign out</button>
       </div>
     </header>
 
     <div class="workspace-status" id="workspace-status" role="status" aria-live="polite" data-state="disconnected">
       <span class="status-dot" aria-hidden="true"></span>
-      <span id="status-copy">Sign in with email, password, and authenticator MFA. Live collection is disabled.</span>
+      <span id="status-copy">Updating…</span>
     </div>
 
     <main id="workspace-main">
       <section class="workspace-intro">
         <p class="kicker">DBA 2027-10384 · Inclusive lending desk</p>
         <h1>Read the field without leaving the study.</h1>
-        <p>Authorised researchers review accepted responses here after the protected API confirms identity and TOTP MFA. Password sign-in alone cannot open this workspace. Collection remains disabled. Crawl hints are not access controls. Do not host this archive on GitHub Pages.</p>
+        <p>Review accepted responses, aggregates, and reflections for this study.</p>
       </section>
 
       <section class="glance-band" aria-label="Study at a glance">
@@ -86,7 +86,7 @@
           <p class="kicker">Recent intake</p>
           <h2 id="pulse-title">Live activity</h2>
           <ol class="intake-list" id="intake-list"></ol>
-          <p class="empty-copy" id="intake-empty">No accepted responses have arrived in this workspace yet.</p>
+          <p class="empty-copy" id="intake-empty">No responses yet.</p>
         </section>
 
         <section class="workspace-panel" aria-labelledby="rhythm-title">
@@ -137,14 +137,14 @@
         <p class="kicker">Aggregate stance</p>
         <h2 id="compass-title">Research-domain scores</h2>
         <div class="domain-scores" id="domain-scores"></div>
-        <p class="empty-copy" id="domain-empty">Domain means appear after accepted Likert responses are in the archive.</p>
+        <p class="empty-copy" id="domain-empty">Domain scores will appear when responses arrive.</p>
       </section>
 
       <section class="workspace-panel" aria-labelledby="items-title">
         <p class="kicker">Item field</p>
         <h2 id="items-title">Question-level distributions</h2>
         <div id="item-distributions"></div>
-        <p class="empty-copy" id="items-empty">Distributions appear once rating items have been accepted.</p>
+        <p class="empty-copy" id="items-empty">Question distributions will appear when responses arrive.</p>
       </section>
 
       <section class="workspace-panel" aria-labelledby="ledger-title">
@@ -165,23 +165,23 @@
             <tbody id="record-rows"></tbody>
           </table>
         </div>
-        <p class="empty-copy" id="ledger-empty">The ledger is empty until the protected researcher API returns authorised records.</p>
+        <p class="empty-copy" id="ledger-empty">No accepted responses yet.</p>
         <div class="survey-actions">
           <button type="button" class="button primary" id="export-csv" disabled>Request controlled CSV export</button>
         </div>
-        <p class="survey-footnote">Export is a privileged API action. It is disabled until institutional policy enables it. The browser does not build CSV from a public dump. Crawl hints are not access controls.</p>
+        <p class="survey-footnote">CSV export is unavailable until it is enabled for this study.</p>
       </section>
 
       <section class="workspace-panel restricted-panel" aria-labelledby="reflections-title">
         <p class="kicker">Restricted reader</p>
         <h2 id="reflections-title">Qualitative responses</h2>
-        <p class="survey-hint">Free-text is requested from the API only when needed. It is hidden by default and audit-logged server-side.</p>
+        <p class="survey-hint">Free-text answers stay hidden until you need them.</p>
         <label class="reveal-check">
           <input type="checkbox" id="reveal-reflections">
           I need to read reflections for analysis or a withdrawal request.
         </label>
         <div id="reflection-list" hidden></div>
-        <p class="empty-copy" id="reflection-empty">No reflections are loaded.</p>
+        <p class="empty-copy" id="reflection-empty">Turn this on only when you need to read free-text answers.</p>
       </section>
 
       <section class="workspace-panel" aria-labelledby="withdrawal-title">
@@ -205,12 +205,11 @@
     </main>
 
     <footer>
-      <p>Inquiry archive · protected same-origin API · collection remains disabled until the protected submission endpoint and institutional approvals are complete</p>
-      <p>Must not be treated as protected if hosted on GitHub Pages · privacy-hardened workspace · not a claim of legal compliance</p>
+      <p>Inquiry archive · collection is not open yet</p>
     </footer>
   </div>
 
   <script src="config.js?v=3"></script>
-  <script type="module" src="dashboard.js?v=4"></script>
+  <script type="module" src="dashboard.js?v=5"></script>
 </body>
 </html>
