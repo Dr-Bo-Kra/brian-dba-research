@@ -195,8 +195,56 @@ export function normalizeFactorList(json) {
   return out;
 }
 
-function tokenFromAuthBody(json) {
-  return json?.access_token || json?.data?.access_token || json?.session?.access_token || '';
+function tokensFromAuthBody(json) {
+  return {
+    accessToken: json?.access_token || json?.data?.access_token || json?.session?.access_token || '',
+    refreshToken:
+      json?.refresh_token || json?.data?.refresh_token || json?.session?.refresh_token || '',
+  };
+}
+
+export function encodeTicketSecrets({ accessToken, refreshToken } = {}) {
+  return JSON.stringify({
+    a: String(accessToken || ''),
+    r: String(refreshToken || ''),
+  });
+}
+
+export function decodeTicketSecrets(plaintext) {
+  const text = String(plaintext || '');
+  if (!text) return { accessToken: '', refreshToken: '' };
+  if (text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          accessToken: String(parsed.a || parsed.accessToken || ''),
+          refreshToken: String(parsed.r || parsed.refreshToken || ''),
+        };
+      }
+    } catch {
+      return { accessToken: '', refreshToken: '' };
+    }
+  }
+  return { accessToken: text, refreshToken: '' };
+}
+
+function verifiedTotpFromSdk(data) {
+  const totp = Array.isArray(data?.totp) ? data.totp : [];
+  return totp
+    .filter((row) => row?.id)
+    .map((row) => ({ id: String(row.id) }));
+}
+
+export async function createScopedMfaClient(config, { accessToken, refreshToken, fetchImpl = fetch } = {}) {
+  if (!accessToken || !refreshToken) return { ok: false, error: 'unavailable' };
+  const client = createServerAuthClient(config, fetchImpl);
+  const { data, error } = await client.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
+  if (error || !data?.session?.access_token) return { ok: false, error: 'unavailable' };
+  return { ok: true, client };
 }
 
 function headerValue(headers, name) {
@@ -304,26 +352,35 @@ export function createSupabaseAuthClient(config, { harness = null, fetchImpl = f
         if (!granted.ok) return granted;
         const checked = await verified(granted.accessToken);
         if (!checked.ok) return checked;
-        return { ok: true, accessToken: granted.accessToken, claims: checked.claims };
+        return {
+          ok: true,
+          accessToken: granted.accessToken,
+          refreshToken: granted.refreshToken || '',
+          claims: checked.claims,
+        };
       }
       const res = await gotrue('/token?grant_type=password', {
         method: 'POST',
         body: { email, password },
       });
-      const accessToken = tokenFromAuthBody(res.json);
+      const { accessToken, refreshToken } = tokensFromAuthBody(res.json);
       if (!res.ok || !accessToken) return { ok: false, error: 'unauthorized' };
       const checked = await verified(accessToken);
       if (!checked.ok) return checked;
-      return { ok: true, accessToken, claims: checked.claims };
+      return { ok: true, accessToken, refreshToken, claims: checked.claims };
     },
-    async listVerifiedTotpFactors(accessToken) {
+    async listVerifiedTotpFactors(accessToken, refreshToken) {
       const checked = await verified(accessToken);
       if (!checked.ok) return checked;
       if (harness) {
         return { ok: true, factors: normalizeFactorList(harness.listFactors(checked.claims.email)) };
       }
-      const res = await gotrue('/factors', { accessToken });
-      if (!res.ok) {
+      const scoped = await createScopedMfaClient(config, {
+        accessToken,
+        refreshToken,
+        fetchImpl: trackedFetch,
+      });
+      if (!scoped.ok) {
         return {
           ok: false,
           error: 'unavailable',
@@ -334,9 +391,21 @@ export function createSupabaseAuthClient(config, { harness = null, fetchImpl = f
           }),
         };
       }
-      return { ok: true, factors: normalizeFactorList(res.json) };
+      const { data, error } = await scoped.client.auth.mfa.listFactors();
+      if (error || !data) {
+        return {
+          ok: false,
+          error: 'unavailable',
+          diagnostic: classifyAuthFlowFailure({
+            stage: 'factor_list',
+            category: 'list_unavailable',
+            fetchKind: lastFetchKind,
+          }),
+        };
+      }
+      return { ok: true, factors: verifiedTotpFromSdk(data) };
     },
-    async enrollTotp(accessToken) {
+    async enrollTotp(accessToken, refreshToken) {
       const checked = await verified(accessToken);
       if (!checked.ok) return checked;
       if (harness) {
@@ -344,14 +413,29 @@ export function createSupabaseAuthClient(config, { harness = null, fetchImpl = f
         if (!enrolled.ok) return enrolled;
         return { ok: true, factorId: enrolled.factorId, qr: safeQr(enrolled.qr) };
       }
-      const res = await gotrue('/factors', {
-        method: 'POST',
+      const scoped = await createScopedMfaClient(config, {
         accessToken,
-        body: { friendly_name: 'authenticator', factor_type: 'totp' },
+        refreshToken,
+        fetchImpl: trackedFetch,
       });
-      const factorId = res.json?.id || res.json?.data?.id;
-      const qr = safeQr(res.json?.totp?.qr_code || res.json?.data?.totp?.qr_code);
-      if (!res.ok || !factorId) {
+      if (!scoped.ok) {
+        return {
+          ok: false,
+          error: 'unavailable',
+          diagnostic: classifyAuthFlowFailure({
+            stage: 'totp_enroll',
+            category: 'enroll_unavailable',
+            fetchKind: lastFetchKind,
+          }),
+        };
+      }
+      const { data, error } = await scoped.client.auth.mfa.enroll({
+        factorType: 'totp',
+        friendlyName: 'authenticator',
+      });
+      const factorId = data?.id;
+      const qr = safeQr(data?.totp?.qr_code);
+      if (error || !factorId) {
         return {
           ok: false,
           error: 'unavailable',
@@ -364,7 +448,7 @@ export function createSupabaseAuthClient(config, { harness = null, fetchImpl = f
       }
       return { ok: true, factorId: String(factorId), qr };
     },
-    async verifyTotp(accessToken, factorId, code) {
+    async verifyTotp(accessToken, factorId, code, refreshToken) {
       if (!factorId || !/^[0-9]{6,8}$/.test(String(code || ''))) {
         return { ok: false, error: 'unauthorized' };
       }
@@ -379,19 +463,22 @@ export function createSupabaseAuthClient(config, { harness = null, fetchImpl = f
         if (next.claims.sub !== checked.claims.sub) return { ok: false, error: 'tampered' };
         return { ok: true, accessToken: verifiedFactor.accessToken, claims: next.claims };
       }
-      const challenge = await gotrue(`/factors/${encodeURIComponent(factorId)}/challenge`, {
-        method: 'POST',
+      const scoped = await createScopedMfaClient(config, {
         accessToken,
+        refreshToken,
+        fetchImpl: trackedFetch,
       });
-      const challengeId = challenge.json?.id || challenge.json?.data?.id;
-      if (!challenge.ok || !challengeId) return { ok: false, error: 'unauthorized' };
-      const res = await gotrue(`/factors/${encodeURIComponent(factorId)}/verify`, {
-        method: 'POST',
-        accessToken,
-        body: { challenge_id: challengeId, code: String(code) },
+      if (!scoped.ok) return { ok: false, error: 'unavailable' };
+      const challenge = await scoped.client.auth.mfa.challenge({ factorId });
+      const challengeId = challenge.data?.id;
+      if (challenge.error || !challengeId) return { ok: false, error: 'unauthorized' };
+      const verifiedFactor = await scoped.client.auth.mfa.verify({
+        factorId,
+        challengeId,
+        code: String(code),
       });
-      const nextToken = tokenFromAuthBody(res.json);
-      if (!res.ok || !nextToken) return { ok: false, error: 'unauthorized' };
+      const nextToken = tokensFromAuthBody(verifiedFactor.data).accessToken;
+      if (verifiedFactor.error || !nextToken) return { ok: false, error: 'unauthorized' };
       const next = await verified(nextToken);
       if (!next.ok) return next;
       if (!requiredMfaSatisfied(next.claims)) return { ok: false, error: 'forbidden' };

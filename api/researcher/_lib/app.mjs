@@ -28,7 +28,9 @@ import {
 import {
   createSupabaseAuthClient,
   decodePendingNonce,
+  decodeTicketSecrets,
   decryptSecret,
+  encodeTicketSecrets,
   encryptSecret,
   encodePendingNonce,
   requiredMfaSatisfied,
@@ -355,13 +357,16 @@ export function createResearcherApp(overrides = {}) {
     };
   }
 
-  async function startMfaTicket({ subject, accessToken, factorId, enrollmentRequired, qr }) {
+  async function startMfaTicket({ subject, accessToken, refreshToken, factorId, enrollmentRequired, qr }) {
     const state = randomBytes(24).toString('hex');
     const transactionId = randomBytes(24).toString('hex');
     await authStates.put({
       state,
       nonce: encodePendingNonce(subject, factorId),
-      codeVerifier: encryptSecret(accessToken, config.sessionSecret),
+      codeVerifier: encryptSecret(
+        encodeTicketSecrets({ accessToken, refreshToken }),
+        config.sessionSecret
+      ),
       transactionId,
       expiresAt: new Date(Date.now() + (auth.ticketTtlMs || 300000)).toISOString(),
     });
@@ -482,7 +487,7 @@ export function createResearcherApp(overrides = {}) {
       }
       let listed;
       try {
-        listed = await auth.listVerifiedTotpFactors(granted.accessToken);
+        listed = await auth.listVerifiedTotpFactors(granted.accessToken, granted.refreshToken);
       } catch {
         logLoginUnavailable({ stage: 'factor_list', category: 'list_threw' });
         return respond(await denyLogin('unavailable', requestId, request));
@@ -501,6 +506,7 @@ export function createResearcherApp(overrides = {}) {
             await startMfaTicket({
               subject: granted.claims.sub,
               accessToken: granted.accessToken,
+              refreshToken: granted.refreshToken,
               factorId: listed.factors[0].id,
               enrollmentRequired: false,
             })
@@ -512,7 +518,7 @@ export function createResearcherApp(overrides = {}) {
       }
       let enrolled;
       try {
-        enrolled = await auth.enrollTotp(granted.accessToken);
+        enrolled = await auth.enrollTotp(granted.accessToken, granted.refreshToken);
       } catch {
         logLoginUnavailable({ stage: 'totp_enroll', category: 'enroll_threw' });
         return respond(await denyLogin('unavailable', requestId, request));
@@ -530,6 +536,7 @@ export function createResearcherApp(overrides = {}) {
           await startMfaTicket({
             subject: granted.claims.sub,
             accessToken: granted.accessToken,
+            refreshToken: granted.refreshToken,
             factorId: enrolled.factorId,
             enrollmentRequired: true,
             qr: enrolled.qr,
@@ -557,14 +564,19 @@ export function createResearcherApp(overrides = {}) {
       if (!pending || pending.transactionId !== pendingIds.transactionId) {
         return respond(await denyLogin('tampered', requestId, request));
       }
-      const accessToken = decryptSecret(pending.codeVerifier, config.sessionSecret);
+      const ticketSecrets = decodeTicketSecrets(decryptSecret(pending.codeVerifier, config.sessionSecret));
       const { subject, factorId } = decodePendingNonce(pending.nonce);
-      if (!accessToken || !subject || !factorId) {
+      if (!ticketSecrets.accessToken || !subject || !factorId) {
         return respond(await denyLogin('tampered', requestId, request));
       }
       let verified;
       try {
-        verified = await auth.verifyTotp(accessToken, factorId, body?.code);
+        verified = await auth.verifyTotp(
+          ticketSecrets.accessToken,
+          factorId,
+          body?.code,
+          ticketSecrets.refreshToken
+        );
       } catch {
         return respond(await denyLogin('unavailable', requestId, request));
       }
