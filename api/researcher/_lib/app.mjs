@@ -33,6 +33,11 @@ import {
   encodePendingNonce,
   requiredMfaSatisfied,
 } from './supabase-auth.mjs';
+import {
+  compactAuthDiagnostic,
+  logLoginUnavailable,
+  classifyLoginUnavailable,
+} from './auth-diagnostic.mjs';
 import { isDbDiagnosticAllowed, logDiagnosticFailure, runDbDiagnostic } from './db-diagnostic.mjs';
 import { resolveQueryAdapter } from './query.mjs';
 import { RATE_CATEGORIES, clientRateKey, resolveRateLimiter } from './rate-limit.mjs';
@@ -231,6 +236,18 @@ export function createResearcherApp(overrides = {}) {
     );
   }
 
+  function loginUnavailableClass() {
+    return classifyLoginUnavailable({
+      config,
+      auth,
+      runtimeStoresReady,
+      limiter,
+      sessions,
+      authStates,
+      isolated,
+    });
+  }
+
   function setAuthTxCookie(headers, transactionId) {
     const signed = signSessionId(transactionId, config.sessionSecret);
     const cookie = cookieHeader(AUTH_TX_COOKIE, signed, {
@@ -398,13 +415,37 @@ export function createResearcherApp(overrides = {}) {
       }
     }
 
+    if (path === '/diagnostics/auth' && method === 'GET') {
+      if (!isDbDiagnosticAllowed(config)) {
+        return respond(fail('unavailable'));
+      }
+      return respond(
+        json(
+          200,
+          compactAuthDiagnostic({
+            config,
+            auth,
+            runtimeStoresReady,
+            limiter,
+            sessions,
+            authStates,
+            isolated,
+          })
+        )
+      );
+    }
+
     if ((!runtimeStoresReady || limiter.backend === 'unavailable') && !isolated) {
+      if (path === '/v1/session/login' && method === 'POST') {
+        logLoginUnavailable(loginUnavailableClass());
+      }
       return respond(fail('unavailable'));
     }
 
     if (path === '/v1/session/login' && method === 'POST') {
       if (!(await limiter.allow(RATE_CATEGORIES.login, ipKey))) return respond(fail('rate_limited'));
       if (!authUsable()) {
+        logLoginUnavailable(loginUnavailableClass());
         await writeAudit(null, 'login_failure', { reason: 'idp_not_configured' }, requestId);
         return respond(fail('unavailable'));
       }
@@ -468,7 +509,10 @@ export function createResearcherApp(overrides = {}) {
 
     if (path === '/v1/session/mfa' && method === 'POST') {
       if (!(await limiter.allow(RATE_CATEGORIES.login, ipKey))) return respond(fail('rate_limited'));
-      if (!authUsable()) return respond(fail('unavailable'));
+      if (!authUsable()) {
+        logLoginUnavailable(loginUnavailableClass());
+        return respond(fail('unavailable'));
+      }
       const body = readBody(request);
       if (body === Symbol.for('invalid_json')) return respond(fail('invalid_request'));
       const pendingIds = await readPendingTicket(request, body?.ticket);
