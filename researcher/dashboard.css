@@ -19,8 +19,16 @@
   z-index: 10;
 }
 
+.workspace-header .brand strong {
+  font-size: 15px;
+  line-height: 1.2;
+}
+
 .workspace-header .brand small {
   color: #b9c8cf;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 12px;
 }
 
 .workspace-header-meta {
@@ -51,14 +59,25 @@
   color: #b9c8cf;
 }
 
-.header-ghost {
+.workspace-header .button.ghost.header-ghost {
   color: #fff;
-  border-color: #ffffff55;
+  background: transparent;
+  border: 1px solid #d7e4e8;
   padding: 10px 14px;
 }
 
-.header-ghost:hover {
+.workspace-header .button.ghost.header-ghost:hover {
+  color: var(--deep);
+  background: var(--lime);
   border-color: var(--lime);
+}
+
+.workspace-header .button.ghost.header-ghost:focus-visible {
+  color: var(--deep);
+  background: var(--lime);
+  border-color: var(--lime);
+  outline: 2px solid #fff;
+  outline-offset: 3px;
 }
 
 .workspace-status {
@@ -447,6 +466,12 @@
     min-height: 72px;
     padding: 16px 28px;
     flex-wrap: wrap;
+    gap: 12px 16px;
+  }
+
+  .workspace-header-meta {
+    margin-left: auto;
+    gap: 12px;
   }
 
   .glance-band,
@@ -471,6 +496,15 @@
 }
 
 @media (max-width: 600px) {
+  .workspace-header .brand strong {
+    font-size: 14px;
+  }
+
+  .workspace-header-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   .glance-band {
     grid-template-columns: 1fr;
   }
