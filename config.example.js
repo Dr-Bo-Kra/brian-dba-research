@@ -1,23 +1,18 @@
 /**
- * Supabase client config for the Lending Desk assessment archive.
+ * Public browser configuration.
  *
- * Copy this file to `config.js` and fill in values from:
- *   Supabase Dashboard → Project Settings → API
+ * Never place a Supabase anon key, service-role key, API token, or other
+ * credential in this file. SUBMISSION_ENDPOINT must be a protected HTTPS API
+ * that performs origin checks, schema validation, payload-size limits, abuse
+ * controls, and server-side insertion into the research database.
  *
- * IMPORTANT:
- *   • SUPABASE_ANON_KEY is designed to be public (browser-safe) when Row Level
- *     Security is enabled. It is NOT a secret like the service_role key.
- *   • Never put the service_role key in this file or any front-end code.
- *   • `config.js` is gitignored so local / Pages secrets stay out of git if you
- *     prefer; for GitHub Pages you can either:
- *       – commit a filled `config.js` (anon key only), or
- *       – set placeholders here and paste keys only on the deploy machine.
- *
- * Until URL + anon key are set, the site keeps working: responses save to
- * localStorage + JSON download only.
+ * Keep COLLECTION_ENABLED false until institutional ethics approval, the
+ * privacy notice, processor agreements, retention schedule, and endpoint have
+ * all been approved and tested.
  */
 window.BRIAN_DBA_CONFIG = {
-  SUPABASE_URL: '', // e.g. 'https://xxxxxxxx.supabase.co'
-  SUPABASE_ANON_KEY: '', // e.g. 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+  COLLECTION_ENABLED: false,
+  SUBMISSION_ENDPOINT: '', // e.g. 'https://project.functions.supabase.co/submit-assessment'
+  PRIVACY_NOTICE_VERSION: '2026-08-28',
   LINKEDIN_URL: 'https://www.linkedin.com/in/brianpereira/',
 };

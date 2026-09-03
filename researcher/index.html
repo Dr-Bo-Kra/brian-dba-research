@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Private inquiry archive for Brian E Pereira’s DBA research. Authorised researchers only. Not an access-control boundary.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#071c2c">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; upgrade-insecure-requests">
+  <title>Inquiry archive | Brian E Pereira DBA Research</title>
+  <link rel="stylesheet" href="../styles.css?v=15">
+  <link rel="stylesheet" href="dashboard.css?v=10">
+</head>
+<body class="workspace-body">
+  <a class="skip-link" href="#workspace-main">Skip to inquiry archive</a>
+
+  <section class="auth-gate" id="auth-gate">
+    <p class="kicker">Private research workspace</p>
+    <h1>Inquiry archive</h1>
+    <p class="auth-lede">Sign in with your researcher email, password, and authenticator app.</p>
+    <p class="field-error" id="auth-error" hidden role="alert"></p>
+    <form id="auth-form" action="#" method="post" autocomplete="on">
+      <div id="auth-password-step">
+        <label class="field" for="auth-email">Email
+          <input type="email" id="auth-email" name="email" autocomplete="username" maxlength="320" required>
+        </label>
+        <label class="field" for="auth-password">Password
+          <input type="password" id="auth-password" name="password" autocomplete="current-password" maxlength="256" required>
+        </label>
+        <div class="survey-actions">
+          <button type="submit" class="button primary" id="auth-start">Sign in</button>
+        </div>
+      </div>
+      <div id="auth-mfa-step" hidden>
+        <p id="auth-mfa-copy">Enter the authenticator app code to continue.</p>
+        <div id="auth-enroll" hidden>
+          <p>Scan this QR code with your authenticator app, then enter the code.</p>
+          <img id="auth-qr" alt="Authenticator enrollment QR code" hidden>
+        </div>
+        <label class="field" for="auth-mfa-code">Authenticator code
+          <input type="text" id="auth-mfa-code" name="mfa" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]*" disabled>
+        </label>
+        <div class="survey-actions">
+          <button type="submit" class="button primary" id="auth-mfa-submit">Continue</button>
+        </div>
+      </div>
+    </form>
+    <p class="survey-hint" id="auth-hint">There is no mock login.</p>
+  </section>
+
+  <div class="workspace" id="workspace" hidden>
+    <header class="workspace-header">
+      <a class="brand" href="#workspace-main" aria-label="DBA Research Dashboard home">
+        <span class="brand-mark" aria-hidden="true">BP</span>
+        <span><strong>DBA Research Dashboard</strong><small>Inclusive Lending Study</small></span>
+      </a>
+      <div class="workspace-header-meta">
+        <p class="workspace-session" id="session-meta" hidden></p>
+        <button type="button" class="button ghost header-ghost" id="sign-out" hidden>Sign out</button>
+      </div>
+    </header>
+
+    <div class="workspace-status" id="workspace-status" role="status" aria-live="polite" data-state="disconnected">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span id="status-copy">Updating…</span>
+    </div>
+
+    <main id="workspace-main">
+      <!-- 1. Study at a glance -->
+      <section class="workspace-intro" aria-labelledby="overview-title">
+        <h1 id="overview-title">Study at a glance</h1>
+        <p>Dashboard view of study status. Open a figure for evidence. Descriptive only.</p>
+      </section>
+
+      <section class="glance-band kpi-strip" aria-label="Study at a glance">
+        <button type="button" class="kpi-card drill" data-drill="kpi:accepted" aria-haspopup="dialog" aria-controls="drill-drawer">
+          <strong id="kpi-count">0</strong>
+          <span>Total responses</span>
+          <i class="drill-mark" aria-hidden="true">+</i>
+        </button>
+        <button type="button" class="kpi-card drill" data-drill="kpi:recent" aria-haspopup="dialog" aria-controls="drill-drawer">
+          <strong id="kpi-recent">0</strong>
+          <span>Last 24 hours</span>
+          <i class="drill-mark" aria-hidden="true">+</i>
+        </button>
+        <button type="button" class="kpi-card drill" data-drill="kpi:last-intake" aria-haspopup="dialog" aria-controls="drill-drawer">
+          <strong id="kpi-updated">—</strong>
+          <span>Latest response</span>
+          <i class="drill-mark" aria-hidden="true">+</i>
+        </button>
+        <button type="button" class="kpi-card drill" data-drill="kpi:representation" aria-haspopup="dialog" aria-controls="drill-drawer">
+          <strong id="kpi-representation">—</strong>
+          <span>Participant composition</span>
+          <small class="kpi-note" id="kpi-representation-note">Geographies in view</small>
+          <i class="drill-mark" aria-hidden="true">+</i>
+        </button>
+        <button type="button" class="kpi-card drill" data-drill="kpi:mean" aria-haspopup="dialog" aria-controls="drill-drawer">
+          <strong id="kpi-orientation">—</strong>
+          <span>Overall orientation</span>
+          <i class="drill-mark" aria-hidden="true">+</i>
+        </button>
+      </section>
+
+      <!-- 2. Filter toolbar -->
+      <section class="filter-toolbar-wrap" id="filter-toolbar" aria-labelledby="refine-title">
+        <h2 id="refine-title" class="sr-only">Filters</h2>
+        <form id="filter-form" class="filter-toolbar" novalidate>
+          <div class="filter-chip filter-chip-date">
+            <span class="filter-chip-label" id="filter-date-label">Date</span>
+            <div class="filter-date-pair" role="group" aria-labelledby="filter-date-label">
+              <label class="sr-only" for="filter-from">From date</label>
+              <input id="filter-from" name="from" type="date" title="From date">
+              <span class="filter-date-sep" aria-hidden="true">–</span>
+              <label class="sr-only" for="filter-to">To date</label>
+              <input id="filter-to" name="to" type="date" title="To date">
+            </div>
+          </div>
+          <div class="filter-chip">
+            <label class="filter-chip-label" for="filter-region">Geography</label>
+            <select id="filter-region" name="region">
+              <option value="">All regions</option>
+            </select>
+          </div>
+          <div class="filter-chip">
+            <label class="filter-chip-label" for="filter-role">Role</label>
+            <select id="filter-role" name="role">
+              <option value="">All roles</option>
+            </select>
+          </div>
+          <div class="filter-chip">
+            <label class="filter-chip-label" for="filter-experience">Experience</label>
+            <select id="filter-experience" name="experience">
+              <option value="">All bands</option>
+            </select>
+          </div>
+          <div class="filter-chip filter-chip-search">
+            <label class="filter-chip-label" for="filter-search">Participant reference</label>
+            <input id="filter-search" name="q" type="search" placeholder="resp_…" autocomplete="off">
+          </div>
+          <button type="button" class="button ghost filter-clear" id="filter-clear">Clear</button>
+        </form>
+        <p class="participation-note" id="participation-note" hidden></p>
+      </section>
+
+      <!-- 3. Participation analytics -->
+      <section class="workspace-panel participation-analytics" aria-labelledby="participation-title">
+        <div class="panel-head compact">
+          <p class="kicker">Participation</p>
+          <h2 id="participation-title">Arrival and composition</h2>
+        </div>
+        <div class="participation-grid">
+          <div class="participation-trend" aria-labelledby="trend-title">
+            <h3 id="trend-title">Responses over time</h3>
+            <div class="chart-frame" id="trend-chart" aria-live="polite"></div>
+            <p class="empty-copy" id="trend-empty">Arrival pattern will appear when responses arrive.</p>
+          </div>
+          <div class="participation-composition" aria-labelledby="composition-title">
+            <h3 id="composition-title">Participant composition</h3>
+            <p class="composition-lede" id="composition-summary">Open a KPI card for full geography, role, and experience charts.</p>
+            <div id="composition-ranks"></div>
+            <p class="empty-copy" id="composition-empty">Composition will appear when responses are in view.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Themes + descriptive signals (peer panels) -->
+      <div class="learning-grid" id="learning-grid">
+        <section class="workspace-panel themes-panel" aria-labelledby="compass-title">
+          <div class="panel-head compact">
+            <p class="kicker">Research themes</p>
+            <h2 id="compass-title">How the five research themes compare</h2>
+          </div>
+          <div class="domain-scores" id="domain-scores"></div>
+          <p class="empty-copy" id="domain-empty">Theme scores will appear when responses arrive.</p>
+        </section>
+
+        <section class="workspace-panel insights-panel" aria-labelledby="insights-title">
+          <div class="panel-head compact">
+            <p class="kicker">What we’re learning</p>
+            <h2 id="insights-title">Current descriptive signals</h2>
+          </div>
+          <p class="section-lede compact">Descriptive observations from current averages — not causes, significance, or quality.</p>
+          <div class="insight-grid" id="insight-cards"></div>
+          <p class="empty-copy" id="insights-empty">Descriptive signals will appear when responses arrive.</p>
+        </section>
+      </div>
+
+      <!-- 5. Explore: questions, ledger, free-text -->
+      <section class="workspace-panel explore-panel" aria-labelledby="explore-title">
+        <div class="panel-head compact explore-head">
+          <div>
+            <p class="kicker">Explore the research</p>
+            <h2 id="explore-title">Survey questions and responses</h2>
+          </div>
+          <nav class="explore-nav" aria-label="Explore sections">
+            <a href="#filter-toolbar">Filters</a>
+            <a href="#reflections-title">Free-text</a>
+            <a href="#admin-panel">Administration</a>
+          </nav>
+        </div>
+
+        <div class="explore-block" aria-labelledby="items-title">
+          <h3 id="items-title">Question highlights</h3>
+          <p class="section-lede compact">Highest, lowest, and most divided (top 3 each). Expand a row for the full 1–7 chart.</p>
+          <div class="item-highlight-columns" id="item-highlights"></div>
+          <p class="empty-copy" id="items-empty">Question highlights will appear when responses arrive.</p>
+          <details class="item-all-details" id="item-all-details">
+            <summary>All questions — full distributions</summary>
+            <div id="item-distributions"></div>
+          </details>
+        </div>
+
+        <div class="explore-block ledger-panel" aria-labelledby="ledger-title">
+          <div class="ledger-head">
+            <h3 id="ledger-title">Response ledger</h3>
+            <p class="ledger-meta" id="ledger-meta" hidden></p>
+          </div>
+          <p class="section-lede compact">Ten records per page. Expand a row for detail. Free-text answers are not shown here.</p>
+          <div class="table-wrap">
+            <table class="record-table">
+              <thead>
+                <tr>
+                  <th scope="col">Participant reference</th>
+                  <th scope="col">Accepted</th>
+                  <th scope="col">Region</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Experience</th>
+                  <th scope="col">Overall score</th>
+                </tr>
+              </thead>
+              <tbody id="record-rows"></tbody>
+            </table>
+          </div>
+          <div class="ledger-pager" id="ledger-pager" hidden>
+            <button type="button" class="button ghost" id="ledger-prev">Previous</button>
+            <p class="ledger-page-label" id="ledger-page-label"></p>
+            <button type="button" class="button ghost" id="ledger-next">Next</button>
+          </div>
+          <p class="empty-copy" id="ledger-empty">No accepted responses yet.</p>
+        </div>
+
+        <div class="explore-block restricted-panel" aria-labelledby="reflections-title">
+          <h3 id="reflections-title">Free-text answers</h3>
+          <p class="section-lede compact">Hidden until you opt in. Never included in aggregates or the response ledger.</p>
+          <label class="reveal-check">
+            <input type="checkbox" id="reveal-reflections">
+            I need to read free-text answers for analysis or a withdrawal request.
+          </label>
+          <div id="reflection-list" hidden></div>
+          <p class="empty-copy" id="reflection-empty">Leave this off unless you need to read free-text answers.</p>
+        </div>
+
+        <details class="explore-block methodology-block" id="methodology-block">
+          <summary>Calculation and methodology notes</summary>
+          <div class="methodology-body">
+            <p>Theme and question averages use accepted responses in the current filter on the survey’s 1–7 scale.</p>
+            <p><strong>n</strong> is the count of accepted rating sets (or answers) included in a figure.</p>
+            <p><strong>Sample SD</strong> describes how spread out answers are around the mean.</p>
+            <p><strong>Polarization</strong> is the share of answers at the scale edges (1 and 7).</p>
+            <p>Plain-English theme labels treat scores within 0.15 points as similar so tiny gaps are not overstated.</p>
+            <p>None of these figures test significance, causation, quality, or population-level claims.</p>
+          </div>
+        </details>
+      </section>
+
+      <!-- 6. Administration -->
+      <details class="workspace-panel admin-panel" id="admin-panel">
+        <summary class="admin-summary">
+          <p class="kicker">Administration</p>
+          <h2 id="admin-title">Export and deletion</h2>
+          <p class="section-lede compact">CSV export and deletion stay disabled until the study enables them.</p>
+        </summary>
+        <div class="admin-body">
+          <div class="admin-block">
+            <h3>CSV export</h3>
+            <div class="survey-actions admin-actions">
+              <button type="button" class="button ghost" id="export-csv" disabled>Request controlled CSV export</button>
+            </div>
+            <p class="survey-footnote admin-footnote">CSV export is unavailable until it is enabled for this study.</p>
+          </div>
+
+          <div class="admin-block" aria-labelledby="withdrawal-title">
+            <h3 id="withdrawal-title">Delete by participant reference</h3>
+            <form id="delete-form" class="survey-form" novalidate>
+              <div class="field">
+                <label for="delete-reference">Participant reference</label>
+                <input id="delete-reference" name="reference" type="text" placeholder="resp_…" autocomplete="off">
+              </div>
+              <label class="reveal-check">
+                <input type="checkbox" id="delete-confirm">
+                I confirm this deletion is authorised, policy-approved, and will be audit-logged.
+              </label>
+              <p class="field-error" id="delete-error" hidden role="alert"></p>
+              <div class="survey-actions admin-actions">
+                <button type="submit" class="button ghost" id="delete-submit" disabled>Request deletion</button>
+              </div>
+            </form>
+            <p class="survey-footnote admin-footnote">Deletion is unavailable until it is enabled for this study.</p>
+          </div>
+        </div>
+      </details>
+    </main>
+
+    <footer>
+      <p>Inquiry archive · collection is not open yet</p>
+    </footer>
+  </div>
+
+  <div class="drawer-layer" id="drill-layer" hidden>
+    <aside class="drawer" id="drill-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" tabindex="-1">
+      <button type="button" class="drawer-close" id="drill-close" aria-label="Close detail panel">×</button>
+      <div id="drill-content"></div>
+    </aside>
+  </div>
+
+  <script src="config.js?v=3"></script>
+  <script type="module" src="dashboard.js?v=10"></script>
+</body>
+</html>
