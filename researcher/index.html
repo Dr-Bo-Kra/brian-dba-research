@@ -11,7 +11,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; upgrade-insecure-requests">
   <title>Inquiry archive | Brian E Pereira DBA Research</title>
   <link rel="stylesheet" href="../styles.css?v=15">
-  <link rel="stylesheet" href="dashboard.css?v=8">
+  <link rel="stylesheet" href="dashboard.css?v=9">
 </head>
 <body class="workspace-body">
   <a class="skip-link" href="#workspace-main">Skip to inquiry archive</a>
@@ -68,136 +68,165 @@
     </div>
 
     <main id="workspace-main">
-      <!-- 1. Study overview -->
+      <!-- 1. Study at a glance -->
       <section class="workspace-intro" aria-labelledby="overview-title">
-        <h1 id="overview-title">Study overview</h1>
-        <p>Concise signals for the filtered archive. Open a card for calculation detail, composition, and evidence underneath. Figures are descriptive only.</p>
+        <h1 id="overview-title">Study at a glance</h1>
+        <p>A 30-second read of study status. Open a card for evidence and calculation detail. Figures are descriptive only.</p>
       </section>
 
       <section class="glance-band" aria-label="Study at a glance">
         <button type="button" class="kpi-card drill" data-drill="kpi:accepted" aria-haspopup="dialog" aria-controls="drill-drawer">
           <strong id="kpi-count">0</strong>
-          <span>Accepted responses</span>
+          <span>Total responses</span>
           <i class="drill-mark" aria-hidden="true">+</i>
         </button>
         <button type="button" class="kpi-card drill" data-drill="kpi:recent" aria-haspopup="dialog" aria-controls="drill-drawer">
           <strong id="kpi-recent">0</strong>
           <span>Recent responses</span>
-          <i class="drill-mark" aria-hidden="true">+</i>
-        </button>
-        <button type="button" class="kpi-card drill" data-drill="kpi:mean" aria-haspopup="dialog" aria-controls="drill-drawer">
-          <strong id="kpi-orientation">—</strong>
-          <span>Overall mean score</span>
-          <small class="kpi-note">Average of each response’s overall score on the 1–7 scale. Descriptive only.</small>
+          <small class="kpi-note">Accepted in the last 24 hours</small>
           <i class="drill-mark" aria-hidden="true">+</i>
         </button>
         <button type="button" class="kpi-card drill" data-drill="kpi:last-intake" aria-haspopup="dialog" aria-controls="drill-drawer">
           <strong id="kpi-updated">—</strong>
-          <span>Last intake</span>
+          <span>Latest response</span>
+          <i class="drill-mark" aria-hidden="true">+</i>
+        </button>
+        <button type="button" class="kpi-card drill" data-drill="kpi:representation" aria-haspopup="dialog" aria-controls="drill-drawer">
+          <strong id="kpi-representation">—</strong>
+          <span>Who’s responding</span>
+          <small class="kpi-note" id="kpi-representation-note">Composition on this page</small>
           <i class="drill-mark" aria-hidden="true">+</i>
         </button>
       </section>
 
-      <section class="workspace-panel refine-panel" aria-labelledby="refine-title">
-        <p class="kicker">Refine</p>
-        <h2 id="refine-title">Filters</h2>
-        <p class="section-lede">Narrow the current view. Search and filters apply to overview signals, domains, and the response ledger.</p>
-        <form id="filter-form" class="filter-grid" novalidate>
-          <div class="field">
-            <label for="filter-from">From date</label>
-            <input id="filter-from" name="from" type="date">
-          </div>
-          <div class="field">
-            <label for="filter-to">To date</label>
-            <input id="filter-to" name="to" type="date">
-          </div>
-          <div class="field">
-            <label for="filter-region">Broad geography</label>
-            <select id="filter-region" name="region">
-              <option value="">All regions</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="filter-role">Position category</label>
-            <select id="filter-role" name="role">
-              <option value="">All roles</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="filter-experience">Lending experience</label>
-            <select id="filter-experience" name="experience">
-              <option value="">All bands</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="filter-search">Participant reference</label>
-            <input id="filter-search" name="q" type="search" placeholder="resp_…" autocomplete="off">
-          </div>
-        </form>
+      <!-- 2. What we're learning -->
+      <section class="workspace-panel insights-panel" aria-labelledby="insights-title">
+        <p class="kicker">What we’re learning</p>
+        <h2 id="insights-title">Current descriptive signals</h2>
+        <p class="section-lede">A few plain-English observations drawn from the current averages and answer patterns. They describe the filtered archive only — they do not test causes, significance, or quality.</p>
+        <div class="insight-grid" id="insight-cards"></div>
+        <p class="empty-copy" id="insights-empty">Descriptive signals will appear when responses arrive.</p>
       </section>
 
-      <!-- 2. Research domains -->
+      <!-- 3. How the five research themes compare -->
       <section class="workspace-panel" aria-labelledby="compass-title">
-        <p class="kicker">Research domains</p>
-        <h2 id="compass-title">Domain scores</h2>
-        <p class="section-lede">Five research domains on the survey’s 1–7 scale. Open a domain for highest, lowest, and most divided items, plus distributions and participation context.</p>
+        <p class="kicker">Research themes</p>
+        <h2 id="compass-title">How the five research themes compare</h2>
+        <p class="section-lede">Human-readable theme averages on the survey’s 1–7 scale. Small gaps are treated as similar. Open a theme to explore details.</p>
         <div class="domain-scores" id="domain-scores"></div>
-        <p class="empty-copy" id="domain-empty">Domain scores will appear when responses arrive.</p>
+        <p class="empty-copy" id="domain-empty">Theme scores will appear when responses arrive.</p>
       </section>
 
-      <!-- 3. Item analysis -->
-      <section class="workspace-panel" aria-labelledby="items-title">
-        <p class="kicker">Item analysis</p>
-        <h2 id="items-title">Question highlights</h2>
-        <p class="section-lede">Highest, lowest, and most divided items (top 3 each). Expand a row for the full 1–7 chart. All questions stay collapsed until opened.</p>
-        <div id="item-highlights"></div>
-        <p class="empty-copy" id="items-empty">Question highlights will appear when responses arrive.</p>
-        <details class="item-all-details" id="item-all-details">
-          <summary>All questions — full distributions</summary>
-          <div id="item-distributions"></div>
+      <!-- 4. Participation -->
+      <details class="workspace-panel participation-panel" id="participation-panel">
+        <summary class="participation-summary">
+          <p class="kicker">Participation</p>
+          <h2 id="refine-title">Filters and composition</h2>
+          <p class="section-lede">Narrow the current view, or review who appears on this page. Filters apply to overview signals, themes, and the response ledger.</p>
+        </summary>
+        <div class="participation-body">
+          <form id="filter-form" class="filter-grid" novalidate>
+            <div class="field">
+              <label for="filter-from">From date</label>
+              <input id="filter-from" name="from" type="date">
+            </div>
+            <div class="field">
+              <label for="filter-to">To date</label>
+              <input id="filter-to" name="to" type="date">
+            </div>
+            <div class="field">
+              <label for="filter-region">Broad geography</label>
+              <select id="filter-region" name="region">
+                <option value="">All regions</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="filter-role">Position category</label>
+              <select id="filter-role" name="role">
+                <option value="">All roles</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="filter-experience">Lending experience</label>
+              <select id="filter-experience" name="experience">
+                <option value="">All bands</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="filter-search">Participant reference</label>
+              <input id="filter-search" name="q" type="search" placeholder="resp_…" autocomplete="off">
+            </div>
+          </form>
+          <p class="participation-note" id="participation-note" hidden></p>
+        </div>
+      </details>
+
+      <!-- 5. Explore the research -->
+      <section class="workspace-panel explore-panel" aria-labelledby="explore-title">
+        <p class="kicker">Explore the research</p>
+        <h2 id="explore-title">Survey questions, responses, and detail</h2>
+        <p class="section-lede">Question text comes first. IDs, distributions, and calculation notes stay available on expand.</p>
+
+        <div class="explore-block" aria-labelledby="items-title">
+          <h3 id="items-title">Question highlights</h3>
+          <p class="section-lede">Highest, lowest, and most divided questions (top 3 each). Expand a row for the full 1–7 chart.</p>
+          <div id="item-highlights"></div>
+          <p class="empty-copy" id="items-empty">Question highlights will appear when responses arrive.</p>
+          <details class="item-all-details" id="item-all-details">
+            <summary>All questions — full distributions</summary>
+            <div id="item-distributions"></div>
+          </details>
+        </div>
+
+        <div class="explore-block ledger-panel" aria-labelledby="ledger-title">
+          <h3 id="ledger-title">Response ledger</h3>
+          <p class="section-lede">Compact list of accepted responses. Ten records per page. Expand a row for record detail. Free-text answers are not shown here.</p>
+          <p class="ledger-meta" id="ledger-meta" hidden></p>
+          <div class="table-wrap">
+            <table class="record-table">
+              <thead>
+                <tr>
+                  <th scope="col">Participant reference</th>
+                  <th scope="col">Accepted</th>
+                  <th scope="col">Region</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Experience</th>
+                  <th scope="col">Overall score</th>
+                </tr>
+              </thead>
+              <tbody id="record-rows"></tbody>
+            </table>
+          </div>
+          <div class="ledger-pager" id="ledger-pager" hidden>
+            <button type="button" class="button ghost" id="ledger-prev">Previous</button>
+            <p class="ledger-page-label" id="ledger-page-label"></p>
+            <button type="button" class="button ghost" id="ledger-next">Next</button>
+          </div>
+          <p class="empty-copy" id="ledger-empty">No accepted responses yet.</p>
+        </div>
+
+        <div class="explore-block restricted-panel" aria-labelledby="reflections-title">
+          <h3 id="reflections-title">Free-text answers</h3>
+          <p class="section-lede">Free-text answers stay hidden until you opt in. They are never included in aggregates or the response ledger.</p>
+          <label class="reveal-check">
+            <input type="checkbox" id="reveal-reflections">
+            I need to read free-text answers for analysis or a withdrawal request.
+          </label>
+          <div id="reflection-list" hidden></div>
+          <p class="empty-copy" id="reflection-empty">Leave this off unless you need to read free-text answers.</p>
+        </div>
+
+        <details class="explore-block methodology-block" id="methodology-block">
+          <summary>Calculation and methodology notes</summary>
+          <div class="methodology-body">
+            <p>Theme and question averages use accepted responses in the current filter on the survey’s 1–7 scale.</p>
+            <p><strong>n</strong> is the count of accepted rating sets (or answers) included in a figure.</p>
+            <p><strong>Sample SD</strong> describes how spread out answers are around the mean.</p>
+            <p><strong>Polarization</strong> is the share of answers at the scale edges (1 and 7).</p>
+            <p>Plain-English theme labels treat scores within 0.15 points as similar so tiny gaps are not overstated.</p>
+            <p>None of these figures test significance, causation, quality, or population-level claims.</p>
+          </div>
         </details>
-      </section>
-
-      <!-- 4. Responses -->
-      <section class="workspace-panel ledger-panel" aria-labelledby="ledger-title">
-        <p class="kicker">Responses</p>
-        <h2 id="ledger-title">Response ledger</h2>
-        <p class="section-lede">Compact list of accepted responses. Ten records per page. Expand a row for record detail. Free-text answers are not shown here.</p>
-        <p class="ledger-meta" id="ledger-meta" hidden></p>
-        <div class="table-wrap">
-          <table class="record-table">
-            <thead>
-              <tr>
-                <th scope="col">Participant reference</th>
-                <th scope="col">Accepted</th>
-                <th scope="col">Region</th>
-                <th scope="col">Role</th>
-                <th scope="col">Experience</th>
-                <th scope="col">Overall score</th>
-              </tr>
-            </thead>
-            <tbody id="record-rows"></tbody>
-          </table>
-        </div>
-        <div class="ledger-pager" id="ledger-pager" hidden>
-          <button type="button" class="button ghost" id="ledger-prev">Previous</button>
-          <p class="ledger-page-label" id="ledger-page-label"></p>
-          <button type="button" class="button ghost" id="ledger-next">Next</button>
-        </div>
-        <p class="empty-copy" id="ledger-empty">No accepted responses yet.</p>
-      </section>
-
-      <!-- 5. Qualitative responses -->
-      <section class="workspace-panel restricted-panel" aria-labelledby="reflections-title">
-        <p class="kicker">Qualitative responses</p>
-        <h2 id="reflections-title">Free-text answers</h2>
-        <p class="section-lede">Free-text answers stay hidden until you opt in. They are never included in aggregates or the response ledger.</p>
-        <label class="reveal-check">
-          <input type="checkbox" id="reveal-reflections">
-          I need to read free-text answers for analysis or a withdrawal request.
-        </label>
-        <div id="reflection-list" hidden></div>
-        <p class="empty-copy" id="reflection-empty">Leave this off unless you need to read free-text answers.</p>
       </section>
 
       <!-- 6. Administration -->
@@ -251,6 +280,6 @@
   </div>
 
   <script src="config.js?v=3"></script>
-  <script type="module" src="dashboard.js?v=8"></script>
+  <script type="module" src="dashboard.js?v=9"></script>
 </body>
 </html>

@@ -1,6 +1,11 @@
 import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.mjs';
 import { rankItemHighlights } from './item-analysis.mjs';
 import {
+  buildStudyInsights,
+  participationGlanceCopy,
+  relativeDomainLabel,
+} from './insights.mjs';
+import {
   buildDomainDrilldown,
   buildKpiDrilldown,
   formatPolarizationLabel,
@@ -354,8 +359,8 @@ import {
       .map(
         (item) => `<details class="drawer-item">
           <summary>
-            <span class="item-id">${escapeHtml(item.id)}</span>
-            <span class="drawer-item-label">${escapeHtml(item.label || '')}</span>
+            <span class="drawer-item-label">${escapeHtml(item.label || item.id || '')}</span>
+            <span class="item-id item-id-secondary">${escapeHtml(item.id)}</span>
             <span class="item-highlight-meta">${escapeHtml(itemMetaLine(item))}</span>
             ${miniDistHtml(item.counts, { compact: true, ceiling: 28 })}
           </summary>
@@ -367,42 +372,38 @@ import {
 
   function renderDrawerDetails(section) {
     const summaryLabel = escapeHtml(section.summaryLabel || 'Show more detail');
-    if (section.distributionItems?.length) {
-      return `<details class="drawer-progressive">
-        <summary>${summaryLabel}</summary>
-        <div class="drawer-progressive-body">
-          ${section.distributionItems
-            .map(
-              (item) => `<div class="drawer-item is-static">
-                <p><span class="item-id">${escapeHtml(item.id)}</span> ${escapeHtml(
-                item.label || ''
-              )}</p>
+    const distributionHtml = section.distributionItems?.length
+      ? section.distributionItems
+          .map(
+            (item) => `<div class="drawer-item is-static">
+                <p>${escapeHtml(item.label || '')} <span class="item-id item-id-secondary">${escapeHtml(
+              item.id
+            )}</span></p>
                 <p class="item-highlight-meta">${escapeHtml(itemMetaLine(item))}</p>
                 ${fullDistHtml(item.counts, item.id)}
               </div>`
-            )
-            .join('')}
-        </div>
-      </details>`;
-    }
+          )
+          .join('')
+      : '';
     const groups = section.groups || [];
+    let groupsHtml = '';
     if (!groups.length && section.rows?.length) {
-      return `<details class="drawer-progressive">
-        <summary>${summaryLabel}</summary>
-        <div class="drawer-progressive-body">${renderDrawerRows(section.rows)}</div>
-      </details>`;
+      groupsHtml = renderDrawerRows(section.rows);
+    } else if (groups.length) {
+      groupsHtml = groups
+        .map(
+          (group) => `<section class="drawer-subsection">
+              <h4>${escapeHtml(group.title || '')}</h4>
+              ${renderDrawerRows(group.rows || [])}
+            </section>`
+        )
+        .join('');
     }
     return `<details class="drawer-progressive">
       <summary>${summaryLabel}</summary>
       <div class="drawer-progressive-body">
-        ${groups
-          .map(
-            (group) => `<section class="drawer-subsection">
-              <h4>${escapeHtml(group.title || '')}</h4>
-              ${renderDrawerRows(group.rows || [])}
-            </section>`
-          )
-          .join('')}
+        ${distributionHtml}
+        ${groupsHtml}
       </div>
     </details>`;
   }
@@ -410,79 +411,97 @@ import {
   function renderDrilldown(detail) {
     if (!drillContent || !detail) return;
     const observations = detail.observations || detail.rows || [];
-    const sections = (detail.sections || [])
-      .map((section) => {
-        if (section.kind === 'note') {
-          return `<div class="drawer-callout"><small>${escapeHtml(
-            section.title || 'Note'
-          )}</small><p>${escapeHtml(section.note || '')}</p></div>`;
-        }
-        if (section.kind === 'items') {
-          return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+    const primarySections = [];
+    const detailedSections = [];
+    (detail.sections || []).forEach((section) => {
+      if (section.kind === 'details' || section.kind === 'note') {
+        detailedSections.push(section);
+      } else {
+        primarySections.push(section);
+      }
+    });
+    const renderSection = (section) => {
+      if (section.kind === 'note') {
+        return `<div class="drawer-callout"><small>${escapeHtml(
+          section.title || 'Note'
+        )}</small><p>${escapeHtml(section.note || '')}</p></div>`;
+      }
+      if (section.kind === 'items') {
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
             <h3>${escapeHtml(section.title)}</h3>
             ${renderDrawerItems(section.items || [])}
           </section>`;
-        }
-        if (section.kind === 'distribution') {
-          return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+      }
+      if (section.kind === 'distribution') {
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
             <h3>${escapeHtml(section.title)}</h3>
             ${(section.items || [])
               .map(
                 (item) => `<div class="drawer-item is-static">
-                  <p><span class="item-id">${escapeHtml(item.id)}</span> ${escapeHtml(
-                  item.label || ''
-                )}</p>
+                  <p>${escapeHtml(item.label || '')} <span class="item-id item-id-secondary">${escapeHtml(
+                  item.id
+                )}</span></p>
                   ${fullDistHtml(item.counts, item.id)}
                 </div>`
               )
               .join('')}
           </section>`;
-        }
-        if (section.kind === 'bars') {
-          return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+      }
+      if (section.kind === 'bars') {
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
             <h3>${escapeHtml(section.title)}</h3>
             ${renderDrawerBars(section.bars || [], section.valueSuffix || '')}
           </section>`;
-        }
-        if (section.kind === 'activity') {
-          return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+      }
+      if (section.kind === 'activity') {
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
             <h3>${escapeHtml(section.title)}</h3>
             ${renderDrawerActivity(section.activity || [])}
           </section>`;
-        }
-        if (section.kind === 'details') {
-          return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+      }
+      if (section.kind === 'details') {
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
             <h3>${escapeHtml(section.title)}</h3>
             ${renderDrawerDetails(section)}
           </section>`;
-        }
-        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+      }
+      return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
           <h3>${escapeHtml(section.title)}</h3>
           ${renderDrawerRows(section.rows || [])}
         </section>`;
-      })
-      .join('');
+    };
     drillContent.innerHTML = `
       <div class="drawer-head">
         <small>${escapeHtml(detail.eyebrow || '')}</small>
         <h2 id="drawer-title">${escapeHtml(detail.title || 'Detail')}</h2>
         <strong>${escapeHtml(detail.value || '—')}</strong>
       </div>
-      <section class="drawer-section drawer-tell" aria-label="What this tells us">
-        <h3>What this tells us</h3>
+      <section class="drawer-section drawer-tell" aria-label="In plain English">
+        <h3>In plain English</h3>
         <p>${escapeHtml(detail.summary || '')}</p>
       </section>
-      <section class="drawer-section" aria-label="Key observations">
-        <h3>Key observations</h3>
+      <section class="drawer-section" aria-label="Key evidence">
+        <h3>Key evidence</h3>
         ${renderDrawerRows(observations)}
       </section>
       <section class="drawer-evidence" aria-label="Supporting evidence">
         <h3 class="drawer-evidence-title">Supporting evidence</h3>
-        ${sections}
+        ${primarySections.map(renderSection).join('')}
       </section>
-      <div class="drawer-source"><strong>Methodological context</strong> ${escapeHtml(
-        detail.note || ''
-      )}</div>`;
+      <section class="drawer-section drawer-detailed" aria-label="Detailed breakdown">
+        <h3>Detailed breakdown</h3>
+        ${
+          detailedSections.length
+            ? detailedSections.map(renderSection).join('')
+            : '<p class="empty-copy">Open theme or question rows above for distributions.</p>'
+        }
+      </section>
+      <details class="drawer-methodology">
+        <summary>Methodology</summary>
+        <div class="drawer-source"><strong>Methodological context</strong> ${escapeHtml(
+          detail.note || ''
+        )}</div>
+      </details>`;
   }
 
   function getFocusable(container) {
@@ -533,15 +552,42 @@ import {
     const total = summary?.total ?? 0;
     document.getElementById('kpi-count').textContent = String(total);
     document.getElementById('kpi-recent').textContent = String(summary?.last_24h ?? 0);
-    const meanEl = document.getElementById('kpi-orientation');
-    if (summary?.mean_orientation != null) {
-      meanEl.textContent = `${Number(summary.mean_orientation).toFixed(2)} / 7`;
-    } else {
-      meanEl.textContent = '—';
-    }
     document.getElementById('kpi-updated').textContent = summary?.last_intake
       ? formatResearchDate(summary.last_intake)
       : '—';
+    const representation = participationGlanceCopy(records, GEOGRAPHY, ROLES);
+    const repEl = document.getElementById('kpi-representation');
+    const repNote = document.getElementById('kpi-representation-note');
+    if (repEl) repEl.textContent = representation.value;
+    if (repNote) repNote.textContent = representation.note;
+    const participationNote = document.getElementById('participation-note');
+    if (participationNote) {
+      if (records.length) {
+        participationNote.hidden = false;
+        participationNote.textContent = `${representation.note} Open “Who’s responding” for geography, role, and experience charts.`;
+      } else {
+        participationNote.hidden = true;
+        participationNote.textContent = '';
+      }
+    }
+  }
+
+  function renderInsights() {
+    const host = document.getElementById('insight-cards');
+    const empty = document.getElementById('insights-empty');
+    if (!host) return;
+    host.innerHTML = '';
+    const labels = Object.fromEntries(ITEMS);
+    const insights = summary ? buildStudyInsights(summary, { labels, maxInsights: 4 }) : [];
+    if (empty) empty.hidden = insights.length > 0;
+    insights.forEach((insight) => {
+      const card = document.createElement('article');
+      card.className = 'insight-card';
+      card.innerHTML = `
+        <p class="insight-headline">${escapeHtml(insight.headline)}</p>
+        <p class="insight-detail">${escapeHtml(insight.detail)}</p>`;
+      host.append(card);
+    });
   }
 
   function renderDomains() {
@@ -562,16 +608,17 @@ import {
       button.setAttribute('data-drill', `domain:${domain.id}`);
       button.setAttribute('aria-haspopup', 'dialog');
       button.setAttribute('aria-controls', 'drill-drawer');
-      button.setAttribute('aria-label', `Explore ${stat.label || domain.label}`);
+      button.setAttribute('aria-label', `Explore details for ${stat.label || domain.label}`);
       const percent = Math.round((Number(stat.score) / 7) * 100);
-      const n = Number(stat.n) || 0;
+      const relative = relativeDomainLabel(stat.score, stats);
       button.innerHTML = `
         <div class="domain-score-head">
           <strong>${escapeHtml(stat.label || domain.label)}</strong>
           <span>${Number(stat.score).toFixed(2)} / 7</span>
         </div>
-        <div class="domain-bar" aria-hidden="true"><i></i></div>
-        <p><strong class="domain-n">n = ${n}</strong> · mean on the survey 1–7 scale for accepted rating sets in the current filter.</p>
+        <p class="domain-relative">${escapeHtml(relative)}</p>
+        <div class="domain-bar domain-bar-muted" aria-hidden="true"><i></i></div>
+        <p class="domain-explore">Explore details</p>
         <i class="drill-mark" aria-hidden="true">+</i>`;
       host.append(button);
       const bar = button.querySelector('.domain-bar > i');
@@ -581,8 +628,8 @@ import {
 
   function shortItemLabel(label) {
     const text = String(label || '').trim();
-    if (text.length <= 42) return text;
-    return `${text.slice(0, 40)}…`;
+    if (text.length <= 56) return text;
+    return `${text.slice(0, 54)}…`;
   }
 
   function renderHighlightGroup(title, rows) {
@@ -596,8 +643,8 @@ import {
               <details class="item-highlight">
                 <summary class="item-highlight-summary">
                   <span class="item-highlight-copy">
-                    <span class="item-id">${escapeHtml(row.id)}</span>
-                    ${escapeHtml(shortItemLabel(row.label))}
+                    <span class="item-question">${escapeHtml(shortItemLabel(row.label || row.id))}</span>
+                    <span class="item-id item-id-secondary">${escapeHtml(row.id)}</span>
                   </span>
                   <span class="item-highlight-meta">mean ${Number(row.mean).toFixed(2)} / 7</span>
                   ${miniDistHtml(row.counts, { compact: true, ceiling: 24 })}
@@ -618,9 +665,9 @@ import {
     const counts = Array.isArray(item.counts) ? item.counts : [0, 0, 0, 0, 0, 0, 0];
     const row = document.createElement('div');
     row.className = 'item-row';
-    row.innerHTML = `<p><span class="item-id">${escapeHtml(item.id)}</span> ${escapeHtml(
-      labels[item.id] || ''
-    )}</p>
+    row.innerHTML = `<p>${escapeHtml(labels[item.id] || '')} <span class="item-id item-id-secondary">${escapeHtml(
+      item.id
+    )}</span></p>
       ${fullDistHtml(counts, item.id)}`;
     return row;
   }
@@ -771,6 +818,7 @@ import {
 
   function renderAll() {
     renderGlance();
+    renderInsights();
     renderDomains();
     renderItems();
     renderLedger();

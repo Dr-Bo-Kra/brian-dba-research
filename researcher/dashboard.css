@@ -257,6 +257,144 @@
   max-width: 68ch;
 }
 
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.insight-card {
+  margin: 0;
+  padding: 18px 20px;
+  border: 1px solid #d5ddd9;
+  background: #f7faf8;
+}
+
+.insight-headline {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+  color: var(--deep);
+}
+
+.insight-detail {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.domain-relative {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--teal);
+}
+
+.domain-bar-muted {
+  opacity: 0.72;
+}
+
+.domain-explore {
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.item-question {
+  display: block;
+  font-weight: 600;
+  color: var(--deep);
+}
+
+.item-id-secondary {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7a8a86;
+}
+
+.participation-panel,
+.admin-panel {
+  padding-top: 8px;
+}
+
+.participation-summary,
+.admin-summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.participation-summary::-webkit-details-marker,
+.admin-summary::-webkit-details-marker {
+  display: none;
+}
+
+.participation-body,
+.admin-body {
+  margin-top: 18px;
+}
+
+.participation-note {
+  margin: 16px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 68ch;
+}
+
+.explore-block {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid #d5ddd9;
+}
+
+.explore-block:first-of-type {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.explore-block h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.methodology-body {
+  margin-top: 12px;
+  max-width: 68ch;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.methodology-body p {
+  margin: 0 0 10px;
+}
+
+.drawer-methodology {
+  margin-top: 22px;
+}
+
+.drawer-methodology > summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--deep);
+}
+
+.drawer-detailed > .drawer-section {
+  margin-top: 12px;
+}
+
 .participation-panel h3,
 .admin-panel h3,
 .item-highlight-group h3 {
@@ -782,6 +920,10 @@
 }
 
 @media (max-width: 900px) {
+  .insight-grid {
+    grid-template-columns: 1fr;
+  }
+}
   .workspace-header {
     height: auto;
     min-height: 72px;

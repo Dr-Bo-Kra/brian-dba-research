@@ -2,9 +2,12 @@
  * Pure helpers for BoardLens-style progressive disclosure on the DBA dashboard.
  * Builds descriptive drilldown content from summary and response DTOs already loaded
  * in the researcher workspace. No significance, causality, or evaluative claims.
+ *
+ * Hierarchy: plain-English answer → key evidence → optional detailed breakdown → methodology.
  */
 
 import { rankItemHighlights } from './item-analysis.mjs';
+import { relativeDomainLabel, SIMILARITY_THRESHOLD } from './insights.mjs';
 
 export const DOMAIN_ITEM_IDS = Object.freeze({
   psychometric: ['B1', 'B2', 'B3', 'B4', 'B5'],
@@ -19,6 +22,7 @@ export const KPI_IDS = Object.freeze([
   'recent',
   'mean',
   'last-intake',
+  'representation',
 ]);
 
 const MONTHS = Object.freeze([
@@ -82,6 +86,7 @@ export function shortenParticipantRef(ref) {
 
 /**
  * Share of ratings at the scale edges (1 and 7), labeled for researchers.
+ * Kept for detailed layers only — not headline copy.
  * @param {number|null|undefined} polarization
  * @returns {string}
  */
@@ -89,6 +94,28 @@ export function formatPolarizationLabel(polarization) {
   if (polarization == null || !Number.isFinite(Number(polarization))) return '';
   const pct = Math.round(Number(polarization) * 100);
   return `polarization ${pct}%`;
+}
+
+/**
+ * Explains technical terms used in detailed evidence.
+ * @param {string} term
+ * @returns {string}
+ */
+export function explainTechnicalTerm(term) {
+  const key = String(term || '').toLowerCase();
+  if (key === 'n' || key === 'sample size') {
+    return 'n is the count of accepted rating sets (or answers) included in this figure for the current filter.';
+  }
+  if (key === 'polarization') {
+    return 'Polarization is the share of answers at the scale edges (1 and 7). It describes spread, not quality.';
+  }
+  if (key === 'sd' || key === 'sample sd') {
+    return 'Sample SD is a descriptive measure of how spread out answers are around the mean on the 1–7 scale.';
+  }
+  if (key === 'mean') {
+    return 'Mean is the arithmetic average on the survey’s 1–7 scale. It is descriptive only.';
+  }
+  return '';
 }
 
 /**
@@ -136,9 +163,28 @@ export function descriptiveDomainInterpretation(mean, n, label) {
     return `${label} has no accepted rating sets in the current filter.`;
   }
   return (
-    `${label} shows a mean of ${Number(mean).toFixed(2)} on the survey’s 1–7 scale ` +
+    `${label} currently averages ${Number(mean).toFixed(2)} on the survey’s 1–7 scale ` +
     `across n = ${n} accepted rating set${n === 1 ? '' : 's'} in the current filter. ` +
     `This figure is a descriptive average only; it does not test difference, causation, or quality.`
+  );
+}
+
+/**
+ * Plain-English domain answer without leading with n / polarization.
+ * @param {number|null|undefined} mean
+ * @param {number} n
+ * @param {string} label
+ * @param {{ score?: number|null }[]} domains
+ */
+export function plainDomainAnswer(mean, n, label, domains = []) {
+  if (mean == null || !n) {
+    return `${label} has no accepted answers in the current filter yet.`;
+  }
+  const relative = relativeDomainLabel(mean, domains);
+  const relativeClause = relative ? ` ${relative}.` : '';
+  return (
+    `${label} currently averages ${Number(mean).toFixed(2)} on the 1–7 scale.${relativeClause} ` +
+    `Open the detailed breakdown for distributions and how this figure is calculated.`
   );
 }
 
@@ -205,6 +251,14 @@ function barRows(rows) {
   }));
 }
 
+function itemPreviewRows(items) {
+  return (Array.isArray(items) ? items : []).map((item) => {
+    const label = item.label || item.id;
+    const mean = item.mean == null ? '—' : Number(item.mean).toFixed(2);
+    return [label, `${mean} / 7`];
+  });
+}
+
 /**
  * @returns {{
  *   kind: string,
@@ -230,28 +284,38 @@ export function buildKpiDrilldown(kpiId, context = {}) {
   const mean = summary.mean_orientation;
   const lastIntake = summary.last_intake || null;
 
-  if (kpiId === 'accepted') {
+  if (kpiId === 'accepted' || kpiId === 'representation') {
     const geo = countByField(records, 'region', geography);
     const role = countByField(records, 'role', roles);
     const exp = countByField(records, 'experience', experience);
     const range = dateRangeLabel(trend, lastIntake, records);
+    const isRep = kpiId === 'representation';
+    const topGeo = geo[0]?.label;
+    const topRole = role[0]?.label;
     return {
       kind: 'kpi',
-      eyebrow: 'Study overview',
-      title: 'Accepted responses',
-      value: String(total),
-      summary:
-        `${total} accepted response${total === 1 ? '' : 's'} in the current filter` +
-        `${range !== '—' ? `, spanning ${range}` : ''}. ` +
-        `Current page covers ${geo.length} geograph${geo.length === 1 ? 'y' : 'ies'}, ` +
-        `${role.length} role${role.length === 1 ? '' : 's'}, and experience spread: ${experienceSpreadLabel(exp)}.`,
-      observations: [
-        ['Accepted responses', String(total)],
-        ['Date range', range],
-        ['Geographies (current page)', String(geo.length)],
-        ['Roles (current page)', String(role.length)],
-        ['Experience bands (current page)', String(exp.length)],
-      ],
+      eyebrow: 'Study at a glance',
+      title: isRep ? 'Who’s responding' : 'Total responses',
+      value: isRep ? topGeo || '—' : String(total),
+      summary: isRep
+        ? total
+          ? `Among responses currently shown, geography and role mix are summarised below. This describes the current page only — not the wider population.`
+          : 'No responses are in view yet, so composition cannot be summarised.'
+        : `${total} accepted response${total === 1 ? '' : 's'} in the current filter` +
+          `${range !== '—' ? `, spanning ${range}` : ''}.`,
+      observations: isRep
+        ? [
+            ['Most common geography (this page)', topGeo || '—'],
+            ['Most common role (this page)', topRole || '—'],
+            ['Responses on this page', String(records.length)],
+            ['Accepted in filter', String(total)],
+          ]
+        : [
+            ['Accepted responses', String(total)],
+            ['Date range', range],
+            ['Geographies on this page', String(geo.length)],
+            ['Roles on this page', String(role.length)],
+          ],
       sections: [
         {
           title: 'Arrival pattern',
@@ -279,9 +343,9 @@ export function buildKpiDrilldown(kpiId, context = {}) {
           bars: barRows(exp),
         },
         {
-          title: 'Full composition tables',
+          title: 'Detailed breakdown',
           kind: 'details',
-          summaryLabel: 'Show full tables',
+          summaryLabel: 'Show full composition tables',
           groups: [
             {
               title: 'Geography',
@@ -299,6 +363,13 @@ export function buildKpiDrilldown(kpiId, context = {}) {
               title: 'Daily arrivals',
               rows: trend.map((row) => [formatResearchDate(row.day), String(row.count)]),
             },
+            {
+              title: 'How to read this',
+              rows: [
+                ['Current page', 'Composition charts use responses currently shown and may be a subset of the full filter.'],
+                ['Experience spread', experienceSpreadLabel(exp)],
+              ],
+            },
           ],
         },
       ],
@@ -314,12 +385,13 @@ export function buildKpiDrilldown(kpiId, context = {}) {
       .slice(0, 12);
     return {
       kind: 'kpi',
-      eyebrow: 'Study overview',
+      eyebrow: 'Study at a glance',
       title: 'Recent responses',
       value: String(recent),
       summary:
-        `${recent} response${recent === 1 ? '' : 's'} accepted in the last 24 hours within the current filter. ` +
-        `The activity list below emphasises when each response arrived, along with role and geography.`,
+        recent === 0
+          ? 'No responses were accepted in the last 24 hours within the current filter.'
+          : `${recent} response${recent === 1 ? '' : 's'} accepted in the last 24 hours within the current filter.`,
       observations: [
         ['Last 24 hours', String(recent)],
         ['Accepted in filter', String(total)],
@@ -337,14 +409,15 @@ export function buildKpiDrilldown(kpiId, context = {}) {
           })),
         },
         {
-          title: 'Recent daily counts',
-          kind: 'bars',
-          bars: barRows(
-            trend.slice(-14).map((row) => ({
-              label: formatResearchDate(row.day),
-              count: row.count,
-            }))
-          ),
+          title: 'Detailed breakdown',
+          kind: 'details',
+          summaryLabel: 'Show recent daily counts',
+          groups: [
+            {
+              title: 'Recent daily counts',
+              rows: trend.slice(-14).map((row) => [formatResearchDate(row.day), String(row.count)]),
+            },
+          ],
         },
       ],
       note:
@@ -367,36 +440,40 @@ export function buildKpiDrilldown(kpiId, context = {}) {
         label: domain.label || domain.id,
         count: Number(domain.score),
         share: (Number(domain.score) / 7) * 100,
-        meta: `n = ${Number(domain.n) || 0}`,
+        meta: relativeDomainLabel(domain.score, domains),
       }));
     return {
       kind: 'kpi',
-      eyebrow: 'Study overview',
-      title: 'Overall mean score',
+      eyebrow: 'Study at a glance',
+      title: 'Overall average score',
       value: formatScore(mean),
       summary:
-        'Average of each accepted response’s overall score on the survey’s 1–7 scale in the current filter. ' +
-        'Domain means below are independent descriptive averages for comparison, not parts of a causal model.',
+        mean == null
+          ? 'No overall average is available in the current filter yet.'
+          : `The overall average across accepted responses is ${Number(mean).toFixed(2)} on the 1–7 scale. Theme averages below are separate descriptive figures for comparison.`,
       observations: [
-        ['Overall mean', formatScore(mean)],
+        ['Overall average', formatScore(mean)],
         ['Accepted responses', String(total)],
         ['Scored responses on this page', String(scored.length)],
       ],
       sections: [
         {
-          title: 'Domain comparison',
+          title: 'Theme comparison',
           kind: 'bars',
           bars: domainBars,
           valueSuffix: ' / 7',
         },
         {
-          title: 'Overall score distribution (rounded, current page)',
-          kind: 'distribution',
-          items: [{ id: 'overall', label: 'Overall score', counts: buckets, n: scored.length }],
+          title: 'Detailed breakdown',
+          kind: 'details',
+          summaryLabel: 'Show score distribution on this page',
+          distributionItems: [
+            { id: 'overall', label: 'Overall score', counts: buckets, n: scored.length },
+          ],
         },
       ],
       note:
-        'The headline mean summarises accepted responses in the current filter. Domain means are independent descriptive averages and are not causal contributions. The distribution uses overall scores on the current workspace page only. Figures are descriptive, not causal.',
+        'The headline average summarises accepted responses in the current filter. Theme averages are independent descriptive averages and are not causal contributions. The distribution uses overall scores on the current workspace page only. Figures are descriptive, not causal.',
     };
   }
 
@@ -408,15 +485,15 @@ export function buildKpiDrilldown(kpiId, context = {}) {
     const headline = lastIntake ? formatResearchDateTime(lastIntake) : '—';
     return {
       kind: 'kpi',
-      eyebrow: 'Study overview',
-      title: 'Last intake',
+      eyebrow: 'Study at a glance',
+      title: 'Latest response',
       value: headline,
       summary:
         lastIntake
-          ? `Most recent accepted response in the current filter arrived ${headline}. Nearby records below provide orientation around that intake.`
+          ? `The most recent accepted response in the current filter arrived on ${headline}.`
           : 'No accepted intake timestamp is available in the current filter.',
       observations: [
-        ['Last intake', headline],
+        ['Latest response', headline],
         ['Accepted in filter', String(total)],
         ['Last 24 hours', String(recent)],
       ],
@@ -434,13 +511,13 @@ export function buildKpiDrilldown(kpiId, context = {}) {
         },
       ],
       note:
-        'Last intake is the latest acceptance timestamp in the filtered archive. Free-text answers are not shown here.',
+        'Latest response is the latest acceptance timestamp in the filtered archive. Free-text answers are not shown here.',
     };
   }
 
   return {
     kind: 'kpi',
-    eyebrow: 'Study overview',
+    eyebrow: 'Study at a glance',
     title: 'Insight',
     value: '—',
     summary: 'No drilldown is available for this signal.',
@@ -502,39 +579,63 @@ export function buildDomainDrilldown(domainId, context = {}) {
       .slice(0, 5)
       .map((row) => ({ label: `Experience · ${row.label}`, count: row.count })),
   ];
+  const relative = relativeDomainLabel(mean, domains);
 
   return {
     kind: 'domain',
-    eyebrow: 'Research domain',
+    eyebrow: 'Research theme',
     title,
     value: formatScore(mean),
-    summary: descriptiveDomainInterpretation(mean, n, title),
+    summary: plainDomainAnswer(mean, n, title, domains),
     observations: [
-      ['Domain score', formatScore(mean)],
+      ['Average score', formatScore(mean)],
+      ['Relative standing', relative || '—'],
       ['Accepted rating sets (n)', String(n)],
-      ['Items in domain', String(domainItemIds.length)],
+      ['Questions in theme', String(domainItemIds.length)],
     ],
     sections: [
       {
-        title: 'Highest items',
+        title: 'Higher-scoring questions',
         kind: 'items',
         items: ranked.highest,
       },
       {
-        title: 'Lowest items',
+        title: 'Lower-scoring questions',
         kind: 'items',
         items: ranked.lowest,
       },
       {
-        title: 'Most divided items',
+        title: 'More divided questions',
         kind: 'items',
         items: ranked.mostDivided,
       },
       {
-        title: 'Full item distributions',
+        title: 'Detailed breakdown',
         kind: 'details',
-        summaryLabel: 'Show full 1–7 distributions',
+        summaryLabel: 'Show full 1–7 distributions and glossary',
         distributionItems,
+        groups: [
+          {
+            title: 'Glossary',
+            rows: [
+              ['n', explainTechnicalTerm('n')],
+              ['Polarization', explainTechnicalTerm('polarization')],
+              ['Mean', explainTechnicalTerm('mean')],
+              [
+                'Near-ties',
+                `Theme scores within ${SIMILARITY_THRESHOLD.toFixed(2)} points are treated as similar in plain-English labels.`,
+              ],
+            ],
+          },
+          {
+            title: 'Higher-scoring questions (compact)',
+            rows: itemPreviewRows(ranked.highest),
+          },
+          {
+            title: 'Lower-scoring questions (compact)',
+            rows: itemPreviewRows(ranked.lowest),
+          },
+        ],
       },
       {
         title: 'Participation context',
@@ -548,6 +649,6 @@ export function buildDomainDrilldown(domainId, context = {}) {
       },
     ],
     note:
-      'Domain means and item distributions are descriptive summaries for the current filter. They do not claim significance, causation, or good/bad performance.',
+      'Theme averages and question distributions are descriptive summaries for the current filter. They do not claim significance, causation, or good/bad performance.',
   };
 }
