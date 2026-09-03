@@ -292,11 +292,14 @@ export function buildKpiDrilldown(kpiId, context = {}) {
     const isRep = kpiId === 'representation';
     const topGeo = geo[0]?.label;
     const topRole = role[0]?.label;
+    const geoCountLabel = geo.length
+      ? `${geo.length} geograph${geo.length === 1 ? 'y' : 'ies'}`
+      : '—';
     return {
       kind: 'kpi',
       eyebrow: 'Study at a glance',
-      title: isRep ? 'Who’s responding' : 'Total responses',
-      value: isRep ? topGeo || '—' : String(total),
+      title: isRep ? 'Participant composition' : 'Total responses',
+      value: isRep ? geoCountLabel : String(total),
       summary: isRep
         ? total
           ? `Among responses currently shown, geography and role mix are summarised below. This describes the current page only — not the wider population.`
@@ -305,7 +308,8 @@ export function buildKpiDrilldown(kpiId, context = {}) {
           `${range !== '—' ? `, spanning ${range}` : ''}.`,
       observations: isRep
         ? [
-            ['Most common geography (this page)', topGeo || '—'],
+            ['Geographies on this page', String(geo.length)],
+            ['Most represented geography (this page)', topGeo || '—'],
             ['Most common role (this page)', topRole || '—'],
             ['Responses on this page', String(records.length)],
             ['Accepted in filter', String(total)],

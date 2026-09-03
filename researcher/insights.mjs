@@ -236,17 +236,24 @@ export function buildStudyInsights(summary, options = {}) {
 
 /**
  * Compact participation line for the glance band (current page only).
+ * Prefer geography count over headlining a single mode region.
  * Avoids population / representativeness language.
  *
  * @param {unknown[]} records
  * @param {[string, string][]} geography
  * @param {[string, string][]} roles
- * @returns {{ value: string, note: string }}
+ * @returns {{ value: string, note: string, geographyCount: number, topGeography: string, topRole: string }}
  */
 export function participationGlanceCopy(records, geography = [], roles = []) {
   const rows = Array.isArray(records) ? records : [];
   if (!rows.length) {
-    return { value: '—', note: 'Composition appears when responses are in view.' };
+    return {
+      value: '—',
+      note: 'Composition appears when responses are in view.',
+      geographyCount: 0,
+      topGeography: '',
+      topRole: '',
+    };
   }
   const geoMap = new Map(geography);
   const roleMap = new Map(roles);
@@ -263,11 +270,13 @@ export function participationGlanceCopy(records, geography = [], roles = []) {
   const geoLabel = geoMap.get(topGeo[0]) || topGeo[0];
   const roleLabel = roleMap.get(topRole[0]) || topRole[0];
   const geoVariety = geoTallies.size;
-  const value =
-    geoVariety === 1 ? geoLabel : `${geoLabel} and ${geoVariety - 1} other${geoVariety === 2 ? '' : 's'}`;
+  const value = `${geoVariety} geograph${geoVariety === 1 ? 'y' : 'ies'}`;
   return {
     value,
-    note: `On this page, most common role: ${roleLabel}.`,
+    note: `Most represented: ${geoLabel}`,
+    geographyCount: geoVariety,
+    topGeography: geoLabel,
+    topRole: roleLabel,
   };
 }
 

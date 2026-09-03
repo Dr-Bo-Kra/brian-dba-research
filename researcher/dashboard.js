@@ -8,9 +8,11 @@ import {
 import {
   buildDomainDrilldown,
   buildKpiDrilldown,
+  countByField,
   formatPolarizationLabel,
   formatResearchDate,
   formatResearchDateTime,
+  normalizeTrend,
   shortenParticipantRef,
 } from './drilldowns.mjs';
 
@@ -555,6 +557,13 @@ import {
     document.getElementById('kpi-updated').textContent = summary?.last_intake
       ? formatResearchDate(summary.last_intake)
       : '—';
+    const orientationEl = document.getElementById('kpi-orientation');
+    if (orientationEl) {
+      orientationEl.textContent =
+        summary?.mean_orientation != null && Number.isFinite(Number(summary.mean_orientation))
+          ? `${Number(summary.mean_orientation).toFixed(2)} / 7`
+          : '—';
+    }
     const representation = participationGlanceCopy(records, GEOGRAPHY, ROLES);
     const repEl = document.getElementById('kpi-representation');
     const repNote = document.getElementById('kpi-representation-note');
@@ -564,12 +573,111 @@ import {
     if (participationNote) {
       if (records.length) {
         participationNote.hidden = false;
-        participationNote.textContent = `${representation.note} Open “Who’s responding” for geography, role, and experience charts.`;
+        participationNote.textContent = `${representation.note}. Full composition is in the drawer and panel below.`;
       } else {
         participationNote.hidden = true;
         participationNote.textContent = '';
       }
     }
+  }
+
+  function renderTrendChart(trend) {
+    const host = document.getElementById('trend-chart');
+    const empty = document.getElementById('trend-empty');
+    if (!host) return;
+    const points = normalizeTrend(trend);
+    const hasData = points.some((row) => Number(row.count) > 0);
+    if (!hasData) {
+      host.innerHTML = '';
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    const width = 520;
+    const height = 140;
+    const padX = 12;
+    const padY = 16;
+    const max = Math.max(1, ...points.map((row) => Number(row.count) || 0));
+    const step = points.length > 1 ? (width - padX * 2) / (points.length - 1) : 0;
+    const coords = points.map((row, index) => {
+      const x = padX + index * step;
+      const y = height - padY - ((Number(row.count) || 0) / max) * (height - padY * 2);
+      return { x, y, label: formatResearchDate(row.day), count: Number(row.count) || 0 };
+    });
+    const line = coords.map((pt, index) => `${index === 0 ? 'M' : 'L'}${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
+    const area =
+      coords.length > 1
+        ? `${line} L${coords[coords.length - 1].x.toFixed(1)} ${height - padY} L${coords[0].x.toFixed(1)} ${
+            height - padY
+          } Z`
+        : '';
+    const dots = coords
+      .map(
+        (pt) =>
+          `<circle class="trend-point" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.5"><title>${escapeHtml(
+            pt.label
+          )}: ${pt.count}</title></circle>`
+      )
+      .join('');
+    const firstLabel = coords[0]?.label || '';
+    const lastLabel = coords[coords.length - 1]?.label || '';
+    host.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Responses over time">
+      <line class="trend-grid" x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}"></line>
+      ${area ? `<path class="trend-area" d="${area}"></path>` : ''}
+      <path class="trend-line" d="${line}"></path>
+      ${dots}
+      <text class="trend-label" x="${padX}" y="${height - 2}">${escapeHtml(firstLabel)}</text>
+      <text class="trend-label" x="${width - padX}" y="${height - 2}" text-anchor="end">${escapeHtml(lastLabel)}</text>
+    </svg>`;
+  }
+
+  function renderCompositionRank(title, rows) {
+    if (!rows.length) return '';
+    const top = rows.slice(0, 5);
+    const max = Math.max(1, ...top.map((row) => Number(row.count) || 0));
+    return `<div class="composition-rank">
+      <h4>${escapeHtml(title)}</h4>
+      <ul class="composition-rank-list">
+        ${top
+          .map((row) => {
+            const share = Math.round(((Number(row.count) || 0) / max) * 100);
+            return `<li>
+              <span class="composition-rank-label">${escapeHtml(row.label)}</span>
+              <span class="composition-rank-count">${row.count}</span>
+              <span class="composition-rank-bar" aria-hidden="true"><i style="width:${share}%"></i></span>
+            </li>`;
+          })
+          .join('')}
+      </ul>
+    </div>`;
+  }
+
+  function renderParticipation() {
+    renderTrendChart(summary?.trend || []);
+    const host = document.getElementById('composition-ranks');
+    const empty = document.getElementById('composition-empty');
+    const summaryEl = document.getElementById('composition-summary');
+    if (!host) return;
+    host.innerHTML = '';
+    if (!records.length) {
+      if (empty) empty.hidden = false;
+      if (summaryEl) {
+        summaryEl.textContent = 'Open a KPI card for full geography, role, and experience charts.';
+      }
+      return;
+    }
+    if (empty) empty.hidden = true;
+    const geo = countByField(records, 'region', GEOGRAPHY);
+    const role = countByField(records, 'role', ROLES);
+    const exp = countByField(records, 'experience', EXPERIENCE);
+    const glance = participationGlanceCopy(records, GEOGRAPHY, ROLES);
+    if (summaryEl) {
+      summaryEl.textContent = `${glance.value}. ${glance.note}. Ranked summaries use responses currently shown.`;
+    }
+    host.innerHTML =
+      renderCompositionRank('Geography', geo) +
+      renderCompositionRank('Role', role) +
+      renderCompositionRank('Experience', exp);
   }
 
   function renderInsights() {
@@ -578,7 +686,7 @@ import {
     if (!host) return;
     host.innerHTML = '';
     const labels = Object.fromEntries(ITEMS);
-    const insights = summary ? buildStudyInsights(summary, { labels, maxInsights: 4 }) : [];
+    const insights = summary ? buildStudyInsights(summary, { labels, maxInsights: 3 }) : [];
     if (empty) empty.hidden = insights.length > 0;
     insights.forEach((insight) => {
       const card = document.createElement('article');
@@ -612,17 +720,12 @@ import {
       const percent = Math.round((Number(stat.score) / 7) * 100);
       const relative = relativeDomainLabel(stat.score, stats);
       button.innerHTML = `
-        <div class="domain-score-head">
-          <strong>${escapeHtml(stat.label || domain.label)}</strong>
-          <span>${Number(stat.score).toFixed(2)} / 7</span>
-        </div>
-        <p class="domain-relative">${escapeHtml(relative)}</p>
-        <div class="domain-bar domain-bar-muted" aria-hidden="true"><i></i></div>
-        <p class="domain-explore">Explore details</p>
+        <span class="domain-score-name">${escapeHtml(stat.label || domain.label)}</span>
+        <span class="domain-score-mean">${Number(stat.score).toFixed(2)} / 7</span>
+        <span class="domain-bar domain-bar-muted" aria-hidden="true"><i style="width:${percent}%"></i></span>
+        <span class="domain-relative">${escapeHtml(relative)}</span>
         <i class="drill-mark" aria-hidden="true">+</i>`;
       host.append(button);
-      const bar = button.querySelector('.domain-bar > i');
-      if (bar) bar.style.width = `${percent}%`;
     });
   }
 
@@ -818,6 +921,7 @@ import {
 
   function renderAll() {
     renderGlance();
+    renderParticipation();
     renderInsights();
     renderDomains();
     renderItems();
@@ -1233,6 +1337,14 @@ import {
   authForm?.addEventListener('submit', (event) => void handleAuthSubmit(event));
   filterForm?.addEventListener('submit', (event) => event.preventDefault());
   filterForm?.addEventListener('change', () => {
+    if (session && apiConfigured) void refreshWorkspace();
+    else renderAll();
+  });
+  document.getElementById('filter-clear')?.addEventListener('click', () => {
+    if (!filterForm) return;
+    filterForm.reset();
+    responsePage = 0;
+    expandedRecordRef = null;
     if (session && apiConfigured) void refreshWorkspace();
     else renderAll();
   });

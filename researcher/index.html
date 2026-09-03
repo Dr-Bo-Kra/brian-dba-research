@@ -11,7 +11,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; upgrade-insecure-requests">
   <title>Inquiry archive | Brian E Pereira DBA Research</title>
   <link rel="stylesheet" href="../styles.css?v=15">
-  <link rel="stylesheet" href="dashboard.css?v=9">
+  <link rel="stylesheet" href="dashboard.css?v=10">
 </head>
 <body class="workspace-body">
   <a class="skip-link" href="#workspace-main">Skip to inquiry archive</a>
@@ -71,10 +71,10 @@
       <!-- 1. Study at a glance -->
       <section class="workspace-intro" aria-labelledby="overview-title">
         <h1 id="overview-title">Study at a glance</h1>
-        <p>A 30-second read of study status. Open a card for evidence and calculation detail. Figures are descriptive only.</p>
+        <p>Dashboard view of study status. Open a figure for evidence. Descriptive only.</p>
       </section>
 
-      <section class="glance-band" aria-label="Study at a glance">
+      <section class="glance-band kpi-strip" aria-label="Study at a glance">
         <button type="button" class="kpi-card drill" data-drill="kpi:accepted" aria-haspopup="dialog" aria-controls="drill-drawer">
           <strong id="kpi-count">0</strong>
           <span>Total responses</span>
@@ -82,8 +82,7 @@
         </button>
         <button type="button" class="kpi-card drill" data-drill="kpi:recent" aria-haspopup="dialog" aria-controls="drill-drawer">
           <strong id="kpi-recent">0</strong>
-          <span>Recent responses</span>
-          <small class="kpi-note">Accepted in the last 24 hours</small>
+          <span>Last 24 hours</span>
           <i class="drill-mark" aria-hidden="true">+</i>
         </button>
         <button type="button" class="kpi-card drill" data-drill="kpi:last-intake" aria-haspopup="dialog" aria-controls="drill-drawer">
@@ -93,84 +92,119 @@
         </button>
         <button type="button" class="kpi-card drill" data-drill="kpi:representation" aria-haspopup="dialog" aria-controls="drill-drawer">
           <strong id="kpi-representation">—</strong>
-          <span>Who’s responding</span>
-          <small class="kpi-note" id="kpi-representation-note">Composition on this page</small>
+          <span>Participant composition</span>
+          <small class="kpi-note" id="kpi-representation-note">Geographies in view</small>
+          <i class="drill-mark" aria-hidden="true">+</i>
+        </button>
+        <button type="button" class="kpi-card drill" data-drill="kpi:mean" aria-haspopup="dialog" aria-controls="drill-drawer">
+          <strong id="kpi-orientation">—</strong>
+          <span>Overall orientation</span>
           <i class="drill-mark" aria-hidden="true">+</i>
         </button>
       </section>
 
-      <!-- 2. What we're learning -->
-      <section class="workspace-panel insights-panel" aria-labelledby="insights-title">
-        <p class="kicker">What we’re learning</p>
-        <h2 id="insights-title">Current descriptive signals</h2>
-        <p class="section-lede">A few plain-English observations drawn from the current averages and answer patterns. They describe the filtered archive only — they do not test causes, significance, or quality.</p>
-        <div class="insight-grid" id="insight-cards"></div>
-        <p class="empty-copy" id="insights-empty">Descriptive signals will appear when responses arrive.</p>
+      <!-- 2. Filter toolbar -->
+      <section class="filter-toolbar-wrap" id="filter-toolbar" aria-labelledby="refine-title">
+        <h2 id="refine-title" class="sr-only">Filters</h2>
+        <form id="filter-form" class="filter-toolbar" novalidate>
+          <div class="filter-chip filter-chip-date">
+            <span class="filter-chip-label" id="filter-date-label">Date</span>
+            <div class="filter-date-pair" role="group" aria-labelledby="filter-date-label">
+              <label class="sr-only" for="filter-from">From date</label>
+              <input id="filter-from" name="from" type="date" title="From date">
+              <span class="filter-date-sep" aria-hidden="true">–</span>
+              <label class="sr-only" for="filter-to">To date</label>
+              <input id="filter-to" name="to" type="date" title="To date">
+            </div>
+          </div>
+          <div class="filter-chip">
+            <label class="filter-chip-label" for="filter-region">Geography</label>
+            <select id="filter-region" name="region">
+              <option value="">All regions</option>
+            </select>
+          </div>
+          <div class="filter-chip">
+            <label class="filter-chip-label" for="filter-role">Role</label>
+            <select id="filter-role" name="role">
+              <option value="">All roles</option>
+            </select>
+          </div>
+          <div class="filter-chip">
+            <label class="filter-chip-label" for="filter-experience">Experience</label>
+            <select id="filter-experience" name="experience">
+              <option value="">All bands</option>
+            </select>
+          </div>
+          <div class="filter-chip filter-chip-search">
+            <label class="filter-chip-label" for="filter-search">Participant reference</label>
+            <input id="filter-search" name="q" type="search" placeholder="resp_…" autocomplete="off">
+          </div>
+          <button type="button" class="button ghost filter-clear" id="filter-clear">Clear</button>
+        </form>
+        <p class="participation-note" id="participation-note" hidden></p>
       </section>
 
-      <!-- 3. How the five research themes compare -->
-      <section class="workspace-panel" aria-labelledby="compass-title">
-        <p class="kicker">Research themes</p>
-        <h2 id="compass-title">How the five research themes compare</h2>
-        <p class="section-lede">Human-readable theme averages on the survey’s 1–7 scale. Small gaps are treated as similar. Open a theme to explore details.</p>
-        <div class="domain-scores" id="domain-scores"></div>
-        <p class="empty-copy" id="domain-empty">Theme scores will appear when responses arrive.</p>
-      </section>
-
-      <!-- 4. Participation -->
-      <details class="workspace-panel participation-panel" id="participation-panel">
-        <summary class="participation-summary">
+      <!-- 3. Participation analytics -->
+      <section class="workspace-panel participation-analytics" aria-labelledby="participation-title">
+        <div class="panel-head compact">
           <p class="kicker">Participation</p>
-          <h2 id="refine-title">Filters and composition</h2>
-          <p class="section-lede">Narrow the current view, or review who appears on this page. Filters apply to overview signals, themes, and the response ledger.</p>
-        </summary>
-        <div class="participation-body">
-          <form id="filter-form" class="filter-grid" novalidate>
-            <div class="field">
-              <label for="filter-from">From date</label>
-              <input id="filter-from" name="from" type="date">
-            </div>
-            <div class="field">
-              <label for="filter-to">To date</label>
-              <input id="filter-to" name="to" type="date">
-            </div>
-            <div class="field">
-              <label for="filter-region">Broad geography</label>
-              <select id="filter-region" name="region">
-                <option value="">All regions</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="filter-role">Position category</label>
-              <select id="filter-role" name="role">
-                <option value="">All roles</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="filter-experience">Lending experience</label>
-              <select id="filter-experience" name="experience">
-                <option value="">All bands</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="filter-search">Participant reference</label>
-              <input id="filter-search" name="q" type="search" placeholder="resp_…" autocomplete="off">
-            </div>
-          </form>
-          <p class="participation-note" id="participation-note" hidden></p>
+          <h2 id="participation-title">Arrival and composition</h2>
         </div>
-      </details>
+        <div class="participation-grid">
+          <div class="participation-trend" aria-labelledby="trend-title">
+            <h3 id="trend-title">Responses over time</h3>
+            <div class="chart-frame" id="trend-chart" aria-live="polite"></div>
+            <p class="empty-copy" id="trend-empty">Arrival pattern will appear when responses arrive.</p>
+          </div>
+          <div class="participation-composition" aria-labelledby="composition-title">
+            <h3 id="composition-title">Participant composition</h3>
+            <p class="composition-lede" id="composition-summary">Open a KPI card for full geography, role, and experience charts.</p>
+            <div id="composition-ranks"></div>
+            <p class="empty-copy" id="composition-empty">Composition will appear when responses are in view.</p>
+          </div>
+        </div>
+      </section>
 
-      <!-- 5. Explore the research -->
+      <!-- 4. Themes + descriptive signals (peer panels) -->
+      <div class="learning-grid" id="learning-grid">
+        <section class="workspace-panel themes-panel" aria-labelledby="compass-title">
+          <div class="panel-head compact">
+            <p class="kicker">Research themes</p>
+            <h2 id="compass-title">How the five research themes compare</h2>
+          </div>
+          <div class="domain-scores" id="domain-scores"></div>
+          <p class="empty-copy" id="domain-empty">Theme scores will appear when responses arrive.</p>
+        </section>
+
+        <section class="workspace-panel insights-panel" aria-labelledby="insights-title">
+          <div class="panel-head compact">
+            <p class="kicker">What we’re learning</p>
+            <h2 id="insights-title">Current descriptive signals</h2>
+          </div>
+          <p class="section-lede compact">Descriptive observations from current averages — not causes, significance, or quality.</p>
+          <div class="insight-grid" id="insight-cards"></div>
+          <p class="empty-copy" id="insights-empty">Descriptive signals will appear when responses arrive.</p>
+        </section>
+      </div>
+
+      <!-- 5. Explore: questions, ledger, free-text -->
       <section class="workspace-panel explore-panel" aria-labelledby="explore-title">
-        <p class="kicker">Explore the research</p>
-        <h2 id="explore-title">Survey questions, responses, and detail</h2>
-        <p class="section-lede">Question text comes first. IDs, distributions, and calculation notes stay available on expand.</p>
+        <div class="panel-head compact explore-head">
+          <div>
+            <p class="kicker">Explore the research</p>
+            <h2 id="explore-title">Survey questions and responses</h2>
+          </div>
+          <nav class="explore-nav" aria-label="Explore sections">
+            <a href="#filter-toolbar">Filters</a>
+            <a href="#reflections-title">Free-text</a>
+            <a href="#admin-panel">Administration</a>
+          </nav>
+        </div>
 
         <div class="explore-block" aria-labelledby="items-title">
           <h3 id="items-title">Question highlights</h3>
-          <p class="section-lede">Highest, lowest, and most divided questions (top 3 each). Expand a row for the full 1–7 chart.</p>
-          <div id="item-highlights"></div>
+          <p class="section-lede compact">Highest, lowest, and most divided (top 3 each). Expand a row for the full 1–7 chart.</p>
+          <div class="item-highlight-columns" id="item-highlights"></div>
           <p class="empty-copy" id="items-empty">Question highlights will appear when responses arrive.</p>
           <details class="item-all-details" id="item-all-details">
             <summary>All questions — full distributions</summary>
@@ -179,9 +213,11 @@
         </div>
 
         <div class="explore-block ledger-panel" aria-labelledby="ledger-title">
-          <h3 id="ledger-title">Response ledger</h3>
-          <p class="section-lede">Compact list of accepted responses. Ten records per page. Expand a row for record detail. Free-text answers are not shown here.</p>
-          <p class="ledger-meta" id="ledger-meta" hidden></p>
+          <div class="ledger-head">
+            <h3 id="ledger-title">Response ledger</h3>
+            <p class="ledger-meta" id="ledger-meta" hidden></p>
+          </div>
+          <p class="section-lede compact">Ten records per page. Expand a row for detail. Free-text answers are not shown here.</p>
           <div class="table-wrap">
             <table class="record-table">
               <thead>
@@ -207,7 +243,7 @@
 
         <div class="explore-block restricted-panel" aria-labelledby="reflections-title">
           <h3 id="reflections-title">Free-text answers</h3>
-          <p class="section-lede">Free-text answers stay hidden until you opt in. They are never included in aggregates or the response ledger.</p>
+          <p class="section-lede compact">Hidden until you opt in. Never included in aggregates or the response ledger.</p>
           <label class="reveal-check">
             <input type="checkbox" id="reveal-reflections">
             I need to read free-text answers for analysis or a withdrawal request.
@@ -234,7 +270,7 @@
         <summary class="admin-summary">
           <p class="kicker">Administration</p>
           <h2 id="admin-title">Export and deletion</h2>
-          <p class="section-lede">Secondary controls. CSV export and deletion stay disabled until the study enables them.</p>
+          <p class="section-lede compact">CSV export and deletion stay disabled until the study enables them.</p>
         </summary>
         <div class="admin-body">
           <div class="admin-block">
@@ -280,6 +316,6 @@
   </div>
 
   <script src="config.js?v=3"></script>
-  <script type="module" src="dashboard.js?v=9"></script>
+  <script type="module" src="dashboard.js?v=10"></script>
 </body>
 </html>
