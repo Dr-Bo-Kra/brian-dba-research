@@ -1,5 +1,6 @@
 import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.mjs';
 import { rankItemHighlights } from './item-analysis.mjs';
+import { buildDomainDrilldown, buildKpiDrilldown } from './drilldowns.mjs';
 
 (function initInquiryArchive() {
   const gate = document.getElementById('auth-gate');
@@ -36,6 +37,14 @@ import { rankItemHighlights } from './item-analysis.mjs';
   const deleteSubmit = document.getElementById('delete-submit');
   const deleteError = document.getElementById('delete-error');
   const exportBtn = document.getElementById('export-csv');
+  const drillLayer = document.getElementById('drill-layer');
+  const drillDrawer = document.getElementById('drill-drawer');
+  const drillContent = document.getElementById('drill-content');
+  const drillClose = document.getElementById('drill-close');
+  const ledgerPrev = document.getElementById('ledger-prev');
+  const ledgerNext = document.getElementById('ledger-next');
+  const ledgerPager = document.getElementById('ledger-pager');
+  const ledgerPageLabel = document.getElementById('ledger-page-label');
 
   const GEOGRAPHY = [
     ['india', 'India'],
@@ -103,7 +112,8 @@ import { rankItemHighlights } from './item-analysis.mjs';
     ['F25', 'More responsible inclusive decisions'],
   ];
 
-  const RESPONSE_PAGE_LIMIT = 50;
+  const RESPONSE_FETCH_LIMIT = 50;
+  const RESPONSE_PAGE_LIMIT = 10;
   let session = null;
   let pendingTicket = '';
   let records = [];
@@ -111,6 +121,10 @@ import { rankItemHighlights } from './item-analysis.mjs';
   let qualitative = [];
   let pollTimer = null;
   let showAllItems = false;
+  let responsePage = 0;
+  let expandedRecordRef = null;
+  let drillTrigger = null;
+  let previouslyFocused = null;
 
   function escapeHtml(str) {
     return String(str)
@@ -221,6 +235,137 @@ import { rankItemHighlights } from './item-analysis.mjs';
     return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   }
 
+  function drillContext() {
+    return {
+      summary,
+      records,
+      geography: GEOGRAPHY,
+      roles: ROLES,
+      experience: EXPERIENCE,
+      itemLabels: Object.fromEntries(ITEMS),
+    };
+  }
+
+  function miniDistHtml(counts) {
+    const safe = Array.isArray(counts) ? counts : [0, 0, 0, 0, 0, 0, 0];
+    const max = Math.max(...safe, 1);
+    return `<div class="dist-scale dist-scale-mini" aria-hidden="true">
+      ${safe
+        .map(
+          (count, index) =>
+            `<div class="dist-col"><i data-count="${count}" style="height:${Math.max(
+              4,
+              (count / max) * 36
+            )}px"></i><span>${index + 1}</span></div>`
+        )
+        .join('')}
+    </div>`;
+  }
+
+  function renderDrawerRows(rows) {
+    if (!rows?.length) return '<p class="empty-copy">No detail rows for this view.</p>';
+    return `<div class="drawer-rows">${rows
+      .map(
+        ([label, value]) =>
+          `<div><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`
+      )
+      .join('')}</div>`;
+  }
+
+  function renderDrawerItems(items) {
+    if (!items?.length) return '<p class="empty-copy">No contributing items in the current filter.</p>';
+    return items
+      .map(
+        (item) => `<div class="drawer-item">
+          <p><span class="item-id">${escapeHtml(item.id)}</span> ${escapeHtml(item.label || '')}</p>
+          <p class="item-highlight-meta">mean ${
+            item.mean == null ? '—' : Number(item.mean).toFixed(2)
+          } / 7 · n = ${item.n ?? 0} · P = ${
+            item.polarization == null ? '—' : Number(item.polarization).toFixed(2)
+          }</p>
+          ${miniDistHtml(item.counts)}
+        </div>`
+      )
+      .join('');
+  }
+
+  function renderDrilldown(detail) {
+    if (!drillContent || !detail) return;
+    const sections = (detail.sections || [])
+      .map((section) => {
+        if (section.kind === 'note') {
+          return `<div class="drawer-callout"><small>${escapeHtml(
+            section.title || 'Note'
+          )}</small><p>${escapeHtml(section.note || '')}</p></div>`;
+        }
+        if (section.kind === 'items' || section.kind === 'distribution') {
+          return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+            <h3>${escapeHtml(section.title)}</h3>
+            ${renderDrawerItems(section.items || [])}
+          </section>`;
+        }
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+          <h3>${escapeHtml(section.title)}</h3>
+          ${renderDrawerRows(section.rows || [])}
+        </section>`;
+      })
+      .join('');
+    drillContent.innerHTML = `
+      <div class="drawer-head">
+        <small>${escapeHtml(detail.eyebrow || '')}</small>
+        <h2 id="drawer-title">${escapeHtml(detail.title || 'Detail')}</h2>
+        <strong>${escapeHtml(detail.value || '—')}</strong>
+        <p>${escapeHtml(detail.summary || '')}</p>
+      </div>
+      ${renderDrawerRows(detail.rows || [])}
+      ${sections}
+      <div class="drawer-source">${escapeHtml(detail.note || '')}</div>`;
+  }
+
+  function getFocusable(container) {
+    if (!container) return [];
+    return [...container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
+      (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true'
+    );
+  }
+
+  function closeDrilldown() {
+    if (!drillLayer || drillLayer.hidden) return;
+    drillLayer.hidden = true;
+    document.body.classList.remove('drawer-open');
+    if (drillContent) drillContent.innerHTML = '';
+    const restore = drillTrigger || previouslyFocused;
+    drillTrigger = null;
+    previouslyFocused = null;
+    if (restore && typeof restore.focus === 'function') restore.focus();
+  }
+
+  function openDrilldown(detail, trigger) {
+    if (!drillLayer || !drillDrawer || !detail) return;
+    previouslyFocused = document.activeElement;
+    drillTrigger = trigger || previouslyFocused;
+    renderDrilldown(detail);
+    drillLayer.hidden = false;
+    document.body.classList.add('drawer-open');
+    window.setTimeout(() => {
+      (drillClose || drillDrawer).focus();
+    }, 0);
+  }
+
+  function openDrillFromTarget(target) {
+    const trigger = target?.closest?.('[data-drill]');
+    if (!trigger) return;
+    const key = String(trigger.getAttribute('data-drill') || '');
+    const [kind, id] = key.split(':');
+    if (kind === 'kpi') {
+      openDrilldown(buildKpiDrilldown(id, drillContext()), trigger);
+      return;
+    }
+    if (kind === 'domain') {
+      openDrilldown(buildDomainDrilldown(id, drillContext()), trigger);
+    }
+  }
+
   function renderGlance() {
     const total = summary?.total ?? 0;
     document.getElementById('kpi-count').textContent = String(total);
@@ -236,64 +381,6 @@ import { rankItemHighlights } from './item-analysis.mjs';
       : '—';
   }
 
-  function renderIntake() {
-    const list = document.getElementById('intake-list');
-    const empty = document.getElementById('intake-empty');
-    list.innerHTML = '';
-    const recent = records.slice(0, 8);
-    empty.hidden = recent.length > 0;
-    recent.forEach((row) => {
-      const item = document.createElement('li');
-      item.innerHTML = `
-        <span class="intake-mark" aria-hidden="true"></span>
-        <span>${escapeHtml(optionLabel(ROLES, row.role))} · ${escapeHtml(
-        optionLabel(GEOGRAPHY, row.region)
-      )}</span>
-        <time datetime="${escapeHtml(row.accepted_at || '')}">${escapeHtml(
-        formatWhen(row.accepted_at)
-      )}</time>`;
-      list.append(item);
-    });
-  }
-
-  function renderTrend() {
-    const host = document.getElementById('trend-chart');
-    const days = summary?.trend || [];
-    if (!days.length) {
-      host.innerHTML =
-        '<p class="empty-copy">No daily counts yet.</p>';
-      return;
-    }
-    const width = 560;
-    const height = 220;
-    const pad = 28;
-    const max = Math.max(...days.map((day) => Number(day.count) || 0), 1);
-    const points = days.map((day, index) => {
-      const x = pad + (index * (width - pad * 2)) / Math.max(days.length - 1, 1);
-      const y = height - pad - ((Number(day.count) || 0) / max) * (height - pad * 2);
-      return { x, y, day: day.day, count: day.count };
-    });
-    const polyline = points.map((point) => `${point.x},${point.y}`).join(' ');
-    const area = `${pad},${height - pad} ${polyline} ${points.at(-1).x},${height - pad}`;
-    host.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Accepted responses by day">
-      <line class="trend-grid" x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}"></line>
-      <polygon class="trend-area" points="${area}"></polygon>
-      <polyline class="trend-line" points="${polyline}"></polyline>
-      ${points
-        .map(
-          (point) =>
-            `<circle class="trend-point" cx="${point.x}" cy="${point.y}" r="4"><title>${escapeHtml(
-              String(point.day)
-            )}: ${escapeHtml(String(point.count))}</title></circle>`
-        )
-        .join('')}
-      <text class="trend-label" x="${pad}" y="${height - 8}">${escapeHtml(String(days[0].day))}</text>
-      <text class="trend-label" x="${width - pad}" y="${height - 8}" text-anchor="end">${escapeHtml(
-      String(days.at(-1).day)
-    )}</text>
-    </svg>`;
-  }
-
   function renderDomains() {
     const host = document.getElementById('domain-scores');
     const empty = document.getElementById('domain-empty');
@@ -302,37 +389,31 @@ import { rankItemHighlights } from './item-analysis.mjs';
     const any = stats.some((stat) => stat.score != null);
     empty.hidden = any;
     if (!any) return;
-    stats.forEach((stat) => {
-      const article = document.createElement('article');
-      article.className = 'domain-score';
-      const percent = stat.score == null ? 0 : Math.round((stat.score / 7) * 100);
+    const byId = new Map(stats.map((stat) => [stat.id, stat]));
+    DOMAINS.forEach((domain) => {
+      const stat = byId.get(domain.id);
+      if (!stat || stat.score == null) return;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'domain-score drill';
+      button.setAttribute('data-drill', `domain:${domain.id}`);
+      button.setAttribute('aria-haspopup', 'dialog');
+      button.setAttribute('aria-controls', 'drill-drawer');
+      button.setAttribute('aria-label', `Explore ${stat.label || domain.label}`);
+      const percent = Math.round((Number(stat.score) / 7) * 100);
       const n = Number(stat.n) || 0;
-      article.innerHTML = `
+      button.innerHTML = `
         <div class="domain-score-head">
-          <strong>${escapeHtml(stat.label || stat.id)}</strong>
-          <span>${stat.score == null ? '—' : Number(stat.score).toFixed(2) + ' / 7'}</span>
+          <strong>${escapeHtml(stat.label || domain.label)}</strong>
+          <span>${Number(stat.score).toFixed(2)} / 7</span>
         </div>
         <div class="domain-bar" aria-hidden="true"><i></i></div>
-        <p><strong class="domain-n">n = ${n}</strong> · mean on the survey 1–7 scale for accepted rating sets in the current filter.</p>`;
-      host.append(article);
-      const bar = article.querySelector('.domain-bar > i');
+        <p><strong class="domain-n">n = ${n}</strong> · mean on the survey 1–7 scale for accepted rating sets in the current filter.</p>
+        <i class="drill-mark" aria-hidden="true">+</i>`;
+      host.append(button);
+      const bar = button.querySelector('.domain-bar > i');
       if (bar) bar.style.width = `${percent}%`;
     });
-  }
-
-  function miniDistHtml(counts) {
-    const max = Math.max(...counts, 1);
-    return `<div class="dist-scale dist-scale-mini" aria-hidden="true">
-      ${counts
-        .map(
-          (count, index) =>
-            `<div class="dist-col"><i data-count="${count}" style="height:${Math.max(
-              4,
-              (count / max) * 36
-            )}px"></i><span>${index + 1}</span></div>`
-        )
-        .join('')}
-    </div>`;
   }
 
   function renderHighlightGroup(title, rows) {
@@ -395,7 +476,7 @@ import { rankItemHighlights } from './item-analysis.mjs';
     }
     if (details) details.hidden = false;
     const labels = Object.fromEntries(ITEMS);
-    const ranked = rankItemHighlights(items, { labels, highlightCount: 5 });
+    const ranked = rankItemHighlights(items, { labels, highlightCount: 3 });
     if (host) {
       host.innerHTML =
         renderHighlightGroup('Highest-scoring', ranked.highest) +
@@ -409,6 +490,10 @@ import { rankItemHighlights } from './item-analysis.mjs';
     }
   }
 
+  function pageCount() {
+    return Math.max(1, Math.ceil(records.length / RESPONSE_PAGE_LIMIT) || 1);
+  }
+
   function renderLedger() {
     const body = document.getElementById('record-rows');
     const empty = document.getElementById('ledger-empty');
@@ -416,19 +501,38 @@ import { rankItemHighlights } from './item-analysis.mjs';
     body.innerHTML = '';
     empty.hidden = records.length > 0;
     const total = summary?.total ?? records.length;
+    const pages = pageCount();
+    if (responsePage >= pages) responsePage = Math.max(0, pages - 1);
+    const start = responsePage * RESPONSE_PAGE_LIMIT;
+    const pageRows = records.slice(start, start + RESPONSE_PAGE_LIMIT);
     if (meta) {
       if (records.length || total) {
         meta.hidden = false;
-        meta.textContent = `Showing ${records.length} of ${total}`;
+        const shownStart = records.length ? start + 1 : 0;
+        const shownEnd = start + pageRows.length;
+        meta.textContent = `Showing ${shownStart}–${shownEnd} of ${records.length} loaded · ${total} accepted in filter`;
       } else {
         meta.hidden = true;
         meta.textContent = '';
       }
     }
-    records.forEach((row) => {
+    if (ledgerPager) {
+      ledgerPager.hidden = records.length <= RESPONSE_PAGE_LIMIT;
+      if (ledgerPageLabel) {
+        ledgerPageLabel.textContent = `Page ${responsePage + 1} of ${pages}`;
+      }
+      if (ledgerPrev) ledgerPrev.disabled = responsePage <= 0;
+      if (ledgerNext) ledgerNext.disabled = responsePage >= pages - 1;
+    }
+    pageRows.forEach((row) => {
+      const ref = row.participant_reference || '';
       const tr = document.createElement('tr');
+      tr.className = 'record-row';
+      tr.tabIndex = 0;
+      tr.setAttribute('aria-expanded', expandedRecordRef === ref ? 'true' : 'false');
+      tr.dataset.reference = ref;
       tr.innerHTML = `
-        <td>${escapeHtml(row.participant_reference || '—')}</td>
+        <td>${escapeHtml(ref || '—')}</td>
         <td>${escapeHtml(formatWhen(row.accepted_at))}</td>
         <td>${escapeHtml(optionLabel(GEOGRAPHY, row.region))}</td>
         <td>${escapeHtml(optionLabel(ROLES, row.role))}</td>
@@ -437,8 +541,32 @@ import { rankItemHighlights } from './item-analysis.mjs';
           row.orientation != null ? `${Number(row.orientation).toFixed(2)} / 7` : '—'
         )}</td>`;
       body.append(tr);
+      if (expandedRecordRef === ref) {
+        const detail = document.createElement('tr');
+        detail.className = 'record-detail-row';
+        detail.innerHTML = `<td colspan="6"><div class="record-detail">
+          <p><strong>Record detail</strong> · ${escapeHtml(ref || '—')}</p>
+          <p>Accepted ${escapeHtml(formatWhen(row.accepted_at))} · ${escapeHtml(
+          optionLabel(GEOGRAPHY, row.region)
+        )} · ${escapeHtml(optionLabel(ROLES, row.role))} · ${escapeHtml(
+          optionLabel(EXPERIENCE, row.experience)
+        )}</p>
+          <p>Overall score ${escapeHtml(
+            row.orientation != null ? `${Number(row.orientation).toFixed(2)} / 7` : '—'
+          )} · Legal hold ${row.legal_hold ? 'yes' : 'no'} · Anonymised ${
+          row.anonymised ? 'yes' : 'no'
+        }</p>
+          <p>Free-text answers are not shown in the ledger. Use the gated Qualitative responses section after an explicit researcher action.</p>
+        </div></td>`;
+        body.append(detail);
+      }
     });
     if (exportBtn) exportBtn.disabled = true;
+  }
+
+  function toggleRecordDetail(reference) {
+    expandedRecordRef = expandedRecordRef === reference ? null : reference;
+    renderLedger();
   }
 
   function renderReflections() {
@@ -477,8 +605,6 @@ import { rankItemHighlights } from './item-analysis.mjs';
 
   function renderAll() {
     renderGlance();
-    renderIntake();
-    renderTrend();
     renderDomains();
     renderItems();
     renderLedger();
@@ -492,6 +618,9 @@ import { rankItemHighlights } from './item-analysis.mjs';
     summary = null;
     qualitative = [];
     showAllItems = false;
+    responsePage = 0;
+    expandedRecordRef = null;
+    closeDrilldown();
     if (signOutBtn) signOutBtn.hidden = true;
     setSessionMeta(null);
     if (exportBtn) exportBtn.disabled = true;
@@ -539,7 +668,7 @@ import { rankItemHighlights } from './item-analysis.mjs';
     Object.entries(filters).forEach(([key, value]) => {
       if (value) params.set(key, value);
     });
-    params.set('limit', String(RESPONSE_PAGE_LIMIT));
+    params.set('limit', String(RESPONSE_FETCH_LIMIT));
     return `?${params.toString()}`;
   }
 
@@ -563,6 +692,8 @@ import { rankItemHighlights } from './item-analysis.mjs';
       summary = await summaryRes.json();
       const payload = await listRes.json();
       records = Array.isArray(payload?.records) ? payload.records : [];
+      responsePage = 0;
+      expandedRecordRef = null;
       setStatus('live', 'Live');
       setSessionMeta(session?.expiresAt);
       if (revealBox?.checked) await loadQualitative();
@@ -909,6 +1040,56 @@ import { rankItemHighlights } from './item-analysis.mjs';
   document.getElementById('item-all-details')?.addEventListener('toggle', (event) => {
     showAllItems = Boolean(event.target.open);
     renderItems();
+  });
+  ledgerPrev?.addEventListener('click', () => {
+    if (responsePage <= 0) return;
+    responsePage -= 1;
+    expandedRecordRef = null;
+    renderLedger();
+  });
+  ledgerNext?.addEventListener('click', () => {
+    if (responsePage >= pageCount() - 1) return;
+    responsePage += 1;
+    expandedRecordRef = null;
+    renderLedger();
+  });
+  document.getElementById('record-rows')?.addEventListener('click', (event) => {
+    const row = event.target.closest('tr.record-row');
+    if (!row) return;
+    toggleRecordDetail(row.dataset.reference || '');
+  });
+  document.getElementById('record-rows')?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target.closest('tr.record-row');
+    if (!row) return;
+    event.preventDefault();
+    toggleRecordDetail(row.dataset.reference || '');
+  });
+  workspace.addEventListener('click', (event) => {
+    openDrillFromTarget(event.target);
+  });
+  drillClose?.addEventListener('click', () => closeDrilldown());
+  drillLayer?.addEventListener('mousedown', (event) => {
+    if (event.target === drillLayer) closeDrilldown();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && drillLayer && !drillLayer.hidden) {
+      event.preventDefault();
+      closeDrilldown();
+      return;
+    }
+    if (event.key !== 'Tab' || !drillLayer || drillLayer.hidden || !drillDrawer) return;
+    const focusable = getFocusable(drillDrawer);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
 
   if (!apiConfigured) {
