@@ -1,10 +1,14 @@
 /**
  * Operator-only PostgreSQL helpers for synthetic seed/cleanup scripts.
+ *
+ * Write paths (real seed/cleanup) require SYNTHETIC_OPERATOR_DATABASE_URL.
+ * Inspect/dry-run prefers the operator URL when present, otherwise falls back
+ * to DATABASE_URL (researcher_api) for read-only inspection.
+ * Application/researcher API code must never import this module's operator URL.
  */
 import pg from 'pg';
 import {
   assertServerDatabaseUrl,
-  normalizeDatabaseCaCert,
   sslConfigForDatabase,
 } from '../../api/researcher/_lib/query.mjs';
 import {
@@ -25,22 +29,63 @@ export function parseOperatorArgs(argv) {
   };
 }
 
-export function resolveDatabaseUrl() {
-  const url = assertServerDatabaseUrl(process.env.DATABASE_URL || '');
+function validateDatabaseUrl(raw) {
+  const url = assertServerDatabaseUrl(raw);
   if (/service[_-]?role/i.test(url) || /supabase_admin/i.test(url)) {
     throw new Error('forbidden_database_role');
   }
   return url;
 }
 
-export function createOperatorPool() {
-  const databaseUrl = resolveDatabaseUrl();
+/**
+ * @deprecated Prefer resolveWriteDatabaseUrl / resolveInspectDatabaseUrl.
+ * Kept for callers that expect DATABASE_URL only.
+ */
+export function resolveDatabaseUrl() {
+  return validateDatabaseUrl(process.env.DATABASE_URL || '');
+}
+
+/**
+ * Real seed/cleanup writes must use the temporary synthetic operator role.
+ * @returns {string}
+ */
+export function resolveWriteDatabaseUrl() {
+  const raw = String(process.env.SYNTHETIC_OPERATOR_DATABASE_URL || '').trim();
+  if (!raw) {
+    throw new Error('synthetic_operator_database_url_required');
+  }
+  return validateDatabaseUrl(raw);
+}
+
+/**
+ * Dry-run / inspect: prefer operator URL when set, else researcher DATABASE_URL.
+ * @returns {{ url: string, source: 'operator' | 'researcher' }}
+ */
+export function resolveInspectDatabaseUrl() {
+  const operator = String(process.env.SYNTHETIC_OPERATOR_DATABASE_URL || '').trim();
+  if (operator) {
+    return { url: validateDatabaseUrl(operator), source: 'operator' };
+  }
+  const researcher = String(process.env.DATABASE_URL || '').trim();
+  if (!researcher) {
+    throw new Error('database_url_required');
+  }
+  return { url: validateDatabaseUrl(researcher), source: 'researcher' };
+}
+
+/**
+ * Create a pool for an already-resolved connection string.
+ * Verified TLS / DATABASE_CA_CERT remains mandatory for non-local URLs.
+ * @param {string} databaseUrl
+ */
+export function createOperatorPool(databaseUrl) {
+  const connectionString = validateDatabaseUrl(databaseUrl);
   const ssl = sslConfigForDatabase({
-    databaseUrl,
+    databaseUrl: connectionString,
     databaseCaCert: process.env.DATABASE_CA_CERT || process.env.SUPABASE_DB_CA || '',
   });
   return new pg.Pool({
-    connectionString: databaseUrl,
+    connectionString,
     max: 1,
     idleTimeoutMillis: 5000,
     connectionTimeoutMillis: 8000,

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createResearcherApp } from '../api/researcher/_lib/app.mjs';
@@ -16,6 +16,15 @@ import {
   batchDistributionSummary,
   isSyntheticReference,
 } from '../scripts/lib/synthetic-batch.mjs';
+import {
+  OPERATOR_KEYS,
+  parseOperatorEnvContent,
+} from '../scripts/lib/load-operator-env.mjs';
+import {
+  resolveInspectDatabaseUrl,
+  resolveWriteDatabaseUrl,
+  safeDatabaseIdentity,
+} from '../scripts/lib/synthetic-db.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => readFileSync(join(root, relative), 'utf8');
@@ -76,7 +85,9 @@ test('synthetic distribution covers filters, recent intake, and qualitative subs
 });
 
 test('synthetic records are compatible with researcher summary, list, and qualitative fetch', async () => {
-  const records = buildSyntheticBatch();
+  // Align last-24h cluster with wall clock so fixture summary (Date.now()) matches.
+  const referenceNow = new Date().toISOString();
+  const records = buildSyntheticBatch({ referenceNow });
   const store = createFixtureResearchStore(records);
   const filters = {
     from: null,
@@ -194,12 +205,105 @@ test('operator scripts are gated and not wired into deploy or browser code', () 
   const publicConfig = read('config.js');
   assert.match(seed, /--confirm-synthetic-seed/);
   assert.match(seed, /--dry-run/);
+  assert.match(seed, /SYNTHETIC_OPERATOR_DATABASE_URL/);
+  assert.match(seed, /resolveWriteDatabaseUrl/);
   assert.match(cleanup, /--confirm-synthetic-cleanup/);
   assert.match(cleanup, /SYNTHETIC_RESPONSE_COUNT/);
+  assert.match(cleanup, /SYNTHETIC_OPERATOR_DATABASE_URL/);
+  assert.match(cleanup, /resolveWriteDatabaseUrl/);
+  assert.match(cleanup, /resolveInspectDatabaseUrl/);
   assert.doesNotMatch(vercel, /seed-synthetic|cleanup-synthetic/);
   assert.doesNotMatch(dashboard, /seed-synthetic|cleanup-synthetic/);
   assert.match(publicConfig, /COLLECTION_ENABLED:\s*false/);
   assert.match(publicConfig, /SUBMISSION_ENDPOINT:\s*''/);
+});
+
+test('operator env loader recognizes SYNTHETIC_OPERATOR_DATABASE_URL', () => {
+  const parsed = parseOperatorEnvContent(
+    [
+      'DATABASE_URL=postgresql://researcher_api:x@127.0.0.1/postgres',
+      'SYNTHETIC_OPERATOR_DATABASE_URL=postgresql://postgres.example:x@127.0.0.1/postgres',
+      'DATABASE_CA_CERT=-----BEGIN CERTIFICATE-----\\nABC\\n-----END CERTIFICATE-----',
+      'IGNORED_SECRET=should-not-load',
+    ].join('\n')
+  );
+  assert.equal(
+    parsed.SYNTHETIC_OPERATOR_DATABASE_URL,
+    'postgresql://postgres.example:x@127.0.0.1/postgres'
+  );
+  assert.equal(parsed.DATABASE_URL, 'postgresql://researcher_api:x@127.0.0.1/postgres');
+  assert.ok(parsed.DATABASE_CA_CERT);
+  assert.equal(parsed.IGNORED_SECRET, undefined);
+  assert.ok(OPERATOR_KEYS.has('SYNTHETIC_OPERATOR_DATABASE_URL'));
+});
+
+test('real seed/cleanup refuse without SYNTHETIC_OPERATOR_DATABASE_URL', () => {
+  const previous = process.env.SYNTHETIC_OPERATOR_DATABASE_URL;
+  const previousDb = process.env.DATABASE_URL;
+  delete process.env.SYNTHETIC_OPERATOR_DATABASE_URL;
+  process.env.DATABASE_URL = 'postgresql://researcher_api:x@127.0.0.1/postgres';
+  try {
+    assert.throws(
+      () => resolveWriteDatabaseUrl(),
+      /synthetic_operator_database_url_required/
+    );
+    const inspect = resolveInspectDatabaseUrl();
+    assert.equal(inspect.source, 'researcher');
+    assert.match(inspect.url, /researcher_api/);
+  } finally {
+    if (previous === undefined) delete process.env.SYNTHETIC_OPERATOR_DATABASE_URL;
+    else process.env.SYNTHETIC_OPERATOR_DATABASE_URL = previous;
+    if (previousDb === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousDb;
+  }
+});
+
+test('inspect prefers operator URL when present; writes always use operator', () => {
+  const previousOp = process.env.SYNTHETIC_OPERATOR_DATABASE_URL;
+  const previousDb = process.env.DATABASE_URL;
+  process.env.SYNTHETIC_OPERATOR_DATABASE_URL =
+    'postgresql://postgres.example:x@operator.example:6543/postgres';
+  process.env.DATABASE_URL = 'postgresql://researcher_api:x@researcher.example:6543/postgres';
+  try {
+    const writeUrl = resolveWriteDatabaseUrl();
+    assert.match(writeUrl, /operator\.example/);
+    assert.doesNotMatch(writeUrl, /researcher_api/);
+    const inspect = resolveInspectDatabaseUrl();
+    assert.equal(inspect.source, 'operator');
+    assert.match(inspect.url, /operator\.example/);
+    const identity = safeDatabaseIdentity(writeUrl);
+    assert.equal(identity.host, 'operator.example');
+    assert.equal(identity.user, 'postgres.example');
+    assert.equal(identity.port, '6543');
+  } finally {
+    if (previousOp === undefined) delete process.env.SYNTHETIC_OPERATOR_DATABASE_URL;
+    else process.env.SYNTHETIC_OPERATOR_DATABASE_URL = previousOp;
+    if (previousDb === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousDb;
+  }
+});
+
+test('researcher application code never references SYNTHETIC_OPERATOR_DATABASE_URL', () => {
+  const walk = (dir, acc = []) => {
+    for (const name of readdirSync(dir, { withFileTypes: true })) {
+      if (['.git', 'node_modules', '.serena', '.vercel'].includes(name.name)) continue;
+      const full = join(dir, name.name);
+      if (name.isDirectory()) walk(full, acc);
+      else if (/\.(js|mjs|ts|tsx|html|json)$/.test(name.name)) acc.push(full);
+    }
+    return acc;
+  };
+  for (const dir of ['api', 'researcher']) {
+    for (const file of walk(join(root, dir))) {
+      const source = readFileSync(file, 'utf8');
+      assert.doesNotMatch(
+        source,
+        /SYNTHETIC_OPERATOR_DATABASE_URL/,
+        `unexpected operator URL reference in ${file}`
+      );
+    }
+  }
+  assert.match(read('.gitignore'), /\.env/);
 });
 
 test('single synthetic record keeps participant quantitative likert path and consent fields', () => {
@@ -209,4 +313,34 @@ test('single synthetic record keeps participant quantitative likert path and con
   assert.ok(row.consented_at);
   assert.ok(row.privacy_notice_version);
   assert.ok(Date.parse(row.created_at) <= Date.parse(SYNTHETIC_REFERENCE_NOW));
+});
+
+test('synthetic referenceNow can be injected for operator-like wall-clock seeds', () => {
+  const fixed = '2026-09-03T12:00:00.000Z';
+  const withFixed = buildSyntheticBatch({ referenceNow: fixed });
+  const distribution = batchDistributionSummary(withFixed, { referenceNow: fixed });
+  assert.equal(distribution.last24h, 10);
+  for (const row of withFixed.slice(-10)) {
+    assert.ok(Date.parse(row.created_at) <= Date.parse(fixed));
+    assert.ok(Date.parse(row.created_at) >= Date.parse(fixed) - 24 * 60 * 60 * 1000);
+  }
+
+  const previous = process.env.SYNTHETIC_REFERENCE_NOW;
+  process.env.SYNTHETIC_REFERENCE_NOW = '2026-08-20T08:00:00.000Z';
+  try {
+    const fromEnv = buildSyntheticRecord(47);
+    assert.ok(Date.parse(fromEnv.created_at) <= Date.parse(process.env.SYNTHETIC_REFERENCE_NOW));
+    assert.ok(
+      Date.parse(fromEnv.created_at) >=
+        Date.parse(process.env.SYNTHETIC_REFERENCE_NOW) - 24 * 60 * 60 * 1000
+    );
+  } finally {
+    if (previous === undefined) delete process.env.SYNTHETIC_REFERENCE_NOW;
+    else process.env.SYNTHETIC_REFERENCE_NOW = previous;
+  }
+
+  const seed = read('scripts/seed-synthetic-responses.mjs');
+  assert.match(seed, /new Date\(\)\.toISOString\(\)/);
+  assert.match(seed, /resolveSyntheticReferenceNow/);
+  assert.match(seed, /referenceNow/);
 });

@@ -8,13 +8,23 @@ import { fileURLToPath } from 'node:url';
 import { safeDatabaseIdentity } from './synthetic-db.mjs';
 
 const OPERATOR_ENV_FILES = ['.env.synthetic.local', '.env.local'];
-const OPERATOR_KEYS = new Set(['DATABASE_URL', 'DATABASE_CA_CERT', 'SUPABASE_DB_CA']);
+const OPERATOR_KEYS = new Set([
+  'DATABASE_URL',
+  'SYNTHETIC_OPERATOR_DATABASE_URL',
+  'DATABASE_CA_CERT',
+  'SUPABASE_DB_CA',
+]);
 
 function repoRoot() {
   return join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 }
 
-function parseEnvFile(content) {
+/**
+ * Parse operator env file content. Only known operator keys are returned.
+ * @param {string} content
+ * @returns {Record<string, string>}
+ */
+export function parseOperatorEnvContent(content) {
   const vars = {};
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
@@ -36,7 +46,8 @@ function parseEnvFile(content) {
 }
 
 /**
- * Load DATABASE_URL and CA cert vars from operator env files.
+ * Load DATABASE_URL / SYNTHETIC_OPERATOR_DATABASE_URL and CA cert vars
+ * from operator env files. Shell env wins over files.
  * @returns {Record<string, string>} map of loaded keys to source filename
  */
 export function loadOperatorEnv() {
@@ -46,7 +57,7 @@ export function loadOperatorEnv() {
   for (const name of OPERATOR_ENV_FILES) {
     const path = join(root, name);
     if (!existsSync(path)) continue;
-    const vars = parseEnvFile(readFileSync(path, 'utf8'));
+    const vars = parseOperatorEnvContent(readFileSync(path, 'utf8'));
     for (const [key, value] of Object.entries(vars)) {
       if (process.env[key]) continue;
       process.env[key] = value;
@@ -59,11 +70,27 @@ export function loadOperatorEnv() {
 
 /**
  * Log safe database identity (host, db, user — never password or full URL).
+ * @param {Record<string, string>} loadedFrom
+ * @param {{ url?: string, source?: 'operator' | 'researcher' }} [connection]
  */
-export function logOperatorDatabaseIdentity(loadedFrom = {}) {
-  const url = process.env.DATABASE_URL || '';
+export function logOperatorDatabaseIdentity(loadedFrom = {}, connection = {}) {
+  const sourceKind = connection.source || 'researcher';
+  const url =
+    connection.url ||
+    (sourceKind === 'operator'
+      ? process.env.SYNTHETIC_OPERATOR_DATABASE_URL
+      : process.env.DATABASE_URL) ||
+    '';
   if (!url) return;
+
   const identity = safeDatabaseIdentity(url);
-  const source = loadedFrom.DATABASE_URL ? `file ${loadedFrom.DATABASE_URL}` : 'shell env';
-  console.log(`Operator DATABASE_URL (${source}, no secrets):`, identity);
+  const envKey =
+    sourceKind === 'operator' ? 'SYNTHETIC_OPERATOR_DATABASE_URL' : 'DATABASE_URL';
+  const fileHint = loadedFrom[envKey] ? `file ${loadedFrom[envKey]}` : 'shell env';
+  console.log(
+    `Synthetic DB (${sourceKind} via ${fileHint}, no secrets):`,
+    identity
+  );
 }
+
+export { OPERATOR_KEYS, OPERATOR_ENV_FILES };

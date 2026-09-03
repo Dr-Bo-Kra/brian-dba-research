@@ -2,6 +2,9 @@
 /**
  * Operator-only synthetic seed for dashboard validation.
  * Requires --confirm-synthetic-seed. Never invoked from browser/UI or deploy hooks.
+ *
+ * Real writes use SYNTHETIC_OPERATOR_DATABASE_URL only (not researcher_api).
+ * Dry-run does not connect to the database.
  */
 import {
   INSERT_SQL,
@@ -10,6 +13,7 @@ import {
   batchDistributionSummary,
   buildSyntheticBatch,
   isSyntheticReference,
+  resolveSyntheticReferenceNow,
   toInsertRow,
 } from './lib/synthetic-batch.mjs';
 import {
@@ -20,6 +24,7 @@ import {
   countSyntheticRows,
   createOperatorPool,
   parseOperatorArgs,
+  resolveWriteDatabaseUrl,
   verifyAssessmentSchema,
 } from './lib/synthetic-db.mjs';
 
@@ -33,19 +38,21 @@ Safety:
   • Requires --confirm-synthetic-seed (unless --dry-run)
   • Refuses when synthetic rows already exist
   • Uses reserved client_record_id prefix resp_00000000-0000-4000-8000-…
-  • Requires DATABASE_URL (operator credential with INSERT on assessment_responses)
+  • Real seed requires SYNTHETIC_OPERATOR_DATABASE_URL (not researcher_api INSERT)
 
 Environment (shell or gitignored local file):
   .env.synthetic.local  preferred operator file (never committed)
   .env.local            fallback operator file (never committed)
-  DATABASE_URL          PostgreSQL connection string (not service_role)
-  DATABASE_CA_CERT      PEM CA for remote TLS (optional for localhost)`);
+  SYNTHETIC_OPERATOR_DATABASE_URL  write credential for seed/cleanup only
+  DATABASE_URL          researcher_api URI (unchanged; not used for seed writes)
+  DATABASE_CA_CERT      PEM CA for remote TLS (required for non-local hosts)`);
 }
 
-function printDryRunSummary(records) {
-  const distribution = batchDistributionSummary(records);
+function printDryRunSummary(records, referenceNow) {
+  const distribution = batchDistributionSummary(records, { referenceNow });
   console.log('Dry run — no database writes.');
   console.log(`Batch: ${SYNTHETIC_BATCH_ID}`);
+  console.log(`Reference now: ${referenceNow}`);
   console.log(`Rows to insert: ${records.length}`);
   console.log(`Qualitative rows: ${distribution.qualitativeCount}`);
   console.log(`Last-24h rows (reference clock): ${distribution.last24h}`);
@@ -64,7 +71,11 @@ async function main() {
     return;
   }
 
-  const records = buildSyntheticBatch();
+  // Real operator seed uses wall-clock seed time so last-24h KPIs stay meaningful.
+  // Tests inject SYNTHETIC_REFERENCE_NOW / options.referenceNow for determinism.
+  // Dry-run keeps the fixed default clock unless SYNTHETIC_REFERENCE_NOW is set.
+  const referenceNow = args.dryRun ? resolveSyntheticReferenceNow() : new Date().toISOString();
+  const records = buildSyntheticBatch({ referenceNow });
   for (const record of records) {
     if (!isSyntheticReference(record.client_record_id)) {
       throw new Error('generator_produced_non_synthetic_reference');
@@ -72,7 +83,7 @@ async function main() {
   }
 
   if (args.dryRun) {
-    printDryRunSummary(records);
+    printDryRunSummary(records, referenceNow);
     return;
   }
 
@@ -82,11 +93,20 @@ async function main() {
     return;
   }
 
-  logOperatorDatabaseIdentity(loadedFrom);
+  let writeUrl;
+  try {
+    writeUrl = resolveWriteDatabaseUrl();
+  } catch (err) {
+    console.error(`Refusing to seed: ${err.message || err}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  logOperatorDatabaseIdentity(loadedFrom, { url: writeUrl, source: 'operator' });
 
   let pool;
   try {
-    pool = createOperatorPool();
+    pool = createOperatorPool(writeUrl);
   } catch (err) {
     console.error(`Refusing to seed: ${err.message || err}`);
     process.exitCode = 1;
@@ -122,8 +142,9 @@ async function main() {
     await client.query('commit');
 
     const inserted = await countSyntheticRows(client);
-    const distribution = batchDistributionSummary(records);
+    const distribution = batchDistributionSummary(records, { referenceNow });
     console.log(`Seeded ${inserted} synthetic responses for batch ${SYNTHETIC_BATCH_ID}.`);
+    console.log(`Reference now: ${referenceNow}`);
     console.log(`Qualitative rows: ${distribution.qualitativeCount}`);
     console.log(`Last-24h rows (reference clock): ${distribution.last24h}`);
   } catch (err) {

@@ -2,6 +2,10 @@
 /**
  * Operator-only cleanup for the reserved synthetic assessment batch.
  * Requires --confirm-synthetic-cleanup. Refuses broad or ambiguous deletes.
+ *
+ * Real deletes use SYNTHETIC_OPERATOR_DATABASE_URL only.
+ * Dry-run / inspect prefers the operator URL when present; otherwise falls
+ * back to DATABASE_URL for read-only inspection (researcher_api SELECT).
  */
 import {
   SYNTHETIC_BATCH_ID,
@@ -18,6 +22,8 @@ import {
   createOperatorPool,
   listSyntheticRows,
   parseOperatorArgs,
+  resolveInspectDatabaseUrl,
+  resolveWriteDatabaseUrl,
   verifyAssessmentSchema,
 } from './lib/synthetic-db.mjs';
 
@@ -31,11 +37,15 @@ Safety:
   • Requires --confirm-synthetic-cleanup (unless --dry-run)
   • Refuses when matched row count exceeds ${SYNTHETIC_RESPONSE_COUNT}
   • Never deletes rows outside the reserved synthetic prefix
-  • Requires DATABASE_URL with DELETE on assessment_responses
+  • Real cleanup requires SYNTHETIC_OPERATOR_DATABASE_URL (not researcher_api DELETE)
+  • Dry-run inspect prefers operator URL, else falls back to DATABASE_URL (read-only)
 
 Environment (shell or gitignored local file):
   .env.synthetic.local  preferred operator file (never committed)
-  .env.local            fallback operator file (never committed)`);
+  .env.local            fallback operator file (never committed)
+  SYNTHETIC_OPERATOR_DATABASE_URL  write credential for seed/cleanup only
+  DATABASE_URL          researcher_api URI (inspect fallback only)
+  DATABASE_CA_CERT      PEM CA for remote TLS (required for non-local hosts)`);
 }
 
 async function main() {
@@ -46,11 +56,35 @@ async function main() {
     return;
   }
 
-  logOperatorDatabaseIdentity(loadedFrom);
+  const writeMode = Boolean(args.confirmCleanup && !args.dryRun);
+
+  let resolved;
+  try {
+    if (writeMode) {
+      const url = resolveWriteDatabaseUrl();
+      resolved = { url, source: 'operator' };
+    } else {
+      resolved = resolveInspectDatabaseUrl();
+    }
+  } catch (err) {
+    if (args.dryRun) {
+      console.log('Dry run — database unavailable; cannot inspect existing synthetic rows.');
+      console.log(`Would delete rows matching: ${SYNTHETIC_REF_SQL_PATTERN}`);
+      console.log(
+        'Inspect uses SYNTHETIC_OPERATOR_DATABASE_URL when set, else DATABASE_URL (read-only).'
+      );
+      return;
+    }
+    console.error(`Refusing to cleanup: ${err.message || err}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  logOperatorDatabaseIdentity(loadedFrom, resolved);
 
   let pool;
   try {
-    pool = createOperatorPool();
+    pool = createOperatorPool(resolved.url);
   } catch (err) {
     if (args.dryRun) {
       console.log('Dry run — database unavailable; cannot inspect existing synthetic rows.');
@@ -87,6 +121,7 @@ async function main() {
     if (args.dryRun) {
       console.log('Dry run — no database writes.');
       console.log(`Batch: ${SYNTHETIC_BATCH_ID}`);
+      console.log(`Inspect source: ${resolved.source}`);
       console.log(`Rows that would be deleted: ${count}`);
       for (const row of rows.slice(0, 5)) {
         console.log(`  ${row.client_record_id}  ${row.created_at}`);

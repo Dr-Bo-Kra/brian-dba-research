@@ -11,7 +11,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; upgrade-insecure-requests">
   <title>Inquiry archive | Brian E Pereira DBA Research</title>
   <link rel="stylesheet" href="../styles.css?v=15">
-  <link rel="stylesheet" href="dashboard.css?v=6">
+  <link rel="stylesheet" href="dashboard.css?v=7">
 </head>
 <body class="workspace-body">
   <a class="skip-link" href="#workspace-main">Skip to inquiry archive</a>
@@ -68,87 +68,119 @@
     </div>
 
     <main id="workspace-main">
-      <section class="workspace-intro">
-        <h1>Study overview</h1>
-        <p>Survey participation and research findings</p>
+      <!-- 1. Study overview -->
+      <section class="workspace-intro" aria-labelledby="overview-title">
+        <h1 id="overview-title">Study overview</h1>
+        <p>Descriptive counts and scores for the filtered response set. These figures describe the archive; they do not claim significance, causation, or population representativeness.</p>
       </section>
 
       <section class="glance-band" aria-label="Study at a glance">
         <div><strong id="kpi-count">0</strong><span>Accepted responses</span></div>
         <div><strong id="kpi-recent">0</strong><span>Last 24 hours</span></div>
-        <div><strong id="kpi-orientation">—</strong><span>Mean orientation</span></div>
+        <div>
+          <strong id="kpi-orientation">—</strong>
+          <span>Mean overall score (1–7)</span>
+          <small class="kpi-note">Average of each response’s overall desk assessment score on the 1–7 scale.</small>
+        </div>
         <div><strong id="kpi-updated">—</strong><span>Last intake</span></div>
       </section>
 
-      <div class="workspace-grid">
-        <section class="workspace-panel" aria-labelledby="pulse-title">
-          <p class="kicker">Recent intake</p>
-          <h2 id="pulse-title">Live activity</h2>
-          <ol class="intake-list" id="intake-list"></ol>
-          <p class="empty-copy" id="intake-empty">No responses yet.</p>
-        </section>
+      <!-- 2. Participation -->
+      <section class="workspace-panel participation-panel" aria-labelledby="participation-title">
+        <p class="kicker">Participation</p>
+        <h2 id="participation-title">Participation</h2>
+        <p class="section-lede">Recent activity, arrival pattern, and filters for the current view.</p>
 
-        <section class="workspace-panel" aria-labelledby="rhythm-title">
-          <p class="kicker">Arrival rhythm</p>
-          <h2 id="rhythm-title">Responses over time</h2>
-          <div class="chart-frame" id="trend-chart" role="img" aria-label="Response counts by day"></div>
-        </section>
-      </div>
+        <div class="participation-grid">
+          <div class="participation-block" aria-labelledby="pulse-title">
+            <h3 id="pulse-title">Recent activity</h3>
+            <ol class="intake-list" id="intake-list"></ol>
+            <p class="empty-copy" id="intake-empty">No responses yet.</p>
+          </div>
+          <div class="participation-block" aria-labelledby="rhythm-title">
+            <h3 id="rhythm-title">Responses over time</h3>
+            <div class="chart-frame" id="trend-chart" role="img" aria-label="Response counts by day"></div>
+          </div>
+        </div>
 
-      <section class="workspace-panel" aria-labelledby="refine-title">
-        <p class="kicker">Refine the field</p>
-        <h2 id="refine-title">Filters</h2>
-        <form id="filter-form" class="filter-grid" novalidate>
-          <div class="field">
-            <label for="filter-from">From date</label>
-            <input id="filter-from" name="from" type="date">
-          </div>
-          <div class="field">
-            <label for="filter-to">To date</label>
-            <input id="filter-to" name="to" type="date">
-          </div>
-          <div class="field">
-            <label for="filter-region">Broad geography</label>
-            <select id="filter-region" name="region">
-              <option value="">All regions</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="filter-role">Position category</label>
-            <select id="filter-role" name="role">
-              <option value="">All roles</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="filter-experience">Lending experience</label>
-            <select id="filter-experience" name="experience">
-              <option value="">All bands</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="filter-search">Participant reference</label>
-            <input id="filter-search" name="q" type="search" placeholder="resp_…" autocomplete="off">
-          </div>
-        </form>
+        <div class="participation-filters" aria-labelledby="refine-title">
+          <h3 id="refine-title">Filters</h3>
+          <form id="filter-form" class="filter-grid" novalidate>
+            <div class="field">
+              <label for="filter-from">From date</label>
+              <input id="filter-from" name="from" type="date">
+            </div>
+            <div class="field">
+              <label for="filter-to">To date</label>
+              <input id="filter-to" name="to" type="date">
+            </div>
+            <div class="field">
+              <label for="filter-region">Broad geography</label>
+              <select id="filter-region" name="region">
+                <option value="">All regions</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="filter-role">Position category</label>
+              <select id="filter-role" name="role">
+                <option value="">All roles</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="filter-experience">Lending experience</label>
+              <select id="filter-experience" name="experience">
+                <option value="">All bands</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="filter-search">Participant reference</label>
+              <input id="filter-search" name="q" type="search" placeholder="resp_…" autocomplete="off">
+            </div>
+          </form>
+        </div>
       </section>
 
+      <!-- 3. Research findings -->
       <section class="workspace-panel" aria-labelledby="compass-title">
-        <p class="kicker">Aggregate stance</p>
-        <h2 id="compass-title">Research-domain scores</h2>
+        <p class="kicker">Research findings</p>
+        <h2 id="compass-title">Domain scores</h2>
+        <p class="section-lede">Mean scores for the five research domains on the survey’s 1–7 Likert scale. Values are descriptive averages for accepted rating sets in the current filter; they are not tests of difference.</p>
         <div class="domain-scores" id="domain-scores"></div>
         <p class="empty-copy" id="domain-empty">Domain scores will appear when responses arrive.</p>
       </section>
 
+      <!-- 4. Item analysis -->
       <section class="workspace-panel" aria-labelledby="items-title">
-        <p class="kicker">Item field</p>
-        <h2 id="items-title">Question-level distributions</h2>
-        <div id="item-distributions"></div>
-        <p class="empty-copy" id="items-empty">Question distributions will appear when responses arrive.</p>
+        <p class="kicker">Item analysis</p>
+        <h2 id="items-title">Question highlights</h2>
+        <p class="section-lede">Highest-scoring, lowest-scoring, and most divided items (by share of 1 and 7 ratings). Means use the 1–7 scale; sample standard deviation is used when n &gt; 1. Full distributions stay collapsed until needed.</p>
+        <div id="item-highlights"></div>
+        <p class="empty-copy" id="items-empty">Question highlights will appear when responses arrive.</p>
+        <details class="item-all-details" id="item-all-details">
+          <summary>All questions — full distributions</summary>
+          <div id="item-distributions"></div>
+        </details>
       </section>
 
-      <section class="workspace-panel" aria-labelledby="ledger-title">
-        <p class="kicker">Record ledger</p>
-        <h2 id="ledger-title">Accepted responses</h2>
+      <!-- 5. Qualitative responses -->
+      <section class="workspace-panel restricted-panel" aria-labelledby="reflections-title">
+        <p class="kicker">Qualitative responses</p>
+        <h2 id="reflections-title">Free-text answers</h2>
+        <p class="section-lede">Open responses are fetched only from the dedicated qualitative endpoint and stay hidden until you opt in. They are never included in aggregates or the response ledger.</p>
+        <label class="reveal-check">
+          <input type="checkbox" id="reveal-reflections">
+          I need to read free-text answers for analysis or a withdrawal request.
+        </label>
+        <div id="reflection-list" hidden></div>
+        <p class="empty-copy" id="reflection-empty">Leave this off unless you need to read free-text answers.</p>
+      </section>
+
+      <!-- 6. Responses -->
+      <section class="workspace-panel ledger-panel" aria-labelledby="ledger-title">
+        <p class="kicker">Responses</p>
+        <h2 id="ledger-title">Response ledger</h2>
+        <p class="section-lede">Compact list of accepted responses in the current filter. Search and refine with the Participation filters above. Free-text answers are not shown here.</p>
+        <p class="ledger-meta" id="ledger-meta" hidden></p>
         <div class="table-wrap">
           <table class="record-table">
             <thead>
@@ -158,48 +190,47 @@
                 <th scope="col">Region</th>
                 <th scope="col">Role</th>
                 <th scope="col">Experience</th>
-                <th scope="col">Orientation</th>
+                <th scope="col">Overall score</th>
               </tr>
             </thead>
             <tbody id="record-rows"></tbody>
           </table>
         </div>
         <p class="empty-copy" id="ledger-empty">No accepted responses yet.</p>
-        <div class="survey-actions">
-          <button type="button" class="button primary" id="export-csv" disabled>Request controlled CSV export</button>
+      </section>
+
+      <!-- 7. Administration -->
+      <section class="workspace-panel admin-panel" aria-labelledby="admin-title">
+        <p class="kicker">Administration</p>
+        <h2 id="admin-title">Export and deletion</h2>
+        <p class="section-lede">Controlled export and deletion stay disabled until the study enables them. When unavailable, controls remain visible but inactive.</p>
+
+        <div class="admin-block">
+          <h3>CSV export</h3>
+          <div class="survey-actions admin-actions">
+            <button type="button" class="button ghost" id="export-csv" disabled>Request controlled CSV export</button>
+          </div>
+          <p class="survey-footnote admin-footnote">CSV export is unavailable until it is enabled for this study.</p>
         </div>
-        <p class="survey-footnote">CSV export is unavailable until it is enabled for this study.</p>
-      </section>
 
-      <section class="workspace-panel restricted-panel" aria-labelledby="reflections-title">
-        <p class="kicker">Restricted reader</p>
-        <h2 id="reflections-title">Qualitative responses</h2>
-        <p class="survey-hint">Free-text answers stay hidden until you need them.</p>
-        <label class="reveal-check">
-          <input type="checkbox" id="reveal-reflections">
-          I need to read reflections for analysis or a withdrawal request.
-        </label>
-        <div id="reflection-list" hidden></div>
-        <p class="empty-copy" id="reflection-empty">Turn this on only when you need to read free-text answers.</p>
-      </section>
-
-      <section class="workspace-panel" aria-labelledby="withdrawal-title">
-        <p class="kicker">Stewardship</p>
-        <h2 id="withdrawal-title">Delete by participant reference</h2>
-        <form id="delete-form" class="survey-form" novalidate>
-          <div class="field">
-            <label for="delete-reference">Participant reference</label>
-            <input id="delete-reference" name="reference" type="text" placeholder="resp_…" autocomplete="off">
-          </div>
-          <label class="reveal-check">
-            <input type="checkbox" id="delete-confirm">
-            I confirm this deletion is authorised, policy-approved, and will be audit-logged.
-          </label>
-          <p class="field-error" id="delete-error" hidden role="alert"></p>
-          <div class="survey-actions">
-            <button type="submit" class="button ghost" id="delete-submit" disabled>Request deletion</button>
-          </div>
-        </form>
+        <div class="admin-block" aria-labelledby="withdrawal-title">
+          <h3 id="withdrawal-title">Delete by participant reference</h3>
+          <form id="delete-form" class="survey-form" novalidate>
+            <div class="field">
+              <label for="delete-reference">Participant reference</label>
+              <input id="delete-reference" name="reference" type="text" placeholder="resp_…" autocomplete="off">
+            </div>
+            <label class="reveal-check">
+              <input type="checkbox" id="delete-confirm">
+              I confirm this deletion is authorised, policy-approved, and will be audit-logged.
+            </label>
+            <p class="field-error" id="delete-error" hidden role="alert"></p>
+            <div class="survey-actions admin-actions">
+              <button type="submit" class="button ghost" id="delete-submit" disabled>Request deletion</button>
+            </div>
+          </form>
+          <p class="survey-footnote admin-footnote">Deletion is unavailable until it is enabled for this study.</p>
+        </div>
       </section>
     </main>
 
@@ -209,6 +240,6 @@
   </div>
 
   <script src="config.js?v=3"></script>
-  <script type="module" src="dashboard.js?v=5"></script>
+  <script type="module" src="dashboard.js?v=6"></script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.mjs';
+import { rankItemHighlights } from './item-analysis.mjs';
 
 (function initInquiryArchive() {
   const gate = document.getElementById('auth-gate');
@@ -102,12 +103,14 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     ['F25', 'More responsible inclusive decisions'],
   ];
 
+  const RESPONSE_PAGE_LIMIT = 50;
   let session = null;
   let pendingTicket = '';
   let records = [];
   let summary = null;
   let qualitative = [];
   let pollTimer = null;
+  let showAllItems = false;
 
   function escapeHtml(str) {
     return String(str)
@@ -222,8 +225,12 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     const total = summary?.total ?? 0;
     document.getElementById('kpi-count').textContent = String(total);
     document.getElementById('kpi-recent').textContent = String(summary?.last_24h ?? 0);
-    document.getElementById('kpi-orientation').textContent =
-      summary?.mean_orientation != null ? Number(summary.mean_orientation).toFixed(2) : '—';
+    const meanEl = document.getElementById('kpi-orientation');
+    if (summary?.mean_orientation != null) {
+      meanEl.textContent = `${Number(summary.mean_orientation).toFixed(2)} / 7`;
+    } else {
+      meanEl.textContent = '—';
+    }
     document.getElementById('kpi-updated').textContent = summary?.last_intake
       ? new Date(summary.last_intake).toLocaleDateString()
       : '—';
@@ -299,56 +306,125 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
       const article = document.createElement('article');
       article.className = 'domain-score';
       const percent = stat.score == null ? 0 : Math.round((stat.score / 7) * 100);
+      const n = Number(stat.n) || 0;
       article.innerHTML = `
         <div class="domain-score-head">
           <strong>${escapeHtml(stat.label || stat.id)}</strong>
           <span>${stat.score == null ? '—' : Number(stat.score).toFixed(2) + ' / 7'}</span>
         </div>
         <div class="domain-bar" aria-hidden="true"><i></i></div>
-        <p>${Number(stat.n) || 0} accepted rating sets in the current filter.</p>`;
+        <p><strong class="domain-n">n = ${n}</strong> · mean on the survey 1–7 scale for accepted rating sets in the current filter.</p>`;
       host.append(article);
       const bar = article.querySelector('.domain-bar > i');
       if (bar) bar.style.width = `${percent}%`;
     });
   }
 
-  function renderItems() {
-    const host = document.getElementById('item-distributions');
-    const empty = document.getElementById('items-empty');
-    host.innerHTML = '';
-    const items = summary?.items || [];
-    empty.hidden = items.length > 0;
-    if (!items.length) return;
-    const labels = Object.fromEntries(ITEMS);
-    items.forEach((item) => {
-      const counts = Array.isArray(item.counts) ? item.counts : [0, 0, 0, 0, 0, 0, 0];
-      const max = Math.max(...counts, 1);
-      const row = document.createElement('div');
-      row.className = 'item-row';
-      row.innerHTML = `<p><span class="item-id">${escapeHtml(item.id)}</span> ${escapeHtml(
-        labels[item.id] || ''
-      )}</p>
-        <div class="dist-scale" aria-label="${escapeHtml(item.id)} distribution">
-          ${counts
-            .map(
-              (count, index) =>
-                `<div class="dist-col"><i data-count="${count}"></i><span>${index + 1} · ${count}</span></div>`
-            )
-            .join('')}
-        </div>`;
-      host.append(row);
-      row.querySelectorAll('.dist-col i').forEach((bar) => {
-        const count = Number(bar.getAttribute('data-count')) || 0;
-        bar.style.height = `${Math.max(6, (count / max) * 64)}px`;
-      });
+  function miniDistHtml(counts) {
+    const max = Math.max(...counts, 1);
+    return `<div class="dist-scale dist-scale-mini" aria-hidden="true">
+      ${counts
+        .map(
+          (count, index) =>
+            `<div class="dist-col"><i data-count="${count}" style="height:${Math.max(
+              4,
+              (count / max) * 36
+            )}px"></i><span>${index + 1}</span></div>`
+        )
+        .join('')}
+    </div>`;
+  }
+
+  function renderHighlightGroup(title, rows) {
+    if (!rows.length) return '';
+    return `<div class="item-highlight-group">
+      <h3>${escapeHtml(title)}</h3>
+      <ul class="item-highlight-list">
+        ${rows
+          .map(
+            (row) => `<li class="item-highlight">
+              <div class="item-highlight-head">
+                <p><span class="item-id">${escapeHtml(row.id)}</span> ${escapeHtml(row.label || '')}</p>
+                <span class="item-highlight-meta">mean ${Number(row.mean).toFixed(2)} / 7 · n = ${
+              row.n
+            } · P = ${Number(row.polarization).toFixed(2)}</span>
+              </div>
+              ${miniDistHtml(row.counts)}
+            </li>`
+          )
+          .join('')}
+      </ul>
+    </div>`;
+  }
+
+  function renderItemDistributionRow(item, labels) {
+    const counts = Array.isArray(item.counts) ? item.counts : [0, 0, 0, 0, 0, 0, 0];
+    const max = Math.max(...counts, 1);
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    row.innerHTML = `<p><span class="item-id">${escapeHtml(item.id)}</span> ${escapeHtml(
+      labels[item.id] || ''
+    )}</p>
+      <div class="dist-scale" aria-label="${escapeHtml(item.id)} distribution">
+        ${counts
+          .map(
+            (count, index) =>
+              `<div class="dist-col"><i data-count="${count}"></i><span>${index + 1} · ${count}</span></div>`
+          )
+          .join('')}
+      </div>`;
+    row.querySelectorAll('.dist-col i').forEach((bar) => {
+      const count = Number(bar.getAttribute('data-count')) || 0;
+      bar.style.height = `${Math.max(6, (count / max) * 64)}px`;
     });
+    return row;
+  }
+
+  function renderItems() {
+    const host = document.getElementById('item-highlights');
+    const empty = document.getElementById('items-empty');
+    const allHost = document.getElementById('item-distributions');
+    const details = document.getElementById('item-all-details');
+    if (host) host.innerHTML = '';
+    if (allHost) allHost.innerHTML = '';
+    const items = summary?.items || [];
+    if (empty) empty.hidden = items.length > 0;
+    if (!items.length) {
+      if (details) details.hidden = true;
+      return;
+    }
+    if (details) details.hidden = false;
+    const labels = Object.fromEntries(ITEMS);
+    const ranked = rankItemHighlights(items, { labels, highlightCount: 5 });
+    if (host) {
+      host.innerHTML =
+        renderHighlightGroup('Highest-scoring', ranked.highest) +
+        renderHighlightGroup('Lowest-scoring', ranked.lowest) +
+        renderHighlightGroup('Most divided', ranked.mostDivided);
+    }
+    if (allHost && (showAllItems || details?.open)) {
+      items.forEach((item) => {
+        allHost.append(renderItemDistributionRow(item, labels));
+      });
+    }
   }
 
   function renderLedger() {
     const body = document.getElementById('record-rows');
     const empty = document.getElementById('ledger-empty');
+    const meta = document.getElementById('ledger-meta');
     body.innerHTML = '';
     empty.hidden = records.length > 0;
+    const total = summary?.total ?? records.length;
+    if (meta) {
+      if (records.length || total) {
+        meta.hidden = false;
+        meta.textContent = `Showing ${records.length} of ${total}`;
+      } else {
+        meta.hidden = true;
+        meta.textContent = '';
+      }
+    }
     records.forEach((row) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -357,10 +433,12 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
         <td>${escapeHtml(optionLabel(GEOGRAPHY, row.region))}</td>
         <td>${escapeHtml(optionLabel(ROLES, row.role))}</td>
         <td>${escapeHtml(optionLabel(EXPERIENCE, row.experience))}</td>
-        <td>${escapeHtml(row.orientation != null ? Number(row.orientation).toFixed(2) : '—')}</td>`;
+        <td>${escapeHtml(
+          row.orientation != null ? `${Number(row.orientation).toFixed(2)} / 7` : '—'
+        )}</td>`;
       body.append(tr);
     });
-    if (exportBtn) exportBtn.disabled = !(session && apiConfigured);
+    if (exportBtn) exportBtn.disabled = true;
   }
 
   function renderReflections() {
@@ -370,18 +448,18 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     const revealed = Boolean(revealBox?.checked);
     host.hidden = !revealed;
     if (!revealed) {
-      empty.textContent = 'Turn this on only when you need to read free-text answers.';
+      empty.textContent = 'Leave this off unless you need to read free-text answers.';
       empty.hidden = false;
       qualitative = [];
       return;
     }
     if (!session || !apiConfigured) {
-      empty.textContent = 'No reflections in the current view.';
+      empty.textContent = 'No free-text answers in the current view.';
       empty.hidden = false;
       return;
     }
     empty.hidden = qualitative.length > 0;
-    empty.textContent = 'No reflections in the current view.';
+    empty.textContent = 'No free-text answers in the current view.';
     qualitative.forEach((entry) => {
       const article = document.createElement('article');
       article.className = 'reflection-card';
@@ -413,6 +491,7 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     records = [];
     summary = null;
     qualitative = [];
+    showAllItems = false;
     if (signOutBtn) signOutBtn.hidden = true;
     setSessionMeta(null);
     if (exportBtn) exportBtn.disabled = true;
@@ -455,6 +534,15 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     return response;
   }
 
+  function listQueryString(filters) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    params.set('limit', String(RESPONSE_PAGE_LIMIT));
+    return `?${params.toString()}`;
+  }
+
   async function refreshWorkspace() {
     if (!apiConfigured || !session) {
       records = [];
@@ -465,10 +553,12 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
     }
     setStatus('loading', 'Updating…');
     try {
-      const filters = queryString(readFilters());
+      const filters = readFilters();
+      const summaryQs = queryString(filters);
+      const listQs = listQueryString(filters);
       const [summaryRes, listRes] = await Promise.all([
-        researcherFetch(`/v1/summary${filters}`, { method: 'GET' }),
-        researcherFetch(`/v1/responses${filters}`, { method: 'GET' }),
+        researcherFetch(`/v1/summary${summaryQs}`, { method: 'GET' }),
+        researcherFetch(`/v1/responses${listQs}`, { method: 'GET' }),
       ]);
       summary = await summaryRes.json();
       const payload = await listRes.json();
@@ -811,10 +901,15 @@ import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.
   });
   deleteForm?.addEventListener('submit', handleDelete);
   deleteConfirm?.addEventListener('change', () => {
-    deleteSubmit.disabled = !(deleteConfirm.checked && session && apiConfigured);
+    // Deletion remains disabled until LIVE_DELETIONS_ENABLED is turned on.
+    deleteSubmit.disabled = true;
   });
   exportBtn?.addEventListener('click', () => void handleExport());
   signOutBtn?.addEventListener('click', () => void handleSignOut());
+  document.getElementById('item-all-details')?.addEventListener('toggle', (event) => {
+    showAllItems = Boolean(event.target.open);
+    renderItems();
+  });
 
   if (!apiConfigured) {
     showDisconnectedWorkspace();

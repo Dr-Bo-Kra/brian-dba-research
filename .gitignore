@@ -10,3 +10,8 @@ node_modules/
 # service-role key, API token, or other credential.
 
 .serena/
+.vercel
+.env*
+
+# Operator-only SQL and rotation artifacts (never commit secrets)
+.operator/

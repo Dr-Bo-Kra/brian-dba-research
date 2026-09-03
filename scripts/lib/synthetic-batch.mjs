@@ -25,8 +25,21 @@ export const SYNTHETIC_REF_PREFIX = 'resp_00000000-0000-4000-8000-';
 export const SYNTHETIC_REF_PATTERN = /^resp_00000000-0000-4000-8000-[0-9a-f]{12}$/i;
 export const SYNTHETIC_REF_SQL_PATTERN = '^resp_00000000-0000-4000-8000-[0-9a-f]{12}$';
 
-/** Fixed clock for deterministic created_at spread (operator preview / tests). */
+/** Fixed clock for deterministic created_at spread (tests / dry-run default). */
 export const SYNTHETIC_REFERENCE_NOW = '2026-09-01T09:00:00.000Z';
+
+/**
+ * Resolve the reference "now" used to place the last-24h synthetic cluster.
+ * Priority: explicit options.referenceNow → process.env.SYNTHETIC_REFERENCE_NOW → fixed default.
+ * Operator seed passes seed-execution time so Preview last-24h aligns with wall clock.
+ */
+export function resolveSyntheticReferenceNow(options = {}) {
+  if (options.referenceNow) return String(options.referenceNow);
+  if (typeof process !== 'undefined' && process.env?.SYNTHETIC_REFERENCE_NOW) {
+    return String(process.env.SYNTHETIC_REFERENCE_NOW);
+  }
+  return SYNTHETIC_REFERENCE_NOW;
+}
 
 const LIKERT_SECTIONS = [
   { id: 'psychometric', label: 'Psychometric indicators', items: ['B1', 'B2', 'B3', 'B4', 'B5'] },
@@ -173,7 +186,7 @@ function buildProfile(rng, index) {
   };
 }
 
-function buildCreatedAt(rng, index, referenceNow = SYNTHETIC_REFERENCE_NOW) {
+function buildCreatedAt(rng, index, referenceNow) {
   const nowMs = Date.parse(referenceNow);
   if (index >= SYNTHETIC_RESPONSE_COUNT - 10) {
     const hoursAgo = Math.floor(rng() * 20) + 1;
@@ -218,7 +231,8 @@ export function buildSyntheticRecord(index, options = {}) {
   }
   const rng = createSeededRng(0xdba2026 + index * 997);
   const clientRecordId = syntheticReference(index);
-  const createdAt = buildCreatedAt(rng, index, options.referenceNow);
+  const referenceNow = resolveSyntheticReferenceNow(options);
+  const createdAt = buildCreatedAt(rng, index, referenceNow);
   const consentedAt = new Date(Date.parse(createdAt) - 5 * 60 * 1000).toISOString();
   const { profile, demographics, region, role, experience } = buildProfile(rng, index);
   const likert = buildLikert(rng, index);
@@ -272,8 +286,8 @@ export function isSyntheticReference(value) {
   return SYNTHETIC_REF_PATTERN.test(String(value || '').trim());
 }
 
-export function batchDistributionSummary(records = buildSyntheticBatch()) {
-  const referenceNow = Date.parse(SYNTHETIC_REFERENCE_NOW);
+export function batchDistributionSummary(records = buildSyntheticBatch(), options = {}) {
+  const referenceNow = Date.parse(resolveSyntheticReferenceNow(options));
   const dayAgo = referenceNow - 24 * 60 * 60 * 1000;
   const byRegion = Object.fromEntries(REGION_CODES.map((code) => [code, 0]));
   const byRole = Object.fromEntries(ROLE_CODES.map((code) => [code, 0]));
