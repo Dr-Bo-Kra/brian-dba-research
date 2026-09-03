@@ -1,7 +1,7 @@
 /**
  * Pure helpers for BoardLens-style progressive disclosure on the DBA dashboard.
- * Builds descriptive drilldown content from /v1/summary and /v1/responses DTOs.
- * No significance, causality, or evaluative claims.
+ * Builds descriptive drilldown content from summary and response DTOs already loaded
+ * in the researcher workspace. No significance, causality, or evaluative claims.
  */
 
 import { rankItemHighlights } from './item-analysis.mjs';
@@ -20,6 +20,76 @@ export const KPI_IDS = Object.freeze([
   'mean',
   'last-intake',
 ]);
+
+const MONTHS = Object.freeze([
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+]);
+
+/**
+ * Human-readable UTC datetime for researcher UI. Never returns raw ISO.
+ * Example: "1 Sep 2026, 10:30 AM"
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function formatResearchDateTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  const day = date.getUTCDate();
+  const month = MONTHS[date.getUTCMonth()];
+  const year = date.getUTCFullYear();
+  let hours = date.getUTCHours();
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  const meridiem = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${day} ${month} ${year}, ${hours}:${minutes} ${meridiem}`;
+}
+
+/**
+ * Human-readable UTC date (no time). Example: "1 Sep 2026"
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function formatResearchDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
+/**
+ * Shorten a participant reference for secondary display.
+ * @param {unknown} ref
+ * @returns {string}
+ */
+export function shortenParticipantRef(ref) {
+  const value = String(ref || '').trim();
+  if (!value) return '—';
+  if (value.length <= 16) return value;
+  return `${value.slice(0, 8)}…${value.slice(-4)}`;
+}
+
+/**
+ * Share of ratings at the scale edges (1 and 7), labeled for researchers.
+ * @param {number|null|undefined} polarization
+ * @returns {string}
+ */
+export function formatPolarizationLabel(polarization) {
+  if (polarization == null || !Number.isFinite(Number(polarization))) return '';
+  const pct = Math.round(Number(polarization) * 100);
+  return `polarization ${pct}%`;
+}
 
 /**
  * @param {unknown[]} records
@@ -73,6 +143,7 @@ export function descriptiveDomainInterpretation(mean, n, label) {
 }
 
 /**
+ * Domain-scoped item ranks (highest / lowest / most divided).
  * @param {{ id: string, counts?: number[] }[]} items
  * @param {string} domainId
  * @param {{ labels?: Record<string, string>, highlightCount?: number }} [options]
@@ -97,6 +168,43 @@ function mapLabel(pairs, value) {
   return hit ? hit[1] : value || '—';
 }
 
+function dateRangeLabel(trend, lastIntake, records) {
+  const days = normalizeTrend(trend).map((row) => row.day).filter(Boolean);
+  if (days.length) {
+    const sorted = [...days].sort();
+    const first = formatResearchDate(sorted[0]);
+    const last = formatResearchDate(sorted[sorted.length - 1]);
+    return first === last ? first : `${first} – ${last}`;
+  }
+  const stamps = (Array.isArray(records) ? records : [])
+    .map((row) => String(row?.accepted_at || ''))
+    .filter(Boolean)
+    .sort();
+  if (stamps.length) {
+    const first = formatResearchDate(stamps[0]);
+    const last = formatResearchDate(stamps[stamps.length - 1]);
+    return first === last ? first : `${first} – ${last}`;
+  }
+  if (lastIntake) return formatResearchDate(lastIntake);
+  return '—';
+}
+
+function experienceSpreadLabel(expCounts) {
+  if (!expCounts.length) return 'No experience bands in the current page';
+  if (expCounts.length === 1) return expCounts[0].label;
+  const top = expCounts.slice(0, 3).map((row) => `${row.label} (${row.count})`);
+  return top.join(', ');
+}
+
+function barRows(rows) {
+  const max = Math.max(1, ...rows.map((row) => Number(row.count) || 0));
+  return rows.map((row) => ({
+    label: row.label,
+    count: row.count,
+    share: (row.count / max) * 100,
+  }));
+}
+
 /**
  * @returns {{
  *   kind: string,
@@ -104,8 +212,8 @@ function mapLabel(pairs, value) {
  *   title: string,
  *   value: string,
  *   summary: string,
- *   rows: [string, string][],
- *   sections: { title: string, kind: string, rows?: [string, string][], items?: object[], note?: string }[],
+ *   observations: [string, string][],
+ *   sections: object[],
  *   note: string
  * }}
  */
@@ -126,41 +234,76 @@ export function buildKpiDrilldown(kpiId, context = {}) {
     const geo = countByField(records, 'region', geography);
     const role = countByField(records, 'role', roles);
     const exp = countByField(records, 'experience', experience);
+    const range = dateRangeLabel(trend, lastIntake, records);
     return {
       kind: 'kpi',
       eyebrow: 'Study overview',
       title: 'Accepted responses',
       value: String(total),
       summary:
-        'Count of accepted responses in the current filter. Breakdowns below use the loaded ledger page and remain descriptive only.',
-      rows: [
+        `${total} accepted response${total === 1 ? '' : 's'} in the current filter` +
+        `${range !== '—' ? `, spanning ${range}` : ''}. ` +
+        `Current page covers ${geo.length} geograph${geo.length === 1 ? 'y' : 'ies'}, ` +
+        `${role.length} role${role.length === 1 ? '' : 's'}, and experience spread: ${experienceSpreadLabel(exp)}.`,
+      observations: [
         ['Accepted responses', String(total)],
-        ['Loaded ledger rows', String(records.length)],
-        ['Daily trend points', String(trend.length)],
+        ['Date range', range],
+        ['Geographies (current page)', String(geo.length)],
+        ['Roles (current page)', String(role.length)],
+        ['Experience bands (current page)', String(exp.length)],
       ],
       sections: [
         {
-          title: 'Arrival pattern (by day)',
-          kind: 'trend',
-          rows: trend.map((row) => [row.day, String(row.count)]),
+          title: 'Arrival pattern',
+          kind: 'bars',
+          bars: barRows(
+            trend.map((row) => ({
+              label: formatResearchDate(row.day),
+              count: row.count,
+            }))
+          ),
         },
         {
-          title: 'Geography (loaded rows)',
-          kind: 'breakdown',
-          rows: geo.map((row) => [row.label, String(row.count)]),
+          title: 'Geography',
+          kind: 'bars',
+          bars: barRows(geo),
         },
         {
-          title: 'Role (loaded rows)',
-          kind: 'breakdown',
-          rows: role.map((row) => [row.label, String(row.count)]),
+          title: 'Role',
+          kind: 'bars',
+          bars: barRows(role),
         },
         {
-          title: 'Experience (loaded rows)',
-          kind: 'breakdown',
-          rows: exp.map((row) => [row.label, String(row.count)]),
+          title: 'Experience',
+          kind: 'bars',
+          bars: barRows(exp),
+        },
+        {
+          title: 'Full composition tables',
+          kind: 'details',
+          summaryLabel: 'Show full tables',
+          groups: [
+            {
+              title: 'Geography',
+              rows: geo.map((row) => [row.label, String(row.count)]),
+            },
+            {
+              title: 'Role',
+              rows: role.map((row) => [row.label, String(row.count)]),
+            },
+            {
+              title: 'Experience',
+              rows: exp.map((row) => [row.label, String(row.count)]),
+            },
+            {
+              title: 'Daily arrivals',
+              rows: trend.map((row) => [formatResearchDate(row.day), String(row.count)]),
+            },
+          ],
         },
       ],
-      note: 'Methodological note: totals come from /v1/summary; composition tables use the currently loaded /v1/responses page and may be a subset of the filtered archive.',
+      note:
+        'Totals reflect the filtered archive. Composition visuals use the responses currently shown in the workspace (paginated) and may be a subset of the full filter. Figures are descriptive only.',
     };
   }
 
@@ -175,28 +318,37 @@ export function buildKpiDrilldown(kpiId, context = {}) {
       title: 'Recent responses',
       value: String(recent),
       summary:
-        'Responses accepted in the last 24 hours within the current filter, with a short timeline of the most recent loaded records.',
-      rows: [
+        `${recent} response${recent === 1 ? '' : 's'} accepted in the last 24 hours within the current filter. ` +
+        `The activity list below emphasises when each response arrived, along with role and geography.`,
+      observations: [
         ['Last 24 hours', String(recent)],
-        ['Accepted (filter)', String(total)],
-        ['Shown in timeline', String(recentRecords.length)],
+        ['Accepted in filter', String(total)],
+        ['Activity entries shown', String(recentRecords.length)],
       ],
       sections: [
         {
-          title: 'Recent records',
-          kind: 'records',
-          rows: recentRecords.map((row) => [
-            String(row.participant_reference || '—'),
-            `${mapLabel(roles, row.role)} · ${mapLabel(geography, row.region)} · ${row.accepted_at || '—'}`,
-          ]),
+          title: 'Recent activity',
+          kind: 'activity',
+          activity: recentRecords.map((row) => ({
+            when: formatResearchDateTime(row.accepted_at),
+            role: mapLabel(roles, row.role),
+            geography: mapLabel(geography, row.region),
+            reference: shortenParticipantRef(row.participant_reference),
+          })),
         },
         {
-          title: 'Daily counts',
-          kind: 'trend',
-          rows: trend.slice(-14).map((row) => [row.day, String(row.count)]),
+          title: 'Recent daily counts',
+          kind: 'bars',
+          bars: barRows(
+            trend.slice(-14).map((row) => ({
+              label: formatResearchDate(row.day),
+              count: row.count,
+            }))
+          ),
         },
       ],
-      note: 'Methodological note: the 24-hour count is from /v1/summary. The timeline lists loaded ledger rows only and does not include free-text answers.',
+      note:
+        'The 24-hour count is an archive total for the current filter. The activity list shows responses currently available in the workspace and does not include free-text answers.',
     };
   }
 
@@ -209,34 +361,42 @@ export function buildKpiDrilldown(kpiId, context = {}) {
       const idx = Math.min(6, Math.max(0, Math.round(value) - 1));
       buckets[idx] += 1;
     });
+    const domainBars = domains
+      .filter((domain) => domain.score != null)
+      .map((domain) => ({
+        label: domain.label || domain.id,
+        count: Number(domain.score),
+        share: (Number(domain.score) / 7) * 100,
+        meta: `n = ${Number(domain.n) || 0}`,
+      }));
     return {
       kind: 'kpi',
       eyebrow: 'Study overview',
       title: 'Overall mean score',
       value: formatScore(mean),
       summary:
-        'Average of each response’s overall desk assessment score on the 1–7 scale for accepted responses in the current filter.',
-      rows: [
+        'Average of each accepted response’s overall score on the survey’s 1–7 scale in the current filter. ' +
+        'Domain means below are independent descriptive averages for comparison, not parts of a causal model.',
+      observations: [
         ['Overall mean', formatScore(mean)],
         ['Accepted responses', String(total)],
-        ['Loaded scored rows', String(scored.length)],
+        ['Scored responses on this page', String(scored.length)],
       ],
       sections: [
         {
-          title: 'Domain contribution (means)',
-          kind: 'breakdown',
-          rows: domains.map((domain) => [
-            domain.label || domain.id,
-            domain.score == null ? '—' : `${Number(domain.score).toFixed(2)} / 7 (n = ${Number(domain.n) || 0})`,
-          ]),
+          title: 'Domain comparison',
+          kind: 'bars',
+          bars: domainBars,
+          valueSuffix: ' / 7',
         },
         {
-          title: 'Overall score distribution (loaded rows, rounded)',
+          title: 'Overall score distribution (rounded, current page)',
           kind: 'distribution',
           items: [{ id: 'overall', label: 'Overall score', counts: buckets, n: scored.length }],
         },
       ],
-      note: 'Methodological note: the headline mean is from /v1/summary. Domain means are independent domain averages, not causal contributions. Distribution uses loaded ledger overall scores only.',
+      note:
+        'The headline mean summarises accepted responses in the current filter. Domain means are independent descriptive averages and are not causal contributions. The distribution uses overall scores on the current workspace page only. Figures are descriptive, not causal.',
     };
   }
 
@@ -245,29 +405,36 @@ export function buildKpiDrilldown(kpiId, context = {}) {
       .slice()
       .sort((a, b) => String(b.accepted_at || '').localeCompare(String(a.accepted_at || '')))
       .slice(0, 8);
+    const headline = lastIntake ? formatResearchDateTime(lastIntake) : '—';
     return {
       kind: 'kpi',
       eyebrow: 'Study overview',
       title: 'Last intake',
-      value: lastIntake ? String(lastIntake) : '—',
+      value: headline,
       summary:
-        'Timestamp of the most recent accepted response in the current filter, with nearby loaded context for orientation.',
-      rows: [
-        ['Last intake', lastIntake ? String(lastIntake) : '—'],
-        ['Accepted (filter)', String(total)],
+        lastIntake
+          ? `Most recent accepted response in the current filter arrived ${headline}. Nearby records below provide orientation around that intake.`
+          : 'No accepted intake timestamp is available in the current filter.',
+      observations: [
+        ['Last intake', headline],
+        ['Accepted in filter', String(total)],
         ['Last 24 hours', String(recent)],
       ],
       sections: [
         {
-          title: 'Nearby loaded records',
-          kind: 'records',
-          rows: recentRecords.map((row) => [
-            String(row.participant_reference || '—'),
-            `${row.accepted_at || '—'} · ${formatScore(row.orientation)}`,
-          ]),
+          title: 'Nearby records',
+          kind: 'activity',
+          activity: recentRecords.map((row) => ({
+            when: formatResearchDateTime(row.accepted_at),
+            role: mapLabel(roles, row.role),
+            geography: mapLabel(geography, row.region),
+            reference: shortenParticipantRef(row.participant_reference),
+            score: formatScore(row.orientation),
+          })),
         },
       ],
-      note: 'Methodological note: last intake is derived from accepted_at in /v1/summary. Free-text answers are not shown here.',
+      note:
+        'Last intake is the latest acceptance timestamp in the filtered archive. Free-text answers are not shown here.',
     };
   }
 
@@ -277,7 +444,7 @@ export function buildKpiDrilldown(kpiId, context = {}) {
     title: 'Insight',
     value: '—',
     summary: 'No drilldown is available for this signal.',
-    rows: [],
+    observations: [],
     sections: [],
     note: 'Descriptive view only.',
   };
@@ -302,10 +469,39 @@ export function buildDomainDrilldown(domainId, context = {}) {
   const title = domain?.label || domainId;
   const mean = domain?.score ?? null;
   const n = Number(domain?.n) || 0;
-  const contributing = domainContributingItems(summary.items || [], domainId, {
+  const ranked = domainContributingItems(summary.items || [], domainId, {
     labels,
     highlightCount: 3,
   });
+  const domainItemIds = DOMAIN_ITEM_IDS[domainId] || [];
+  const idSet = new Set(domainItemIds);
+  const distributionItems =
+    ranked.all.length > 0
+      ? ranked.all
+      : (Array.isArray(summary.items) ? summary.items : [])
+          .filter((item) => idSet.has(String(item?.id || '')))
+          .map((item) => ({
+            id: String(item.id),
+            label: labels[item.id] || '',
+            counts: Array.isArray(item.counts) ? item.counts : [0, 0, 0, 0, 0, 0, 0],
+            n: (Array.isArray(item.counts) ? item.counts : []).reduce(
+              (sum, count) => sum + (Number(count) || 0),
+              0
+            ),
+            mean: null,
+            polarization: null,
+          }));
+  const participation = [
+    ...countByField(records, 'region', geography)
+      .slice(0, 6)
+      .map((row) => ({ label: `Geography · ${row.label}`, count: row.count })),
+    ...countByField(records, 'role', roles)
+      .slice(0, 6)
+      .map((row) => ({ label: `Role · ${row.label}`, count: row.count })),
+    ...countByField(records, 'experience', experience)
+      .slice(0, 5)
+      .map((row) => ({ label: `Experience · ${row.label}`, count: row.count })),
+  ];
 
   return {
     kind: 'domain',
@@ -313,48 +509,45 @@ export function buildDomainDrilldown(domainId, context = {}) {
     title,
     value: formatScore(mean),
     summary: descriptiveDomainInterpretation(mean, n, title),
-    rows: [
-      ['Domain mean', formatScore(mean)],
+    observations: [
+      ['Domain score', formatScore(mean)],
       ['Accepted rating sets (n)', String(n)],
-      ['Items in domain', String((DOMAIN_ITEM_IDS[domainId] || []).length)],
+      ['Items in domain', String(domainItemIds.length)],
     ],
     sections: [
       {
-        title: 'Strongest contributing items',
+        title: 'Highest items',
         kind: 'items',
-        items: contributing.highest,
+        items: ranked.highest,
       },
       {
-        title: 'Weakest contributing items',
+        title: 'Lowest items',
         kind: 'items',
-        items: contributing.lowest,
+        items: ranked.lowest,
       },
       {
-        title: 'Most divided contributing items',
+        title: 'Most divided items',
         kind: 'items',
-        items: contributing.mostDivided,
+        items: ranked.mostDivided,
       },
       {
-        title: 'Participation composition (loaded rows)',
-        kind: 'breakdown',
-        rows: [
-          ...countByField(records, 'region', geography)
-            .slice(0, 6)
-            .map((row) => [`Geography · ${row.label}`, String(row.count)]),
-          ...countByField(records, 'role', roles)
-            .slice(0, 6)
-            .map((row) => [`Role · ${row.label}`, String(row.count)]),
-          ...countByField(records, 'experience', experience)
-            .slice(0, 5)
-            .map((row) => [`Experience · ${row.label}`, String(row.count)]),
-        ],
+        title: 'Full item distributions',
+        kind: 'details',
+        summaryLabel: 'Show full 1–7 distributions',
+        distributionItems,
+      },
+      {
+        title: 'Participation context',
+        kind: 'bars',
+        bars: barRows(participation),
       },
       {
         title: 'Qualitative answers',
         kind: 'note',
-        note: 'Free-text answers are not included here. Use the gated Qualitative responses section, which calls the dedicated protected qualitative endpoint after an explicit researcher action.',
+        note: 'Free-text answers are not included here. Use the gated Free-text answers section after an explicit researcher opt-in.',
       },
     ],
-    note: 'Methodological note: domain means and item distributions are descriptive summaries for the current filter. They do not claim significance, causation, or good/bad performance.',
+    note:
+      'Domain means and item distributions are descriptive summaries for the current filter. They do not claim significance, causation, or good/bad performance.',
   };
 }

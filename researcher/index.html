@@ -88,7 +88,7 @@
         <button type="button" class="kpi-card drill" data-drill="kpi:mean" aria-haspopup="dialog" aria-controls="drill-drawer">
           <strong id="kpi-orientation">—</strong>
           <span>Overall mean score</span>
-          <small class="kpi-note">Average of each response’s overall desk assessment score on the 1–7 scale.</small>
+          <small class="kpi-note">Average of each response’s overall score on the 1–7 scale. Descriptive only.</small>
           <i class="drill-mark" aria-hidden="true">+</i>
         </button>
         <button type="button" class="kpi-card drill" data-drill="kpi:last-intake" aria-haspopup="dialog" aria-controls="drill-drawer">
@@ -140,7 +140,7 @@
       <section class="workspace-panel" aria-labelledby="compass-title">
         <p class="kicker">Research domains</p>
         <h2 id="compass-title">Domain scores</h2>
-        <p class="section-lede">Five research domains on the survey’s 1–7 scale. Open a domain for contributing items, distributions, and composition detail.</p>
+        <p class="section-lede">Five research domains on the survey’s 1–7 scale. Open a domain for highest, lowest, and most divided items, plus distributions and participation context.</p>
         <div class="domain-scores" id="domain-scores"></div>
         <p class="empty-copy" id="domain-empty">Domain scores will appear when responses arrive.</p>
       </section>
@@ -149,7 +149,7 @@
       <section class="workspace-panel" aria-labelledby="items-title">
         <p class="kicker">Item analysis</p>
         <h2 id="items-title">Question highlights</h2>
-        <p class="section-lede">Highest-scoring, lowest-scoring, and most divided items only. Full charts stay collapsed until expanded.</p>
+        <p class="section-lede">Highest, lowest, and most divided items (top 3 each). Expand a row for the full 1–7 chart. All questions stay collapsed until opened.</p>
         <div id="item-highlights"></div>
         <p class="empty-copy" id="items-empty">Question highlights will appear when responses arrive.</p>
         <details class="item-all-details" id="item-all-details">
@@ -191,7 +191,7 @@
       <section class="workspace-panel restricted-panel" aria-labelledby="reflections-title">
         <p class="kicker">Qualitative responses</p>
         <h2 id="reflections-title">Free-text answers</h2>
-        <p class="section-lede">Open responses are fetched only from the dedicated qualitative endpoint and stay hidden until you opt in. They are never included in aggregates or the response ledger.</p>
+        <p class="section-lede">Free-text answers stay hidden until you opt in. They are never included in aggregates or the response ledger.</p>
         <label class="reveal-check">
           <input type="checkbox" id="reveal-reflections">
           I need to read free-text answers for analysis or a withdrawal request.
@@ -251,6 +251,6 @@
   </div>
 
   <script src="config.js?v=3"></script>
-  <script type="module" src="dashboard.js?v=7"></script>
+  <script type="module" src="dashboard.js?v=8"></script>
 </body>
 </html>

@@ -15,6 +15,10 @@ import {
   descriptiveDomainInterpretation,
   domainContributingItems,
   DOMAIN_ITEM_IDS,
+  formatPolarizationLabel,
+  formatResearchDate,
+  formatResearchDateTime,
+  shortenParticipantRef,
 } from '../researcher/drilldowns.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -74,6 +78,21 @@ test('rankItemHighlights selects highest, lowest, and most divided items', () =>
   assert.equal(ranked.all.length, 6);
 });
 
+test('research date formatting never returns raw ISO in UI helpers', () => {
+  assert.equal(formatResearchDateTime('2026-09-01T10:30:00.000Z'), '1 Sep 2026, 10:30 AM');
+  assert.equal(formatResearchDateTime('2026-09-01T22:05:00.000Z'), '1 Sep 2026, 10:05 PM');
+  assert.equal(formatResearchDate('2026-09-01'), '1 Sep 2026');
+  assert.equal(formatResearchDateTime(null), '—');
+  assert.equal(formatResearchDateTime('not-a-date'), '—');
+  assert.doesNotMatch(formatResearchDateTime('2026-09-01T10:30:00.000Z'), /T\d{2}:\d{2}/);
+  assert.equal(formatPolarizationLabel(0.42), 'polarization 42%');
+  assert.equal(formatPolarizationLabel(null), '');
+  assert.equal(
+    shortenParticipantRef('resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+    'resp_aaa…aaaa'
+  );
+});
+
 test('dashboard IA order and progressive disclosure shell match redesign', () => {
   const html = read('researcher/index.html');
   const js = read('researcher/dashboard.js');
@@ -108,16 +127,24 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
   assert.match(html, /ledger-meta/);
   assert.match(html, /ledger-pager/);
   assert.match(html, /Overall score/);
+  assert.doesNotMatch(html, /desk assessment/i);
   assert.doesNotMatch(html, /significant differences/i);
   assert.doesNotMatch(html, /\bAI\b|theme extraction|auto-generated themes/i);
   assert.doesNotMatch(html, /participation-panel/);
   assert.doesNotMatch(html, /Board implication|synergy register|EBITDA/i);
+  assert.doesNotMatch(html, /dedicated qualitative endpoint/i);
+  assert.doesNotMatch(html, /\/v1\/summary/);
 
   assert.match(js, /from '\.\/item-analysis\.mjs'/);
   assert.match(js, /from '\.\/drilldowns\.mjs'/);
   assert.match(js, /rankItemHighlights/);
   assert.match(js, /buildKpiDrilldown/);
   assert.match(js, /buildDomainDrilldown/);
+  assert.match(js, /formatResearchDateTime/);
+  assert.match(js, /What this tells us/);
+  assert.match(js, /Key observations/);
+  assert.match(js, /Supporting evidence/);
+  assert.match(js, /Methodological context/);
   assert.match(js, /RESPONSE_PAGE_LIMIT = 10/);
   assert.match(js, /RESPONSE_FETCH_LIMIT = 50/);
   assert.match(js, /openDrilldown/);
@@ -126,14 +153,23 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
   assert.match(js, /LIVE_DELETIONS_ENABLED = false/);
   assert.match(js, /\/v1\/responses\/\$\{encodeURIComponent\(ref\)\}\/qualitative/);
   assert.match(js, /revealBox\?\.checked/);
+  assert.match(js, /polarization/);
+  assert.doesNotMatch(js, /· P =/);
   assert.doesNotMatch(js, /include_qualitative/);
   assert.doesNotMatch(js, /significant differences/i);
+  assert.doesNotMatch(js, /loaded rows/i);
+  assert.doesNotMatch(js, /ledger rows/i);
+  assert.doesNotMatch(js, /desk assessment/i);
 
   assert.match(css, /item-highlight/);
   assert.match(css, /admin-panel/);
   assert.match(css, /drawer-layer/);
   assert.match(css, /kpi-card/);
   assert.match(css, /ledger-pager/);
+  assert.match(css, /drawer-bars/);
+  assert.match(css, /drawer-activity/);
+  assert.match(css, /dist-scale-spark/);
+  assert.match(css, /\.dist-col\.is-empty/);
 });
 
 test('clickable KPI and domain drilldowns are wired with accessible panel controls', () => {
@@ -209,8 +245,30 @@ test('drilldown calculations stay descriptive and domain-scoped', () => {
   });
   assert.equal(accepted.title, 'Accepted responses');
   assert.equal(accepted.value, '48');
-  assert.ok(accepted.sections.some((section) => section.title.includes('Geography')));
+  assert.ok(accepted.observations.some((row) => row[0] === 'Date range'));
+  assert.ok(accepted.sections.some((section) => section.title === 'Geography' && section.kind === 'bars'));
+  assert.ok(accepted.sections.some((section) => section.kind === 'details'));
   assert.doesNotMatch(JSON.stringify(accepted), /significant|causation|good\/bad|underperform/i);
+  assert.doesNotMatch(JSON.stringify(accepted), /loaded rows|ledger rows|\/v1\//i);
+
+  const recent = buildKpiDrilldown('recent', {
+    summary: {
+      total: 3,
+      last_24h: 1,
+      last_intake: '2026-08-12T10:00:00Z',
+      trend: [{ day: '2026-08-12', count: 1 }],
+      items,
+    },
+    records,
+    geography: [['india', 'India'], ['europe-uk', 'Europe or United Kingdom']],
+    roles: [['credit-manager', 'Credit Manager'], ['risk-manager', 'Risk Manager or Risk Analyst']],
+  });
+  assert.equal(recent.title, 'Recent responses');
+  const activity = recent.sections.find((section) => section.kind === 'activity');
+  assert.ok(activity);
+  assert.match(activity.activity[0].when, /Aug 2026/);
+  assert.doesNotMatch(activity.activity[0].when, /T\d{2}:\d{2}/);
+  assert.doesNotMatch(JSON.stringify(recent), /\/v1\//);
 
   const mean = buildKpiDrilldown('mean', {
     summary: {
@@ -223,7 +281,24 @@ test('drilldown calculations stay descriptive and domain-scoped', () => {
     records,
   });
   assert.match(mean.value, /5\.10 \/ 7/);
-  assert.ok(mean.sections.some((section) => section.title.includes('Domain contribution')));
+  assert.ok(mean.sections.some((section) => section.title.includes('Domain comparison')));
+  assert.doesNotMatch(mean.summary, /desk assessment/i);
+  assert.doesNotMatch(JSON.stringify(mean), /\/v1\/summary|loaded rows/i);
+
+  const lastIntake = buildKpiDrilldown('last-intake', {
+    summary: {
+      total: 3,
+      last_24h: 1,
+      last_intake: '2026-08-12T10:00:00Z',
+      items,
+      trend: [],
+    },
+    records,
+    geography: [['india', 'India'], ['europe-uk', 'Europe or United Kingdom']],
+    roles: [['credit-manager', 'Credit Manager'], ['risk-manager', 'Risk Manager or Risk Analyst']],
+  });
+  assert.equal(lastIntake.value, '12 Aug 2026, 10:00 AM');
+  assert.doesNotMatch(lastIntake.value, /T\d{2}:\d{2}/);
 
   const domain = buildDomainDrilldown('psychometric', {
     summary: {
@@ -238,10 +313,14 @@ test('drilldown calculations stay descriptive and domain-scoped', () => {
   });
   assert.equal(domain.title, 'Psychometric indicators');
   assert.match(domain.value, /5\.40 \/ 7/);
-  assert.ok(domain.sections.some((section) => section.title.includes('Strongest')));
+  assert.ok(domain.sections.some((section) => section.title === 'Highest items'));
+  assert.ok(domain.sections.some((section) => section.title === 'Lowest items'));
+  assert.ok(domain.sections.some((section) => section.title === 'Most divided items'));
+  assert.ok(domain.sections.some((section) => section.title.includes('Full item distributions')));
   assert.ok(domain.sections.some((section) => section.kind === 'note'));
   assert.match(domain.note, /descriptive/i);
   assert.doesNotMatch(domain.summary, /significant|causal|good|bad/i);
+  assert.doesNotMatch(JSON.stringify(domain), /contributing|loaded rows|\/v1\//i);
 });
 
 test('item progressive disclosure stays collapsed by default', () => {
@@ -255,6 +334,11 @@ test('item progressive disclosure stays collapsed by default', () => {
   assert.match(js, /if \(allHost && \(showAllItems \|\| details\?\.open\)\)/);
   assert.match(js, /renderItemDistributionRow/);
   assert.match(js, /highlightCount: 3/);
+  assert.match(js, /item-highlight-summary/);
+  assert.match(js, /fullDistHtml/);
+  assert.match(js, /renderHighlightGroup\('Highest'/);
+  assert.match(js, /renderHighlightGroup\('Lowest'/);
+  assert.match(js, /renderHighlightGroup\('Most divided'/);
 
   const items = [
     { id: 'B1', counts: [1, 2, 3, 4, 5, 6, 7] },
@@ -283,6 +367,8 @@ test('response ledger paginates ten records per page with progressive detail', (
   assert.match(js, /toggleRecordDetail/);
   assert.match(js, /record-detail/);
   assert.match(js, /Free-text answers are not shown in the ledger/);
+  assert.match(js, /in this view/);
+  assert.doesNotMatch(js, /loaded ·/);
 });
 
 test('exports and deletions stay disabled in researcher UI source', () => {
@@ -311,6 +397,18 @@ test('qualitative access boundary remains dedicated-endpoint + reveal checkbox',
   assert.doesNotMatch(html, /id="record-rows"[\s\S]*openResponses/);
   assert.match(js, /buildDomainDrilldown/);
   const drill = read('researcher/drilldowns.mjs');
-  assert.match(drill, /dedicated protected qualitative endpoint/);
+  assert.match(drill, /gated Free-text answers section/);
   assert.doesNotMatch(drill, /openResponses/);
+  assert.doesNotMatch(drill, /\/v1\/summary/);
+  assert.doesNotMatch(drill, /dedicated protected qualitative endpoint/);
+});
+
+test('researcher-facing drilldown copy keeps security surfaces unchanged', () => {
+  const js = read('researcher/dashboard.js');
+  const html = read('researcher/index.html');
+  assert.match(js, /LIVE_EXPORTS_ENABLED = false/);
+  assert.match(js, /LIVE_DELETIONS_ENABLED = false/);
+  assert.match(html, /<details class="workspace-panel admin-panel"/);
+  assert.match(html, /id="reveal-reflections"/);
+  assert.doesNotMatch(html, /COLLECTION_ENABLED:\s*true/);
 });
