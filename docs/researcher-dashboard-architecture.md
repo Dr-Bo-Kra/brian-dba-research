@@ -63,9 +63,10 @@ Deny access **by default**. A request is authorised only after the researcher AP
 
 - Public survey consent gate, sessionStorage-only local result, collection **off**.
 - Schema: forced RLS, revoked `anon` / `authenticated` table privileges, no `CREATE POLICY`, dropped `user_agent` / `page_url`.
+- Protected **submission API** under `api/submission/` (`POST /api/submission`) that validates the canonical `buildArchivePayload`, rate-limits via `submission_rate_limits`, and inserts as `submission_inserter` only. Fail-closed unless `SUBMISSION_API_ENABLED` and `SUBMISSION_DATABASE_URL` are set. Browser collection stays off.
 - Inquiry archive **UI** that signs in through the same-origin researcher API when `RESEARCHER_ENDPOINT` is `/api/researcher`, and fails closed when that path is empty.
 - Researcher API **scaffold** under `api/researcher/` that refuses data unless explicitly enabled **and** server-side configuration exists. Defaults keep it disabled.
-- Architecture tests for fail-closed behaviour, allowlisted filters, CSV formula escaping, and documentation invariants.
+- Architecture tests for fail-closed behaviour, allowlisted filters, CSV formula escaping, submission adversarial cases, and documentation invariants.
 
 ## What is only scaffolded
 

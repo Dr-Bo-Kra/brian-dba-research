@@ -12,7 +12,7 @@
  */
 window.BRIAN_DBA_CONFIG = {
   COLLECTION_ENABLED: false,
-  SUBMISSION_ENDPOINT: '', // e.g. 'https://project.functions.supabase.co/submit-assessment'
+  SUBMISSION_ENDPOINT: '', // e.g. 'https://your-deployment.example/api/submission'
   PRIVACY_NOTICE_VERSION: '2026-08-28',
   LINKEDIN_URL: 'https://www.linkedin.com/in/brianpereira/',
 };

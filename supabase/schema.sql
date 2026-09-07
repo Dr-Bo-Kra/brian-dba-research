@@ -220,16 +220,65 @@ create trigger researcher_audit_events_no_update
   for each row
   execute procedure public.reject_researcher_audit_mutation();
 
+create table if not exists public.submission_rate_limits (
+  bucket_key text primary key,
+  window_started_at timestamptz not null,
+  hit_count integer not null
+);
+
+comment on table public.submission_rate_limits is
+  'Durable public-submission rate-limit buckets. Keys are server-hashed ephemeral connection ids, not raw survey answers. Separate from researcher_rate_limits.';
+
+alter table public.submission_rate_limits enable row level security;
+alter table public.submission_rate_limits force row level security;
+revoke all privileges on table public.submission_rate_limits from anon;
+revoke all privileges on table public.submission_rate_limits from authenticated;
+
 -- Least-privilege application roles (created by the operator; skipped if absent).
--- submission_inserter: INSERT into assessment_responses only.
+-- submission_inserter: INSERT into assessment_responses only (+ own rate-limit table).
 -- researcher_api: SELECT research rows + INSERT audit + session use. No public grants.
+-- Idempotent public inserts use plain INSERT + unique_violation handling so this
+-- role does not need a SELECT policy on assessment_responses.
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'submission_inserter') then
+    grant usage on schema public to submission_inserter;
+    revoke all privileges on table public.assessment_responses from submission_inserter;
     grant insert (
       instrument_id, client_record_id, profile, responses, assessment,
       privacy_notice_version, consented_at
     ) on table public.assessment_responses to submission_inserter;
+    revoke select, update, delete, truncate, references, trigger
+      on table public.assessment_responses from submission_inserter;
+    grant select, insert, update on table public.submission_rate_limits to submission_inserter;
+    revoke all privileges on table public.authorised_researchers from submission_inserter;
+    revoke all privileges on table public.researcher_sessions from submission_inserter;
+    revoke all privileges on table public.researcher_auth_states from submission_inserter;
+    revoke all privileges on table public.researcher_rate_limits from submission_inserter;
+    revoke all privileges on table public.researcher_audit_events from submission_inserter;
+    revoke all on function public.delete_assessment_by_reference(text) from submission_inserter;
+
+    drop policy if exists submission_inserter_insert_assessment_responses on public.assessment_responses;
+    create policy submission_inserter_insert_assessment_responses
+      on public.assessment_responses
+      for insert
+      to submission_inserter
+      with check (
+        instrument_id = 'brian-dba-inclusive-lending-desk-v3'
+        and client_record_id ~ '^resp_[0-9a-f-]{32,36}$'
+        and consented_at is not null
+        and length(privacy_notice_version) between 1 and 40
+      );
+
+    drop policy if exists submission_inserter_select_rate_limits on public.submission_rate_limits;
+    drop policy if exists submission_inserter_insert_rate_limits on public.submission_rate_limits;
+    drop policy if exists submission_inserter_update_rate_limits on public.submission_rate_limits;
+    create policy submission_inserter_select_rate_limits
+      on public.submission_rate_limits for select to submission_inserter using (true);
+    create policy submission_inserter_insert_rate_limits
+      on public.submission_rate_limits for insert to submission_inserter with check (true);
+    create policy submission_inserter_update_rate_limits
+      on public.submission_rate_limits for update to submission_inserter using (true) with check (true);
   end if;
 end $$;
 
@@ -368,8 +417,9 @@ end $$;
 --   institutional approval permits its use, and the host can protect the
 --   route. GitHub Pages cannot. Crawl hints are not access controls.
 --
--- Public survey submissions:
---   A separate protected endpoint should validate an allowlisted Origin,
---   enforce Content-Type and a request-size cap, rate-limit abuse, reject
---   unexpected fields (including user_agent and page_url), and insert with
---   a server-side credential.
+-- Public survey submissions (api/submission, fail-closed until enabled):
+--   Validate allowlisted Origin, Content-Type, body size, field allowlists,
+--   Likert/domain consistency, and participant-reference format. Rate-limit
+--   via submission_rate_limits. Insert as submission_inserter only. Never
+--   grant anon/authenticated INSERT or SELECT. Do not use the service role.
+--   Browser COLLECTION_ENABLED stays false until institutional go-live.
