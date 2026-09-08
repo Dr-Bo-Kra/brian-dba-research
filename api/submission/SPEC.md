@@ -24,16 +24,21 @@ There is no production in-memory rate-limit or store fallback.
 ## Request rules
 
 - `POST` + `Content-Type: application/json` only
-- Body size cap (`SUBMISSION_MAX_BODY_BYTES`, default 96 KiB)
+- Body size cap (`SUBMISSION_MAX_BODY_BYTES`, default 48 KiB)
 - Same-origin / allowlisted `Origin` (or Referer origin); never `Access-Control-Allow-Origin: *`
 - Exact top-level keys matching `buildArchivePayload` in `script.js`
-- Unknown fields rejected at every nested object
+- Unknown fields rejected at every nested object (including smuggled `qualitative` / free-text keys)
 - `instrument_id` must be `brian-dba-inclusive-lending-desk-v3`
+- `responses.instrumentType` must be `quantitative-desk-assessment`
 - `client_record_id` must match `^resp_[0-9a-f-]{32,36}$` and must **not** use the synthetic seed prefix `resp_00000000-0000-4000-8000-`
 - Profile codes from region / role / experience allowlists (plus other instrument option codes)
-- Likert `ITEM_ORDER` integers 1–7; qualitative `Q1`–`Q9` with length bounds
+- Likert `ITEM_ORDER` integers 1–7 only — no free-text / qualitative answers on the live contract
 - Full assessment (domain/overall scores, levels, strongest/weakest, interpretation, summary, playStyle) recomputed from Likert and stored server-side; browser derived values are shape-checked then replaced
-- Participant Likert answers, validated profile codes, and qualitative text remain client-authored input
+- Participant Likert answers and validated profile codes remain client-authored input
+
+## Live instrument scope
+
+**Current live research instrument: quantitative only.** Legacy mixed-methods rows (with qualitative JSON) may still exist in the database and on the protected researcher qualitative endpoint; they are not part of the active submission allowlist.
 
 ## Response
 
@@ -47,7 +52,7 @@ Plain `INSERT` of the validated row. A unique index on `client_record_id` maps P
 
 ## Rate limits and privacy
 
-Durable table `submission_rate_limits` (not researcher tables). Bucket keys are SHA-256 digests of the server-observed connection identity so raw IPs are not stored in that table. Answers, qualitative text, payloads, credentials, tokens, and cookies are never logged.
+Durable table `submission_rate_limits` (not researcher tables). Bucket keys are SHA-256 digests of the server-observed connection identity so raw IPs are not stored in that table. Answers, payloads, credentials, tokens, and cookies are never logged.
 
 ## Database role
 

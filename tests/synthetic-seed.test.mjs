@@ -73,18 +73,18 @@ test('synthetic generator is deterministic and produces 48 identifiable rows', (
   }
 });
 
-test('synthetic distribution covers filters, recent intake, and qualitative subset', () => {
+test('synthetic distribution covers filters and recent intake', () => {
   const records = buildSyntheticBatch();
   const distribution = batchDistributionSummary(records);
   assert.equal(distribution.total, 48);
-  assert.equal(distribution.qualitativeCount, 16);
   assert.equal(distribution.last24h, 10);
+  assert.equal(distribution.qualitativeCount, undefined);
   assert.ok(Object.values(distribution.byRegion).some((count) => count > 0));
   assert.ok(Object.values(distribution.byRole).some((count) => count > 0));
   assert.ok(Object.values(distribution.byExperience).some((count) => count > 0));
 });
 
-test('synthetic records are compatible with researcher summary, list, and qualitative fetch', async () => {
+test('synthetic records are quantitative-only and compatible with researcher summary and list', async () => {
   // Align last-24h cluster with wall clock so fixture summary (Date.now()) matches.
   const referenceNow = new Date().toISOString();
   const records = buildSyntheticBatch({ referenceNow });
@@ -116,11 +116,19 @@ test('synthetic records are compatible with researcher summary, list, and qualit
     assert.equal(row._synthetic, undefined);
   }
 
-  const withQual = records.find((row) => Object.keys(row.qualitative.openResponses || {}).length > 0);
-  const qual = await store.getQualitative(withQual.client_record_id);
-  assert.equal(qual.participant_reference, withQual.client_record_id);
-  assert.ok(Object.keys(qual.qualitative.openResponses).length > 0);
-  assert.match(String(qual.qualitative.roleDescription), /Synthetic|Fictional|Mock|Placeholder/i);
+  for (const row of records) {
+    assert.equal(row.responses.qualitative, undefined);
+    assert.equal(row.profile.roleDescription, undefined);
+    assert.equal(row.responses.instrumentType, 'quantitative-desk-assessment');
+    assert.ok(row.profile.yearsFinancialServices);
+    assert.equal(
+      row.responses.quantitative.demographics.yearsFinancialServices,
+      row.profile.yearsFinancialServices
+    );
+    const legacyQual = await store.getQualitative(row.client_record_id);
+    assert.equal(legacyQual.participant_reference, row.client_record_id);
+    assert.deepEqual(legacyQual.qualitative.openResponses, {});
+  }
 
   const india = await store.summary({ ...filters, region: 'india' });
   assert.ok(india.total > 0 && india.total < 48);
@@ -161,8 +169,7 @@ test('isolated fixture store via researcher API exposes no synthetic marker in D
   assert.doesNotMatch(JSON.stringify(summaryBody), /dashboard-validation-v1|_synthetic/);
   assert.doesNotMatch(JSON.stringify(listBody), /dashboard-validation-v1|_synthetic/);
 
-  const qualRef = records.find((row) => Object.keys(row.qualitative.openResponses || {}).length > 0)
-    .client_record_id;
+  const qualRef = records[0].client_record_id;
   const qualRes = await app.handle({
     method: 'GET',
     url: `/v1/responses/${encodeURIComponent(qualRef)}/qualitative`,
@@ -172,6 +179,7 @@ test('isolated fixture store via researcher API exposes no synthetic marker in D
   assert.equal(qualRes.status, 200);
   const qualBody = JSON.parse(qualRes.body);
   assert.equal(qualBody.participant_reference, qualRef);
+  assert.deepEqual(qualBody.qualitative.openResponses, {});
   assert.doesNotMatch(JSON.stringify(qualBody), /_synthetic/);
 });
 

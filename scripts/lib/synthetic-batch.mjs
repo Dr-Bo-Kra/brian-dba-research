@@ -17,10 +17,10 @@ const ITEM_ORDER = [
 ];
 
 export const SYNTHETIC_BATCH_ID = 'dashboard-validation-v1';
-export const SYNTHETIC_GENERATOR_VERSION = '1';
+export const SYNTHETIC_GENERATOR_VERSION = '2';
 export const SYNTHETIC_RESPONSE_COUNT = 48;
 export const INSTRUMENT_ID = 'brian-dba-inclusive-lending-desk-v3';
-export const PRIVACY_NOTICE_VERSION = '2026-08-28';
+export const PRIVACY_NOTICE_VERSION = '2026-09-09';
 export const SYNTHETIC_REF_PREFIX = 'resp_00000000-0000-4000-8000-';
 export const SYNTHETIC_REF_PATTERN = /^resp_00000000-0000-4000-8000-[0-9a-f]{12}$/i;
 export const SYNTHETIC_REF_SQL_PATTERN = '^resp_00000000-0000-4000-8000-[0-9a-f]{12}$';
@@ -53,8 +53,6 @@ const LIKERT_SECTIONS = [
   },
 ];
 
-const QUAL_IDS = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9'];
-
 const PROFILE_OPTIONS = {
   gender: ['male', 'female', 'prefer-not'],
   age: ['20-29', '30-39', '40-49', '50-59', '60plus'],
@@ -65,24 +63,6 @@ const PROFILE_OPTIONS = {
   usesAltIndicators: ['yes', 'no', 'implementing', 'not-sure'],
   yearsFinancialServices: EXPERIENCE_CODES,
 };
-
-const SYNTHETIC_ROLE_DESCRIPTIONS = [
-  'Synthetic desk officer reviewing fictional micro-loan files for dashboard validation only.',
-  'Fictional credit analyst role used to populate the inquiry archive KPI panels during QA.',
-  'Placeholder lending-desk profile for synthetic batch dashboard-validation-v1 — not a real person.',
-  'Mock underwriting reviewer evaluating standardized vignette cases in a test environment.',
-];
-
-const SYNTHETIC_OPEN_RESPONSES = [
-  'Synthetic reflection: alternative signals should stay governance-bound and never replace audited records.',
-  'Fictional QA note — community reputation could complement thin files when policies allow it.',
-  'Dashboard seed text only: behavioral patterns matter, but institutions need training before adoption.',
-  'Placeholder governance answer for synthetic batch validation; no real institution is referenced.',
-  'Mock participant view: inclusion and risk must stay balanced when experimenting with new indicators.',
-  'Synthetic adoption note for researcher UI testing — policies and audit trails come first.',
-  'Fictional ethics reflection used to verify qualitative panels; clearly not live research data.',
-  'Test-only open response about operational readiness and responsible inclusive lending desks.',
-];
 
 const REQUIRED_TABLE_COLUMNS = Object.freeze([
   'id',
@@ -175,10 +155,7 @@ function buildProfile(rng, index) {
     countryRegion,
   };
   return {
-    profile: {
-      ...demographics,
-      roleDescription: SYNTHETIC_ROLE_DESCRIPTIONS[index % SYNTHETIC_ROLE_DESCRIPTIONS.length],
-    },
+    profile: { ...demographics },
     demographics,
     region: countryRegion,
     role: position,
@@ -199,32 +176,6 @@ function buildCreatedAt(rng, index, referenceNow) {
   return new Date(Math.min(end, slot + dayOffset)).toISOString();
 }
 
-function includesQualitative(index) {
-  return index % 3 === 0;
-}
-
-function buildQualitative(index) {
-  if (!includesQualitative(index)) {
-    return {
-      yearsFinancialServices: EXPERIENCE_CODES[index % EXPERIENCE_CODES.length],
-      roleDescription: SYNTHETIC_ROLE_DESCRIPTIONS[index % SYNTHETIC_ROLE_DESCRIPTIONS.length],
-      openResponses: {},
-    };
-  }
-  const openResponses = {};
-  const count = 2 + (index % 3);
-  for (let q = 0; q < count; q += 1) {
-    const id = QUAL_IDS[(index + q) % QUAL_IDS.length];
-    openResponses[id] = SYNTHETIC_OPEN_RESPONSES[(index + q) % SYNTHETIC_OPEN_RESPONSES.length];
-  }
-  return {
-    yearsFinancialServices: EXPERIENCE_CODES[index % EXPERIENCE_CODES.length],
-    roleDescription: SYNTHETIC_ROLE_DESCRIPTIONS[index % SYNTHETIC_ROLE_DESCRIPTIONS.length],
-    altIndicatorsExplain: 'Synthetic optional note for dashboard qualitative validation only.',
-    openResponses,
-  };
-}
-
 export function buildSyntheticRecord(index, options = {}) {
   if (!Number.isInteger(index) || index < 0 || index >= SYNTHETIC_RESPONSE_COUNT) {
     throw new Error('invalid_synthetic_index');
@@ -236,7 +187,6 @@ export function buildSyntheticRecord(index, options = {}) {
   const consentedAt = new Date(Date.parse(createdAt) - 5 * 60 * 1000).toISOString();
   const { profile, demographics, region, role, experience } = buildProfile(rng, index);
   const likert = buildLikert(rng, index);
-  const qualitative = buildQualitative(index);
   const assessment = scoreLikert(likert);
   const responses = {
     quantitative: {
@@ -245,8 +195,7 @@ export function buildSyntheticRecord(index, options = {}) {
       vignetteAcknowledgedAt: consentedAt,
       likert,
     },
-    qualitative,
-    instrumentType: 'mixed-methods-desk-assessment',
+    instrumentType: 'quantitative-desk-assessment',
     sessionStartedAt: consentedAt,
     savedAt: createdAt,
     disclaimer:
@@ -272,7 +221,6 @@ export function buildSyntheticRecord(index, options = {}) {
     role,
     experience,
     orientation: assessment.overall.score,
-    qualitative,
   };
 }
 
@@ -292,18 +240,15 @@ export function batchDistributionSummary(records = buildSyntheticBatch(), option
   const byRegion = Object.fromEntries(REGION_CODES.map((code) => [code, 0]));
   const byRole = Object.fromEntries(ROLE_CODES.map((code) => [code, 0]));
   const byExperience = Object.fromEntries(EXPERIENCE_CODES.map((code) => [code, 0]));
-  let qualitativeCount = 0;
   let last24h = 0;
-  records.forEach((record, index) => {
+  records.forEach((record) => {
     byRegion[record.region] = (byRegion[record.region] || 0) + 1;
     byRole[record.role] = (byRole[record.role] || 0) + 1;
     byExperience[record.experience] = (byExperience[record.experience] || 0) + 1;
-    if (includesQualitative(index)) qualitativeCount += 1;
     if (Date.parse(record.created_at) >= dayAgo) last24h += 1;
   });
   return {
     total: records.length,
-    qualitativeCount,
     last24h,
     byRegion,
     byRole,

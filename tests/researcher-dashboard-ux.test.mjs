@@ -216,13 +216,13 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
   const explore = html.indexOf('id="explore-title"');
   const items = html.indexOf('id="items-title"');
   const ledger = html.indexOf('id="ledger-title"');
-  const qualitative = html.indexOf('id="reflections-title"');
   const admin = html.indexOf('id="admin-title"');
   assert.ok(overview > 0 && refine > overview);
   assert.ok(participation > refine && domains > participation);
   assert.ok(insights > domains && explore > insights);
   assert.ok(items > explore && ledger > items);
-  assert.ok(qualitative > ledger && admin > qualitative);
+  assert.ok(admin > ledger);
+  assert.equal(html.indexOf('id="reflections-title"'), -1);
 
   assert.match(html, /DBA Research Dashboard/);
   assert.match(html, /Inclusive Lending Study/);
@@ -295,8 +295,9 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
   assert.match(js, /deletionsEnabled/);
   assert.doesNotMatch(js, /LIVE_EXPORTS_ENABLED\s*=\s*true/);
   assert.doesNotMatch(js, /LIVE_DELETIONS_ENABLED\s*=\s*true/);
-  assert.match(js, /\/v1\/responses\/\$\{encodeURIComponent\(ref\)\}\/qualitative/);
-  assert.match(js, /revealBox\?\.checked/);
+  assert.doesNotMatch(js, /\/v1\/responses\/\$\{encodeURIComponent\(ref\)\}\/qualitative/);
+  assert.doesNotMatch(js, /revealBox|loadQualitative|renderReflections/);
+  assert.match(js, /quantitative-only/);
   assert.match(js, /polarization/);
   assert.match(js, /item-question/);
   assert.match(js, /item-id-secondary/);
@@ -548,7 +549,7 @@ test('response ledger paginates ten records per page with progressive detail', (
   assert.match(js, /records\.slice\(start, start \+ RESPONSE_PAGE_LIMIT\)/);
   assert.match(js, /toggleRecordDetail/);
   assert.match(js, /record-detail/);
-  assert.match(js, /Free-text answers are not shown in the ledger/);
+  assert.match(js, /quantitative-only/);
   assert.match(js, /in this view/);
   assert.doesNotMatch(js, /loaded ·/);
 });
@@ -571,19 +572,23 @@ test('exports and deletions are session-gated and default disabled in UI', () =>
   assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
 });
 
-test('qualitative access boundary remains dedicated-endpoint + reveal checkbox', () => {
+test('current-study dashboard removes free-text UI while legacy qualitative API remains documented', () => {
   const js = read('researcher/dashboard.js');
   const html = read('researcher/index.html');
-  assert.match(html, /id="reveal-reflections"/);
-  assert.match(html, /Free-text answers/);
-  assert.match(js, /\/v1\/responses\/\$\{encodeURIComponent\(ref\)\}\/qualitative/);
-  assert.match(js, /if \(!revealed\)/);
-  assert.match(js, /qualitative = \[\]/);
+  const spec = read('api/researcher/SPEC.md');
+  assert.doesNotMatch(html, /id="reveal-reflections"/);
+  assert.doesNotMatch(html, /id="reflections-title"/);
+  assert.doesNotMatch(html, /Free-text answers/);
+  assert.doesNotMatch(js, /\/v1\/responses\/\$\{encodeURIComponent\(ref\)\}\/qualitative/);
+  assert.doesNotMatch(js, /loadQualitative|renderReflections|revealBox/);
   assert.doesNotMatch(js, /include_qualitative\s*[:=]\s*true/);
   assert.doesNotMatch(html, /id="record-rows"[\s\S]*openResponses/);
   assert.match(js, /buildDomainDrilldown/);
+  assert.match(spec, /\/v1\/responses\/\{ref\}\/qualitative/);
+  assert.match(spec, /Legacy \/ historical free-text/);
   const drill = read('researcher/drilldowns.mjs');
-  assert.match(drill, /gated Free-text answers section/);
+  assert.match(drill, /quantitative-only/);
+  assert.doesNotMatch(drill, /gated Free-text answers section/);
   assert.doesNotMatch(drill, /openResponses/);
   assert.doesNotMatch(drill, /\/v1\/summary/);
   assert.doesNotMatch(drill, /dedicated protected qualitative endpoint/);
@@ -597,7 +602,7 @@ test('researcher-facing drilldown copy keeps security surfaces unchanged', () =>
   assert.doesNotMatch(js, /LIVE_EXPORTS_ENABLED\s*=\s*true/);
   assert.doesNotMatch(js, /LIVE_DELETIONS_ENABLED\s*=\s*true/);
   assert.match(html, /<details class="workspace-panel admin-panel"/);
-  assert.match(html, /id="reveal-reflections"/);
+  assert.doesNotMatch(html, /id="reveal-reflections"/);
   assert.doesNotMatch(html, /COLLECTION_ENABLED:\s*true/);
 });
 

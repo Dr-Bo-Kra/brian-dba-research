@@ -659,9 +659,10 @@ test('login flow never requires a JWT secret or secret/service_role keys', () =>
   assert.doesNotMatch(dashboardJs, /access_token/);
 });
 
-test('dashboard treats qualitative XSS payloads as text and never persists records', () => {
-  assert.match(dashboardJs, /escapeHtml\(text\)/);
-  assert.match(dashboardJs, /escapeHtml\(entry\.qualitative\.roleDescription\)/);
+test('dashboard escapes dynamic text and never persists records; free-text UI removed', () => {
+  assert.match(dashboardJs, /escapeHtml\(/);
+  assert.doesNotMatch(dashboardJs, /entry\.qualitative\.roleDescription/);
+  assert.doesNotMatch(dashboardJs, /loadQualitative|renderReflections|reveal-reflections/);
   assert.match(dashboardJs, /exportsEnabled/);
   assert.match(dashboardJs, /deletionsEnabled/);
   assert.doesNotMatch(dashboardJs, /LIVE_EXPORTS_ENABLED\s*=\s*true/);

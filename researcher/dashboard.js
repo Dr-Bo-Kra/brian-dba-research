@@ -45,7 +45,6 @@ import {
     'password'
   );
   const filterForm = document.getElementById('filter-form');
-  const revealBox = document.getElementById('reveal-reflections');
   const deleteForm = document.getElementById('delete-form');
   const deleteConfirm = document.getElementById('delete-confirm');
   const deleteSubmit = document.getElementById('delete-submit');
@@ -142,7 +141,6 @@ import {
   let pendingTicket = '';
   let records = [];
   let summary = null;
-  let qualitative = [];
   let retentionReview = null;
   let pollTimer = null;
   let showAllItems = false;
@@ -883,7 +881,7 @@ import {
           )} · Legal hold ${row.legal_hold ? 'yes' : 'no'} · Anonymised ${
           row.anonymised ? 'yes' : 'no'
         }</p>
-          <p>Free-text answers are not shown in the ledger. Use the gated Free-text answers section after an explicit researcher action.</p>
+          <p>The live study is quantitative-only. Free-text is not part of the current instrument or ledger view.</p>
         </div></td>`;
         body.append(detail);
       }
@@ -895,40 +893,6 @@ import {
     renderLedger();
   }
 
-  function renderReflections() {
-    const host = document.getElementById('reflection-list');
-    const empty = document.getElementById('reflection-empty');
-    host.innerHTML = '';
-    const revealed = Boolean(revealBox?.checked);
-    host.hidden = !revealed;
-    if (!revealed) {
-      empty.textContent = 'Leave this off unless you need to read free-text answers.';
-      empty.hidden = false;
-      qualitative = [];
-      return;
-    }
-    if (!session || !apiConfigured) {
-      empty.textContent = 'No free-text answers in the current view.';
-      empty.hidden = false;
-      return;
-    }
-    empty.hidden = qualitative.length > 0;
-    empty.textContent = 'No free-text answers in the current view.';
-    qualitative.forEach((entry) => {
-      const article = document.createElement('article');
-      article.className = 'reflection-card';
-      const opens = entry.qualitative?.openResponses || {};
-      const answers = Object.entries(opens)
-        .map(([id, text]) => `<p><strong>${escapeHtml(id)}.</strong> ${escapeHtml(text)}</p>`)
-        .join('');
-      article.innerHTML = `
-        <h3>${escapeHtml(entry.participant_reference || 'Record')}</h3>
-        ${entry.qualitative?.roleDescription ? `<p>${escapeHtml(entry.qualitative.roleDescription)}</p>` : ''}
-        ${answers}`;
-      host.append(article);
-    });
-  }
-
   function renderAll() {
     renderGlance();
     renderParticipation();
@@ -936,7 +900,6 @@ import {
     renderDomains();
     renderItems();
     renderLedger();
-    renderReflections();
     applyAdminControls();
     renderRetention();
   }
@@ -946,7 +909,6 @@ import {
     pendingTicket = '';
     records = [];
     summary = null;
-    qualitative = [];
     retentionReview = null;
     showAllItems = false;
     responsePage = 0;
@@ -1103,7 +1065,6 @@ import {
     if (!apiConfigured || !session) {
       records = [];
       summary = null;
-      qualitative = [];
       renderAll();
       return;
     }
@@ -1123,13 +1084,11 @@ import {
       expandedRecordRef = null;
       setStatus('live', 'Live');
       setSessionMeta(session?.expiresAt);
-      if (revealBox?.checked) await loadQualitative();
       await loadRetentionReview();
       renderAll();
     } catch (error) {
       records = [];
       summary = null;
-      qualitative = [];
       retentionReview = null;
       renderAll();
       if (error.code === 'session-expired') {
@@ -1138,25 +1097,6 @@ import {
         return;
       }
       setStatus('error', 'Could not refresh the workspace.');
-    }
-  }
-
-  async function loadQualitative() {
-    qualitative = [];
-    if (!session || !apiConfigured || !revealBox?.checked) return;
-    const refs = records
-      .map((row) => row.participant_reference)
-      .filter((ref) => /^resp_[0-9a-f-]{32,36}$/i.test(ref))
-      .slice(0, 50);
-    for (const ref of refs) {
-      try {
-        const response = await researcherFetch(`/v1/responses/${encodeURIComponent(ref)}/qualitative`, {
-          method: 'GET',
-        });
-        qualitative.push(await response.json());
-      } catch {
-        break;
-      }
     }
   }
 
@@ -1463,14 +1403,6 @@ import {
     expandedRecordRef = null;
     if (session && apiConfigured) void refreshWorkspace();
     else renderAll();
-  });
-  revealBox?.addEventListener('change', () => {
-    if (revealBox.checked && session && apiConfigured) {
-      void loadQualitative().then(() => renderReflections());
-    } else {
-      qualitative = [];
-      renderReflections();
-    }
   });
   deleteForm?.addEventListener('submit', handleDelete);
   deleteConfirm?.addEventListener('change', () => updateDeleteSubmitState());

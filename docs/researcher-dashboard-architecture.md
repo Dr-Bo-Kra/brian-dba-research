@@ -146,7 +146,7 @@ See `api/researcher/SPEC.md` for routes. The implementation **must**:
 
 ## Dashboard capabilities (after the API is live)
 
-Allowed: totals, intake trends, aggregate domain/construct scores, item distributions, approved filters, individual review by participant reference, restricted qualitative review, controlled CSV export, deletion by participant reference, retention/anonymisation status.
+Allowed: totals, intake trends, aggregate domain/construct scores, item distributions, approved filters, individual review by participant reference, controlled CSV export, deletion by participant reference, retention/anonymisation status. The live instrument is quantitative-only; free-text review UI is not part of the current-study dashboard (legacy qualitative endpoint may remain for historical rows).
 
 **Not allowed:** database administration, SQL editor, schema changes, user-management beyond researcher-role revocation, arbitrary table dumps.
 

@@ -58,7 +58,7 @@ Public browser configuration lives in `config.js` (see `config.example.js`).
 | --- | --- |
 | `COLLECTION_ENABLED` | `false` |
 | `SUBMISSION_ENDPOINT` | `''` (empty) |
-| `PRIVACY_NOTICE_VERSION` | Match `privacy.html` (currently `2026-09-08`) |
+| `PRIVACY_NOTICE_VERSION` | Match `privacy.html` (currently `2026-09-09`) |
 | `LINKEDIN_URL` | Public researcher contact profile |
 
 Researcher workspace configuration lives in `researcher/config.js`.
@@ -83,9 +83,11 @@ After both consent checkboxes are confirmed, the Inclusive Lending Desk can run.
 The payload is designed to include:
 
 - broad professional demographics and a **regional category** (not free-text geography)
-- vignette acknowledgement, Likert items, and free-text reflections
+- vignette acknowledgement and Likert rating items (**quantitative only** — no free-text reflections)
 - a random participant reference, notice version, and consent timestamp
 - derived assessment scores shown on the results screen
+
+**Current live research instrument: quantitative only.** Legacy mixed-methods / free-text JSON may still exist in historical database rows and on a protected researcher qualitative endpoint; it is not part of the active study submission contract or current-study dashboard UI.
 
 It is designed **not** to include name, email, user-agent, IP address, or page URL. Hosting and network operators may still process ordinary connection logs under their own policies.
 

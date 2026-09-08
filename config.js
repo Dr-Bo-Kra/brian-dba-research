@@ -6,6 +6,6 @@
 window.BRIAN_DBA_CONFIG = {
   COLLECTION_ENABLED: false,
   SUBMISSION_ENDPOINT: '',
-  PRIVACY_NOTICE_VERSION: '2026-09-08',
+  PRIVACY_NOTICE_VERSION: '2026-09-09',
   LINKEDIN_URL: 'https://www.linkedin.com/in/brianpereira/',
 };

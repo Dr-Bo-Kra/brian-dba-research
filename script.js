@@ -79,13 +79,12 @@ function selectTab(selected) {
   const LATEST_KEY = 'brian-dba-survey-latest';
   const LEGACY_ARCHIVE_KEY = 'brian-dba-survey-responses';
   const INSTRUMENT = 'brian-dba-inclusive-lending-desk-v3';
-  const INSTRUMENT_TYPE = 'mixed-methods-desk-assessment';
-  const MIN_OPEN_LEN = 10;
+  const INSTRUMENT_TYPE = 'quantitative-desk-assessment';
   const LIKERT_MAX = 7;
 
   const cfg = window.BRIAN_DBA_CONFIG || {};
   const SUBMISSION_ENDPOINT = String(cfg.SUBMISSION_ENDPOINT || '').trim();
-  const PRIVACY_NOTICE_VERSION = String(cfg.PRIVACY_NOTICE_VERSION || '2026-09-08').trim();
+  const PRIVACY_NOTICE_VERSION = String(cfg.PRIVACY_NOTICE_VERSION || '2026-09-09').trim();
 
   function isProtectedSubmissionEndpoint(url) {
     if (!url) return false;
@@ -228,7 +227,7 @@ function selectTab(selected) {
       name: 'yearsFinancialServices',
       label: 'Total years of professional experience in the financial services sector',
       required: true,
-      bucket: 'qualitative',
+      bucket: 'quantitative',
       options: [
         { value: 'lt2', label: 'Less than 2 years' },
         { value: '2-5', label: '2-5 years' },
@@ -445,49 +444,6 @@ function selectTab(selected) {
     },
   ];
 
-  const QUAL_QUESTIONS = {
-    adoption: [
-      {
-        id: 'Q1',
-        text: 'What is your understanding of alternative creditworthiness indicators, such as psychometric characteristics, social capital, and behavioural financial information, in the context of lending decisions?',
-      },
-      {
-        id: 'Q2',
-        text: 'How do you think psychometric indicators (e.g., financial discipline, repayment commitment, and financial responsibility) can contribute to improving lending decisions?',
-      },
-      {
-        id: 'Q3',
-        text: 'In your opinion, what role do social capital indicators (e.g., community reputation, peer recommendations, and social networks) play in evaluating borrowers who have limited traditional credit histories?',
-      },
-      {
-        id: 'Q4',
-        text: 'How useful do you believe behavioural economic indicators (e.g., spending behaviour, financial decision-making patterns, and risk-taking behaviour) are in supporting responsible lending decisions?',
-      },
-      {
-        id: 'Q5',
-        text: 'What benefits and opportunities do you believe the adoption of alternative creditworthiness models can bring to your organization and to financially underserved borrowers?',
-      },
-    ],
-    governance: [
-      {
-        id: 'Q6',
-        text: 'What operational challenges do you anticipate your organization may face when implementing alternative creditworthiness assessment models?',
-      },
-      {
-        id: 'Q7',
-        text: 'What ethical concerns, if any, do you associate with using alternative borrower information in lending decisions?',
-      },
-      {
-        id: 'Q8',
-        text: 'What organizational capabilities, governance mechanisms, or regulatory support do you believe are necessary for the successful implementation of alternative creditworthiness models?',
-      },
-      {
-        id: 'Q9',
-        text: 'Based on your experience, what recommendations would you make to financial institutions and policymakers for promoting responsible and inclusive adoption of alternative creditworthiness models?',
-      },
-    ],
-  };
-
   const DOMAINS_META = LIKERT_SECTIONS.map((s) => ({
     id: s.id,
     label: s.domainLabel,
@@ -503,11 +459,9 @@ function selectTab(selected) {
     ...LIKERT_SECTIONS.map((s, i) => ({
       key: s.stageKey,
       label: s.title,
-      pct: 24 + i * 10,
+      pct: 24 + i * 12,
       section: s,
     })),
-    { key: 'qual-adoption', label: 'Your take · adoption', pct: 78 },
-    { key: 'qual-governance', label: 'Your take · governance', pct: 90 },
     { key: 'results', label: 'Your results', pct: 100 },
   ];
 
@@ -521,12 +475,6 @@ function selectTab(selected) {
       vignetteAcknowledged: false,
       vignetteAcknowledgedAt: null,
       likert: {},
-    },
-    qualitative: {
-      yearsFinancialServices: '',
-      roleDescription: '',
-      altIndicatorsExplain: '',
-      openResponses: {},
     },
   };
 
@@ -664,10 +612,7 @@ function selectTab(selected) {
 
   function renderProfileStage() {
     const selects = PROFILE_FIELDS.map((field) => {
-      const current =
-        field.bucket === 'qualitative'
-          ? state.qualitative[field.name] || ''
-          : state.quantitative.demographics[field.name] || state.profile[field.name] || '';
+      const current = state.quantitative.demographics[field.name] || state.profile[field.name] || '';
       const opts = field.options
         .map(
           (o) =>
@@ -691,8 +636,6 @@ function selectTab(selected) {
       (option) =>
         `<option value="${escapeHtml(option.value)}" ${country === option.value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`
     ).join('');
-    const roleDesc = state.qualitative.roleDescription || '';
-    const altExplain = state.qualitative.altIndicatorsExplain || '';
 
     const bodyHtml = `
       <h3 class="phase-title" id="desk-stage-title">Your profile</h3>
@@ -706,15 +649,6 @@ function selectTab(selected) {
             ${geographyOptions}
           </select>
           <p class="field-error" data-field-error hidden>Please select a broad region.</p>
-        </div>
-        <div class="field" data-field="roleDescription">
-          <label for="field-roleDescription">Briefly describe your current roles and responsibilities related to lending or credit assessment <span aria-hidden="true">*</span></label>
-          <textarea id="field-roleDescription" name="roleDescription" rows="3" maxlength="1200" required minlength="${MIN_OPEN_LEN}" placeholder="Your day-to-day credit or lending responsibilities…">${escapeHtml(roleDesc)}</textarea>
-          <p class="field-error" data-field-error hidden>Please write at least ${MIN_OPEN_LEN} characters.</p>
-        </div>
-        <div class="field" data-field="altIndicatorsExplain">
-          <label for="field-altIndicatorsExplain">If relevant, briefly explain how your organization uses (or does not use) alternative creditworthiness indicators <span class="optional-tag">(optional)</span></label>
-          <textarea id="field-altIndicatorsExplain" name="altIndicatorsExplain" rows="3" maxlength="1200" placeholder="Optional detail…">${escapeHtml(altExplain)}</textarea>
         </div>
       </form>
     `;
@@ -756,44 +690,19 @@ function selectTab(selected) {
       if (err) err.hidden = false;
     }
 
-    const roleEl = form.querySelector('[name="roleDescription"]');
-    const roleWrap = form.querySelector('[data-field="roleDescription"]');
-    const roleVal = String(roleEl?.value || '').trim();
-    if (roleVal.length < MIN_OPEN_LEN) {
-      valid = false;
-      roleWrap?.classList.add('invalid');
-      const err = roleWrap?.querySelector('[data-field-error]');
-      if (err) err.hidden = false;
-    }
-
     if (!valid) {
       showStageError('Please complete the required clearance fields before continuing.');
-      form.querySelector('.field.invalid select, .field.invalid input, .field.invalid textarea')?.focus();
+      form.querySelector('.field.invalid select, .field.invalid input')?.focus();
       return false;
     }
 
     const demographics = {};
     PROFILE_FIELDS.forEach((field) => {
-      const val = String(form.querySelector(`[name="${field.name}"]`)?.value || '').trim();
-      if (field.bucket === 'qualitative') {
-        state.qualitative[field.name] = val;
-      } else {
-        demographics[field.name] = val;
-      }
+      demographics[field.name] = String(form.querySelector(`[name="${field.name}"]`)?.value || '').trim();
     });
     demographics.countryRegion = String(countryEl?.value || '').trim();
     state.quantitative.demographics = demographics;
-    state.qualitative.roleDescription = roleVal;
-    state.qualitative.altIndicatorsExplain = String(
-      form.querySelector('[name="altIndicatorsExplain"]')?.value || ''
-    ).trim();
-
-    state.profile = {
-      ...demographics,
-      yearsFinancialServices: state.qualitative.yearsFinancialServices,
-      roleDescription: state.qualitative.roleDescription,
-      altIndicatorsExplain: state.qualitative.altIndicatorsExplain || undefined,
-    };
+    state.profile = { ...demographics };
     return true;
   }
 
@@ -895,7 +804,7 @@ function selectTab(selected) {
 
     flow.innerHTML = stageShell(bodyHtml, {
       showBack: true,
-      nextLabel: sectionIndex === LIKERT_SECTIONS.length - 1 ? 'Share your take' : 'Next round',
+      nextLabel: sectionIndex === LIKERT_SECTIONS.length - 1 ? 'See my results' : 'Next round',
     });
 
     wireNav(
@@ -903,6 +812,10 @@ function selectTab(selected) {
       () => goToStage(absIndex - 1),
       () => {
         if (!validateAndCollectLikert(section)) return;
+        if (sectionIndex === LIKERT_SECTIONS.length - 1) {
+          finishAssessment();
+          return;
+        }
         goToStage(absIndex + 1);
       }
     );
@@ -926,76 +839,6 @@ function selectTab(selected) {
     if (!valid) {
       showStageError('Please rate every statement before continuing.');
       flow.querySelector('.field.invalid input')?.focus();
-      return false;
-    }
-    return true;
-  }
-
-  function renderQualStage(kind) {
-    const questions = QUAL_QUESTIONS[kind];
-    const isAdoption = kind === 'adoption';
-    const title = isAdoption ? 'Your take · adoption' : 'Your take · governance';
-    const hint = isAdoption
-      ? 'In your own words: how alternative indicators could improve lending decisions and what opportunities you see.'
-      : 'In your own words: operational friction, ethics, governance needs, and what you would recommend.';
-
-    const fields = questions
-      .map((q) => {
-        const val = state.qualitative.openResponses[q.id] || '';
-        return `
-          <div class="field" data-field="${escapeHtml(q.id)}">
-            <label for="field-${escapeHtml(q.id)}"><span class="item-id">${escapeHtml(q.id)}</span> ${escapeHtml(q.text)} <span aria-hidden="true">*</span></label>
-            <textarea id="field-${escapeHtml(q.id)}" name="${escapeHtml(q.id)}" rows="4" maxlength="2000" required minlength="${MIN_OPEN_LEN}">${escapeHtml(val)}</textarea>
-            <p class="field-error" data-field-error hidden>Please write at least ${MIN_OPEN_LEN} characters.</p>
-          </div>
-        `;
-      })
-      .join('');
-
-    const bodyHtml = `
-      <h3 class="phase-title" id="desk-stage-title">${escapeHtml(title)}</h3>
-      <p class="survey-hint">${escapeHtml(hint)}</p>
-      <form id="qual-form" class="survey-form" novalidate>
-        ${fields}
-      </form>
-    `;
-
-    const absIndex = isAdoption ? 7 : 8;
-    flow.innerHTML = stageShell(bodyHtml, {
-      showBack: true,
-      nextLabel: isAdoption ? 'Continue' : 'Unlock my profile',
-    });
-
-    wireNav(
-      true,
-      () => goToStage(absIndex - 1),
-      () => {
-        if (!validateAndCollectQual(questions)) return;
-        if (isAdoption) goToStage(8);
-        else finishAssessment();
-      }
-    );
-  }
-
-  function validateAndCollectQual(questions) {
-    clearStageError();
-    let valid = true;
-    questions.forEach((q) => {
-      const el = flow.querySelector(`[name="${q.id}"]`);
-      const wrap = flow.querySelector(`[data-field="${q.id}"]`);
-      const err = wrap?.querySelector('[data-field-error]');
-      const val = String(el?.value || '').trim();
-      if (val.length < MIN_OPEN_LEN) {
-        valid = false;
-        wrap?.classList.add('invalid');
-        if (err) err.hidden = false;
-      } else {
-        state.qualitative.openResponses[q.id] = val;
-      }
-    });
-    if (!valid) {
-      showStageError(`Please complete each reflection with at least ${MIN_OPEN_LEN} characters.`);
-      flow.querySelector('.field.invalid textarea')?.focus();
       return false;
     }
     return true;
@@ -1135,29 +978,21 @@ function selectTab(selected) {
       vignetteAcknowledgedAt: state.quantitative.vignetteAcknowledgedAt,
       likert: { ...state.quantitative.likert },
     };
-    const qualitative = {
-      yearsFinancialServices: state.qualitative.yearsFinancialServices,
-      roleDescription: state.qualitative.roleDescription,
-      altIndicatorsExplain: state.qualitative.altIndicatorsExplain || undefined,
-      openResponses: { ...state.qualitative.openResponses },
-    };
 
     return {
       id: `resp_${createRandomId()}`,
       instrument: INSTRUMENT,
       instrumentType: INSTRUMENT_TYPE,
       disclaimer:
-        'Research-oriented mixed-methods desk instrument / proposal demo. Not a clinical diagnosis, credit score, or institutional decision.',
+        'Research-oriented quantitative desk instrument / proposal demo. Not a clinical diagnosis, credit score, or institutional decision.',
       savedAt: new Date().toISOString(),
       sessionStartedAt: startedAt,
       consent: { ...participationConsent },
       profile: { ...state.profile },
       responses: {
         quantitative,
-        qualitative,
       },
       quantitative,
-      qualitative,
       assessment,
     };
   }
@@ -1227,7 +1062,6 @@ function selectTab(selected) {
       profile: record.profile || {},
       responses: {
         quantitative: record.responses?.quantitative || record.quantitative || {},
-        qualitative: record.responses?.qualitative || record.qualitative || {},
         instrumentType: record.instrumentType,
         sessionStartedAt: record.sessionStartedAt,
         savedAt: record.savedAt,
@@ -1335,8 +1169,7 @@ function selectTab(selected) {
   function renderRecordSummary(record) {
     if (!summary) return;
     summary.innerHTML = '';
-    const dem = record.responses?.quantitative?.demographics || {};
-    const qual = record.responses?.qualitative || {};
+    const dem = record.responses?.quantitative?.demographics || record.profile || {};
     const rows = [
       { title: 'Gender', value: optionLabel('gender', dem.gender) },
       { title: 'Age', value: optionLabel('age', dem.age) },
@@ -1346,7 +1179,7 @@ function selectTab(selected) {
       { title: 'Years in lending', value: optionLabel('yearsLending', dem.yearsLending) },
       {
         title: 'Years in financial services',
-        value: optionLabel('yearsFinancialServices', qual.yearsFinancialServices),
+        value: optionLabel('yearsFinancialServices', dem.yearsFinancialServices),
       },
       { title: 'Area of operation', value: optionLabel('areaOperation', dem.areaOperation) },
       { title: 'Involvement', value: optionLabel('involvement', dem.involvement) },
@@ -1363,17 +1196,6 @@ function selectTab(selected) {
     if (record.assessment?.playStyle) {
       rows.push({ title: 'Desk style', value: record.assessment.playStyle.title });
     }
-
-    if (qual.roleDescription) {
-      rows.push({ title: 'Role description', value: qual.roleDescription });
-    }
-    if (qual.altIndicatorsExplain) {
-      rows.push({ title: 'Alt. indicators note', value: qual.altIndicatorsExplain });
-    }
-
-    Object.entries(qual.openResponses || {}).forEach(([id, text]) => {
-      rows.push({ title: id, value: text });
-    });
 
     rows.forEach(({ title, value }) => {
       const row = document.createElement('div');
@@ -1480,8 +1302,6 @@ function selectTab(selected) {
     if (stage.key === 'profile') renderProfileStage();
     else if (stage.key === 'case') renderCaseStage();
     else if (stage.section) renderLikertStage(stage.section);
-    else if (stage.key === 'qual-adoption') renderQualStage('adoption');
-    else if (stage.key === 'qual-governance') renderQualStage('governance');
     else if (stage.key === 'results' && latestRecord) {
       showResults(latestRecord, { submitArchive: false });
       return;
@@ -1501,12 +1321,6 @@ function selectTab(selected) {
         vignetteAcknowledged: false,
         vignetteAcknowledgedAt: null,
         likert: {},
-      },
-      qualitative: {
-        yearsFinancialServices: '',
-        roleDescription: '',
-        altIndicatorsExplain: '',
-        openResponses: {},
       },
     };
   }

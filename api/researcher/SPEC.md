@@ -69,7 +69,7 @@ Do not include stack traces, SQL, whether a participant reference exists on dele
 | GET | `/v1/summary` | Authorised researcher | Aggregates for the approved filters. Retention metadata included; no auto-delete. |
 | GET | `/v1/responses` | Authorised researcher | Paginated ledger DTOs. |
 | GET | `/v1/responses/{ref}` | Authorised researcher | One record DTO. Audit `view_record`. |
-| GET | `/v1/responses/{ref}/qualitative` | Authorised researcher | Free-text only when requested. Audit `view_qualitative`. |
+| GET | `/v1/responses/{ref}/qualitative` | Authorised researcher | **Legacy / historical free-text only.** Not part of the live quantitative instrument UI. Audit `view_qualitative`. Endpoint retained for older rows; current-study dashboard does not expose it. |
 | GET | `/v1/retention-review` | Authorised researcher | Participant refs at retention threshold for review. Audit `retention_review`. Never deletes. |
 | POST | `/v1/exports` | Authorised researcher | CSV of the **approved export schema** (optional exact `reference`). Disabled by default. Audit `export`. |
 | POST | `/v1/deletions` | Authorised researcher | Delete by `resp_…`. Disabled by default. Legal hold. Audit `delete`. Generic result. |

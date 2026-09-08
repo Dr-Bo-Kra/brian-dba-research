@@ -34,7 +34,7 @@ This file is a standalone briefing for an independent specialist (privacy, secur
 
 The repository is a **responsive static website** for the June 2026 DBA research proposal *Exploring Organizational Adoption of Alternative Creditworthiness Models for Inclusive Lending* (proposal reference **DBA 2027-10384**). Substantive research claims, questions, methods, and sample sizes are intended to follow `Brian RP V1.5.docx`. The public page labels the work as a **proposal** so planned methods are not mistaken for completed findings.
 
-The interactive instrument is the **Inclusive Lending Desk** (`brian-dba-inclusive-lending-desk-v3`): a vignette-based mixed-methods desk activity for lending professionals. After consent, the participant completes demographics, a standardised borrower vignette, Likert items, and free-text reflections, then receives a local “lending-instinct profile.”
+The interactive instrument is the **Inclusive Lending Desk** (`brian-dba-inclusive-lending-desk-v3`): a vignette-based **quantitative** desk activity for lending professionals (`instrumentType`: `quantitative-desk-assessment`). After consent, the participant completes coded demographics, a standardised borrower vignette, and Likert items, then receives a local “lending-instinct profile.” Free-text reflections are **not** part of the live study contract (notice version `2026-09-09`). Legacy qualitative storage/API may remain for historical rows.
 
 **Current git state (as of this briefing).**
 
@@ -175,7 +175,7 @@ Public browser configuration. **Must never contain credentials.** Current values
 ```js
 COLLECTION_ENABLED: false
 SUBMISSION_ENDPOINT: ''
-PRIVACY_NOTICE_VERSION: '2026-08-28'
+PRIVACY_NOTICE_VERSION: '2026-09-09'
 LINKEDIN_URL: 'https://www.linkedin.com/in/brianpereira/'
 ```
 

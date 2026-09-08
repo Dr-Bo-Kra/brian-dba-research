@@ -425,7 +425,7 @@ export function buildKpiDrilldown(kpiId, context = {}) {
         },
       ],
       note:
-        'The 24-hour count is an archive total for the current filter. The activity list shows responses currently available in the workspace and does not include free-text answers.',
+        'The 24-hour count is an archive total for the current filter. The activity list shows responses currently available in the workspace.',
     };
   }
 
@@ -515,7 +515,7 @@ export function buildKpiDrilldown(kpiId, context = {}) {
         },
       ],
       note:
-        'Latest response is the latest acceptance timestamp in the filtered archive. Free-text answers are not shown here.',
+        'Latest response is the latest acceptance timestamp in the filtered archive.',
     };
   }
 
@@ -649,7 +649,7 @@ export function buildDomainDrilldown(domainId, context = {}) {
       {
         title: 'Qualitative answers',
         kind: 'note',
-        note: 'Free-text answers are not included here. Use the gated Free-text answers section after an explicit researcher opt-in.',
+        note: 'The live study is quantitative-only. Ledger detail shows coded fields and scores only.',
       },
     ],
     note:

@@ -187,7 +187,7 @@
         </section>
       </div>
 
-      <!-- 5. Explore: questions, ledger, free-text -->
+      <!-- 5. Explore: questions and ledger -->
       <section class="workspace-panel explore-panel" aria-labelledby="explore-title">
         <div class="panel-head compact explore-head">
           <div>
@@ -196,7 +196,7 @@
           </div>
           <nav class="explore-nav" aria-label="Explore sections">
             <a href="#filter-toolbar">Filters</a>
-            <a href="#reflections-title">Free-text</a>
+            <a href="#ledger-title">Ledger</a>
             <a href="#admin-panel">Administration</a>
           </nav>
         </div>
@@ -217,7 +217,7 @@
             <h3 id="ledger-title">Response ledger</h3>
             <p class="ledger-meta" id="ledger-meta" hidden></p>
           </div>
-          <p class="section-lede compact">Ten records per page. Expand a row for detail. Free-text answers are not shown here.</p>
+          <p class="section-lede compact">Ten records per page. Expand a row for detail. The live study is quantitative-only.</p>
           <div class="table-wrap">
             <table class="record-table">
               <thead>
@@ -239,17 +239,6 @@
             <button type="button" class="button ghost" id="ledger-next">Next</button>
           </div>
           <p class="empty-copy" id="ledger-empty">No accepted responses yet.</p>
-        </div>
-
-        <div class="explore-block restricted-panel" aria-labelledby="reflections-title">
-          <h3 id="reflections-title">Free-text answers</h3>
-          <p class="section-lede compact">Hidden until you opt in. Never included in aggregates or the response ledger.</p>
-          <label class="reveal-check">
-            <input type="checkbox" id="reveal-reflections">
-            I need to read free-text answers for analysis or a withdrawal request.
-          </label>
-          <div id="reflection-list" hidden></div>
-          <p class="empty-copy" id="reflection-empty">Leave this off unless you need to read free-text answers.</p>
         </div>
 
         <details class="explore-block methodology-block" id="methodology-block">

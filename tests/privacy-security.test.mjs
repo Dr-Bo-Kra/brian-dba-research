@@ -38,7 +38,8 @@ test('consent and privacy notice exist', () => {
   assert.match(indexHtml, /href="privacy\.html"/);
   assert.match(privacyHtml, /Privacy and participant information/);
   assert.match(privacyHtml, /Protected research collection is currently disabled/);
-  assert.match(privacyHtml, /Notice version:<\/strong>\s*8 September 2026/);
+  assert.match(privacyHtml, /Notice version:<\/strong>\s*9 September 2026/);
+  assert.match(privacyHtml, /quantitative-only/i);
   assert.match(privacyHtml, /12 months after research completion/);
   assert.match(privacyHtml, /Singapore/);
   assert.match(privacyHtml, /not<\/strong> automatically destroyed/);
@@ -48,9 +49,19 @@ test('consent and privacy notice exist', () => {
   assert.match(privacyHtml, /not completely anonymous/);
   assert.match(privacyHtml, /No system can guarantee absolute security/);
   assert.doesNotMatch(privacyHtml, /ethics approval reference:\s*ETH/i);
-  assert.match(configJs, /PRIVACY_NOTICE_VERSION:\s*'2026-09-08'/);
+  assert.match(configJs, /PRIVACY_NOTICE_VERSION:\s*'2026-09-09'/);
   assert.match(scriptJs, /hasValidConsent/);
   assert.match(scriptJs, /returnToConsentGate/);
+});
+
+test('live survey is quantitative-only with no free-text stage', () => {
+  assert.match(scriptJs, /INSTRUMENT_TYPE = 'quantitative-desk-assessment'/);
+  assert.doesNotMatch(scriptJs, /qual-adoption|qual-governance|QUAL_QUESTIONS|renderQualStage/);
+  assert.doesNotMatch(scriptJs, /roleDescription|altIndicatorsExplain|openResponses/);
+  assert.doesNotMatch(scriptJs, /qualitative:/);
+  assert.match(scriptJs, /See my results/);
+  assert.match(indexHtml, /does not collect free-text reflections/);
+  assert.doesNotMatch(indexHtml, /ratings, and free-text reflections/);
 });
 
 test('collection defaults to disabled', () => {

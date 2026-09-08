@@ -37,7 +37,9 @@ No public or anonymous database read is part of this design.
 
 ## 4. Categories of information
 
-**Intended:** broad demographic and professional categories; regional category; Likert ratings; free-text reflections; random participant reference; notice version; consent timestamp; derived scores.
+**Intended (live quantitative instrument):** broad demographic and professional categories; regional category; Likert ratings; random participant reference; notice version; consent timestamp; derived scores.
+
+**Legacy only (not collected under notice `2026-09-09`):** free-text reflections / role descriptions may remain in older archive JSON; they are not part of the active submission allowlist.
 
 **Not intended in the research payload:** name, email, user-agent, page URL, IP address, precise free-text geography, employer identity, borrower or customer data.
 

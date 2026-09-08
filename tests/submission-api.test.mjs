@@ -97,7 +97,7 @@ test('malformed JSON and oversized bodies are rejected', async () => {
   const malformed = await post(app, '{"instrument_id":');
   assert.equal(malformed.status, 400);
 
-  const huge = await post(app, buildValidSubmissionPayload({ openText: 'x'.repeat(400) }), originHeaders(), 'https://survey.example/api/submission');
+  const huge = await post(app, buildValidSubmissionPayload(), originHeaders(), 'https://survey.example/api/submission');
   // Still may pass validation size; force oversized via raw buffer path
   const oversized = await app.handle({
     method: 'POST',
@@ -168,14 +168,14 @@ test('bad timestamps and invalid Likert values are rejected', async () => {
   assert.equal((await post(app, outOfRange)).status, 400);
 });
 
-test('excessive qualitative length and malformed domains are rejected', async () => {
+test('excessive assessment narrative length and malformed domains are rejected', async () => {
   const app = testApp();
-  const longQual = buildValidSubmissionPayload({
-    openResponses: Object.fromEntries(
-      ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9'].map((id) => [id, 'x'.repeat(2001)])
-    ),
+  const longSummary = buildValidSubmissionPayload({
+    patch: (payload) => {
+      payload.assessment.overall.summary = 'x'.repeat(1201);
+    },
   });
-  assert.equal((await post(app, longQual)).status, 400);
+  assert.equal((await post(app, longSummary)).status, 400);
 
   const badDomain = buildValidSubmissionPayload({
     patch: (payload) => {
@@ -183,6 +183,48 @@ test('excessive qualitative length and malformed domains are rejected', async ()
     },
   });
   assert.equal((await post(app, badDomain)).status, 400);
+});
+
+test('qualitative smuggling and free-text profile keys are rejected', async () => {
+  const app = testApp();
+  const withQual = buildValidSubmissionPayload({
+    patch: (payload) => {
+      payload.responses.qualitative = {
+        yearsFinancialServices: '6-10',
+        roleDescription: 'smuggled free text that must be rejected',
+        openResponses: { Q1: 'should not accept qualitative on live contract' },
+      };
+    },
+  });
+  assert.equal((await post(app, withQual)).status, 400);
+
+  const withRole = buildValidSubmissionPayload({
+    patch: (payload) => {
+      payload.profile.roleDescription = 'smuggled role description';
+      payload.responses.quantitative.demographics.roleDescription = 'smuggled role description';
+    },
+  });
+  assert.equal((await post(app, withRole)).status, 400);
+
+  const ok = await post(
+    app,
+    buildValidSubmissionPayload({ client_record_id: 'resp_ffffffff-ffff-4fff-8fff-ffffffffffff' })
+  );
+  assert.equal(ok.status, 200);
+  assert.equal(JSON.parse(ok.body).ok, true);
+});
+
+test('accepted quantitative payload omits qualitative keys', () => {
+  const validated = validateSubmissionPayload(buildValidSubmissionPayload());
+  assert.equal(validated.ok, true);
+  assert.equal(validated.row.responses.qualitative, undefined);
+  assert.equal(validated.row.profile.roleDescription, undefined);
+  assert.equal(validated.row.responses.instrumentType, 'quantitative-desk-assessment');
+  assert.ok(validated.row.profile.yearsFinancialServices);
+  assert.equal(
+    validated.row.responses.quantitative.demographics.yearsFinancialServices,
+    validated.row.profile.yearsFinancialServices
+  );
 });
 
 test('non-finite browser assessment scores are replaced; JSON null scores rejected', async () => {

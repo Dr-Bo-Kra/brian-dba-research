@@ -1,6 +1,7 @@
 /**
  * Canonical archive payload builder for submission API tests.
  * Uses the same server scoring module that authorises stored assessments.
+ * Live contract: quantitative-only (no qualitative answers).
  */
 import {
   DOMAIN_ITEMS,
@@ -8,7 +9,6 @@ import {
   INSTRUMENT_ID,
   INSTRUMENT_TYPE,
   ITEM_ORDER,
-  QUAL_IDS,
 } from '../../api/submission/_lib/constants.mjs';
 import { scoreAssessment } from '../../api/submission/_lib/score-assessment.mjs';
 
@@ -41,13 +41,6 @@ export function buildValidSubmissionPayload(overrides = {}) {
   const now = new Date().toISOString();
   const consentedAt = overrides.consented_at || now;
   const likert = overrides.likert || buildLikert(5);
-  const openResponses = Object.fromEntries(
-    QUAL_IDS.map((id) => [
-      id,
-      overrides.openText ||
-        `Validated qualitative reflection for ${id} used only in isolated submission API tests.`,
-    ])
-  );
   const demographics = {
     gender: 'female',
     age: '30-39',
@@ -55,6 +48,7 @@ export function buildValidSubmissionPayload(overrides = {}) {
     institutionType: 'commercial-bank',
     position: 'credit-manager',
     yearsLending: '6-10',
+    yearsFinancialServices: '6-10',
     areaOperation: 'urban',
     involvement: 'assess',
     usesAltIndicators: 'yes',
@@ -63,25 +57,8 @@ export function buildValidSubmissionPayload(overrides = {}) {
   };
   const profile = {
     ...demographics,
-    yearsFinancialServices: '6-10',
-    roleDescription:
-      'Credit manager reviewing inclusive lending desk files for institutional research participation.',
     ...(overrides.profile || {}),
   };
-  if (overrides.omitAlt === true) {
-    delete profile.altIndicatorsExplain;
-  } else if (overrides.altIndicatorsExplain) {
-    profile.altIndicatorsExplain = overrides.altIndicatorsExplain;
-  }
-
-  const qualitative = {
-    yearsFinancialServices: profile.yearsFinancialServices,
-    roleDescription: profile.roleDescription,
-    openResponses: overrides.openResponses || openResponses,
-  };
-  if (Object.prototype.hasOwnProperty.call(profile, 'altIndicatorsExplain')) {
-    qualitative.altIndicatorsExplain = profile.altIndicatorsExplain;
-  }
 
   const payload = {
     instrument_id: INSTRUMENT_ID,
@@ -89,20 +66,19 @@ export function buildValidSubmissionPayload(overrides = {}) {
     profile,
     responses: {
       quantitative: {
-        demographics,
+        demographics: { ...profile },
         vignetteAcknowledged: true,
         vignetteAcknowledgedAt: consentedAt,
         likert,
       },
-      qualitative,
       instrumentType: INSTRUMENT_TYPE,
       sessionStartedAt: consentedAt,
       savedAt: now,
       disclaimer:
-        'Research-oriented mixed-methods desk instrument / proposal demo. Not a clinical diagnosis, credit score, or institutional decision.',
+        'Research-oriented quantitative desk instrument / proposal demo. Not a clinical diagnosis, credit score, or institutional decision.',
     },
     assessment: overrides.assessment || buildAssessment(likert),
-    privacy_notice_version: overrides.privacy_notice_version || '2026-08-28',
+    privacy_notice_version: overrides.privacy_notice_version || '2026-09-09',
     consented_at: consentedAt,
   };
 
@@ -119,7 +95,7 @@ export function readySubmissionConfig(extra = {}) {
     durableRateLimitReady: true,
     dataReady: true,
     allowMemoryStores: false,
-    maxBodyBytes: 96_000,
+    maxBodyBytes: 48_000,
     rateLimitWindowMs: 60_000,
     rateLimitMax: 10_000,
     trustedProxy: false,
@@ -131,4 +107,4 @@ export function readySubmissionConfig(extra = {}) {
   };
 }
 
-export { DOMAIN_ORDER, DOMAIN_ITEMS, ITEM_ORDER, QUAL_IDS, mean, scoreAssessment };
+export { DOMAIN_ORDER, DOMAIN_ITEMS, ITEM_ORDER, mean, scoreAssessment };

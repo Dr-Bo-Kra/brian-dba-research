@@ -1,6 +1,7 @@
 /**
  * Strict validation for the canonical buildArchivePayload shape.
- * Rejects unknown fields. Recomputes the full assessment from Likert and
+ * Live contract is quantitative-only: rejects unknown fields (including
+ * smuggled qualitative keys). Recomputes the full assessment from Likert and
  * stores the server-authoritative result (scores + deterministic derived
  * fields). Browser-supplied derived values are ignored after shape checks.
  */
@@ -20,8 +21,6 @@ import {
   PLAY_STYLE_KEYS,
   PROFILE_KEYS,
   PROFILE_OPTION_CODES,
-  QUAL_IDS,
-  QUALITATIVE_KEYS,
   QUANTITATIVE_KEYS,
   RESPONSES_KEYS,
   SYNTHETIC_REF_PREFIX,
@@ -37,11 +36,6 @@ function exactKeys(obj, allowed) {
   const keys = Object.keys(obj);
   if (keys.length !== allowed.length) return false;
   return allowed.every((key) => Object.prototype.hasOwnProperty.call(obj, key));
-}
-
-function noUnknownKeys(obj, allowed) {
-  const allow = new Set(allowed);
-  return Object.keys(obj).every((key) => allow.has(key));
 }
 
 function parseIsoTimestamp(value) {
@@ -65,20 +59,9 @@ function validateString(value, { min = 0, max }) {
 }
 
 function validateProfile(profile) {
-  if (!isPlainObject(profile)) return false;
-  if (!noUnknownKeys(profile, PROFILE_KEYS)) return false;
-  for (const key of Object.keys(PROFILE_OPTION_CODES)) {
+  if (!isPlainObject(profile) || !exactKeys(profile, PROFILE_KEYS)) return false;
+  for (const key of PROFILE_KEYS) {
     if (!codeIn(PROFILE_OPTION_CODES[key], profile[key])) return false;
-  }
-  if (!validateString(profile.roleDescription, { min: DEFAULTS.minOpenLen, max: DEFAULTS.maxRoleDescriptionLen })) {
-    return false;
-  }
-  if (Object.prototype.hasOwnProperty.call(profile, 'altIndicatorsExplain')) {
-    if (
-      !validateString(profile.altIndicatorsExplain, { min: 1, max: DEFAULTS.maxAltExplainLen })
-    ) {
-      return false;
-    }
   }
   return true;
 }
@@ -96,38 +79,6 @@ function validateLikert(likert) {
   for (const id of ITEM_ORDER) {
     const value = likert[id];
     if (!Number.isInteger(value) || value < DEFAULTS.likertMin || value > DEFAULTS.likertMax) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function validateQualitative(qualitative, profile) {
-  if (!isPlainObject(qualitative) || !noUnknownKeys(qualitative, QUALITATIVE_KEYS)) return false;
-  if (!codeIn(PROFILE_OPTION_CODES.yearsFinancialServices, qualitative.yearsFinancialServices)) {
-    return false;
-  }
-  if (qualitative.yearsFinancialServices !== profile.yearsFinancialServices) return false;
-  if (qualitative.roleDescription !== profile.roleDescription) return false;
-  const profileHasAlt = Object.prototype.hasOwnProperty.call(profile, 'altIndicatorsExplain');
-  const qualHasAlt = Object.prototype.hasOwnProperty.call(qualitative, 'altIndicatorsExplain');
-  if (profileHasAlt !== qualHasAlt) return false;
-  if (profileHasAlt && qualitative.altIndicatorsExplain !== profile.altIndicatorsExplain) {
-    return false;
-  }
-  if (
-    qualHasAlt &&
-    !validateString(qualitative.altIndicatorsExplain, {
-      min: 1,
-      max: DEFAULTS.maxAltExplainLen,
-    })
-  ) {
-    return false;
-  }
-  const opens = qualitative.openResponses;
-  if (!isPlainObject(opens) || !exactKeys(opens, QUAL_IDS)) return false;
-  for (const id of QUAL_IDS) {
-    if (!validateString(opens[id], { min: DEFAULTS.minOpenLen, max: DEFAULTS.maxOpenLen })) {
       return false;
     }
   }
@@ -276,9 +227,6 @@ export function validateSubmissionPayload(body) {
     return { ok: false, error: 'invalid_request' };
   }
   if (!validateLikert(quantitative.likert)) {
-    return { ok: false, error: 'invalid_request' };
-  }
-  if (!validateQualitative(responses.qualitative, body.profile)) {
     return { ok: false, error: 'invalid_request' };
   }
   if (!validateAssessmentShape(body.assessment)) {

@@ -20,7 +20,8 @@ export {
 };
 
 export const INSTRUMENT_ID = 'brian-dba-inclusive-lending-desk-v3';
-export const INSTRUMENT_TYPE = 'mixed-methods-desk-assessment';
+/** Live study contract: quantitative instrument only (legacy mixed-methods rows may still exist in DB). */
+export const INSTRUMENT_TYPE = 'quantitative-desk-assessment';
 
 /** Synthetic operator seed prefix — rejected on the public submission path. */
 export const SYNTHETIC_REF_PREFIX = 'resp_00000000-0000-4000-8000-';
@@ -87,6 +88,7 @@ export const ITEM_ORDER = Object.freeze([
   'F25',
 ]);
 
+/** Legacy free-text question ids — retained for historical records / researcher API only. Not part of the live submission allowlist. */
 export const QUAL_IDS = Object.freeze([
   'Q1',
   'Q2',
@@ -136,6 +138,7 @@ export const PROFILE_OPTION_CODES = Object.freeze({
   countryRegion: REGION_CODES,
 });
 
+/** Coded profile fields only — free-text role/alt explain removed from the live contract. */
 export const PROFILE_KEYS = Object.freeze([
   'gender',
   'age',
@@ -148,13 +151,10 @@ export const PROFILE_KEYS = Object.freeze([
   'involvement',
   'usesAltIndicators',
   'countryRegion',
-  'roleDescription',
-  'altIndicatorsExplain',
 ]);
 
 export const RESPONSES_KEYS = Object.freeze([
   'quantitative',
-  'qualitative',
   'instrumentType',
   'sessionStartedAt',
   'savedAt',
@@ -168,20 +168,10 @@ export const QUANTITATIVE_KEYS = Object.freeze([
   'likert',
 ]);
 
-/** Matches script.js quantitative.demographics (yearsFinancialServices lives in qualitative/profile). */
-export const DEMOGRAPHIC_KEYS = Object.freeze([
-  'gender',
-  'age',
-  'education',
-  'institutionType',
-  'position',
-  'yearsLending',
-  'areaOperation',
-  'involvement',
-  'usesAltIndicators',
-  'countryRegion',
-]);
+/** Matches script.js quantitative.demographics / profile (identical coded sets). */
+export const DEMOGRAPHIC_KEYS = PROFILE_KEYS;
 
+/** Legacy qualitative object keys — not accepted on new public submissions. */
 export const QUALITATIVE_KEYS = Object.freeze([
   'yearsFinancialServices',
   'roleDescription',
@@ -217,13 +207,10 @@ export const OVERALL_KEYS = Object.freeze([
 export const PLAY_STYLE_KEYS = Object.freeze(['id', 'mark', 'title', 'blurb']);
 
 export const DEFAULTS = Object.freeze({
-  maxBodyBytes: 96_000,
+  /** Quantitative-only payloads are far smaller than the former mixed-methods body. */
+  maxBodyBytes: 48_000,
   rateLimitWindowMs: 60_000,
   rateLimitMax: 12,
-  minOpenLen: 10,
-  maxOpenLen: 2000,
-  maxRoleDescriptionLen: 1200,
-  maxAltExplainLen: 2000,
   maxDisclaimerLen: 500,
   maxPrivacyNoticeLen: 40,
   maxInterpretationLen: 600,

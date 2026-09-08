@@ -30,7 +30,7 @@ This checklist is for a **privacy-hardened** research platform. Completing engin
 | Database RLS / privilege revocation | Ready — FORCE RLS; `anon`/`authenticated` have no table privileges; `submission_inserter` + `researcher_api` roles provisioned |
 | Researcher Auth + TOTP MFA + sessions/logout | Ready on Preview when `RESEARCHER_API_ENABLED` and durable stores are set |
 | Researcher authorization (`authorised_researchers`) | Ready in code (deny-by-default; sole-active-row model). Brian cutover not performed |
-| Inquiry Archive dashboard + qualitative acknowledgement path | Ready on Preview; Administration export/deletion UI session-gated; retention review listing available |
+| Inquiry Archive dashboard (quantitative study UI) | Ready on Preview; free-text UI removed from current-study workspace; legacy qualitative API retained but not exposed in normal UI; Administration export/deletion UI session-gated; retention review listing available |
 | Application audit trail | Ready for researcher API metadata events; institutional retention of logs TBD |
 | Participant withdrawal / deletion | End-to-end controlled deletion via RPC + CSRF + audit; `DELETIONS_ENABLED` stays false until Production enables for Brian |
 | Exports | Filtered + participant-level CSV; approved schema; `EXPORTS_ENABLED` stays false until Production enables for Brian |
