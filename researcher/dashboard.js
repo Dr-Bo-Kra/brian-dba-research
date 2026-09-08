@@ -1,5 +1,5 @@
 import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.mjs';
-import { rankItemHighlights } from './item-analysis.mjs';
+import { rankItemHighlights, SMALL_N_THRESHOLD, statsFromCounts } from './item-analysis.mjs';
 import {
   buildStudyInsights,
   participationGlanceCopy,
@@ -100,6 +100,71 @@ import {
     ['11-15', '11-15 years'],
     ['gt15', 'More than 15 years'],
   ];
+  const PROFILE_DIM_LABELS = {
+    countryRegion: 'Geography',
+    position: 'Role',
+    yearsLending: 'Lending experience',
+    gender: 'Gender',
+    age: 'Age',
+    education: 'Education',
+    institutionType: 'Institution type',
+    yearsFinancialServices: 'Financial services experience',
+    areaOperation: 'Area of operation',
+    involvement: 'Involvement',
+    usesAltIndicators: 'Uses alternative indicators',
+  };
+  const PROFILE_CODE_LABELS = {
+    countryRegion: Object.fromEntries(GEOGRAPHY),
+    position: Object.fromEntries(ROLES),
+    yearsLending: Object.fromEntries(EXPERIENCE),
+    gender: { male: 'Male', female: 'Female', 'prefer-not': 'Prefer not to say' },
+    age: {
+      '20-29': '20-29',
+      '30-39': '30-39',
+      '40-49': '40-49',
+      '50-59': '50-59',
+      '60plus': '60+',
+    },
+    education: {
+      diploma: 'Diploma',
+      bachelors: "Bachelor's",
+      masters: "Master's",
+      doctorate: 'Doctorate',
+      professional: 'Professional',
+      other: 'Other',
+    },
+    institutionType: {
+      'commercial-bank': 'Commercial bank',
+      mfi: 'MFI',
+      cooperative: 'Cooperative',
+      fintech: 'FinTech',
+      'digital-bank': 'Digital bank',
+      dfi: 'DFI',
+      other: 'Other',
+    },
+    yearsFinancialServices: Object.fromEntries(EXPERIENCE),
+    areaOperation: { urban: 'Urban', rural: 'Rural', both: 'Both' },
+    involvement: {
+      assess: 'Assess',
+      recommend: 'Recommend',
+      'approve-reject': 'Approve/reject',
+      supervise: 'Supervise',
+      policies: 'Policies',
+      support: 'Support',
+      other: 'Other',
+    },
+    usesAltIndicators: {
+      yes: 'Yes',
+      no: 'No',
+      implementing: 'Implementing',
+      'not-sure': 'Not sure',
+    },
+  };
+  const FILTER_FROM_PROFILE = {
+    countryRegion: 'region',
+    position: 'role',
+    yearsLending: 'experience',
+  };
   const DOMAINS = [
     { id: 'psychometric', label: 'Psychometric indicators' },
     { id: 'social', label: 'Social capital' },
@@ -146,6 +211,8 @@ import {
   let showAllItems = false;
   let responsePage = 0;
   let expandedRecordRef = null;
+  let expandedRecordDetail = null;
+  let segmentPayload = null;
   let drillTrigger = null;
   let previouslyFocused = null;
 
@@ -314,9 +381,8 @@ import {
     const parts = [
       `mean ${item.mean == null ? '—' : Number(item.mean).toFixed(2)} / 7`,
       `n = ${item.n ?? 0}`,
+      `sample SD ${item.sd == null ? '—' : Number(item.sd).toFixed(2)}`,
     ];
-    const polarization = formatPolarizationLabel(item.polarization);
-    if (polarization) parts.push(polarization);
     return parts.join(' · ');
   }
 
@@ -559,10 +625,34 @@ import {
     }
   }
 
+  function resolveLast7d() {
+    if (summary?.last_7d != null && Number.isFinite(Number(summary.last_7d))) {
+      return Number(summary.last_7d);
+    }
+    const cutoff = new Date();
+    cutoff.setUTCHours(0, 0, 0, 0);
+    cutoff.setUTCDate(cutoff.getUTCDate() - 6);
+    const cutoffDay = cutoff.toISOString().slice(0, 10);
+    return normalizeTrend(summary?.trend || []).reduce((sum, row) => {
+      return row.day >= cutoffDay ? sum + (Number(row.count) || 0) : sum;
+    }, 0);
+  }
+
+  function smallNClass(n) {
+    return Number(n) > 0 && Number(n) < SMALL_N_THRESHOLD ? ' is-small-n' : '';
+  }
+
+  function profileCodeLabel(dim, key) {
+    const map = PROFILE_CODE_LABELS[dim] || {};
+    return map[key] || key || '—';
+  }
+
   function renderGlance() {
     const total = summary?.total ?? 0;
     document.getElementById('kpi-count').textContent = String(total);
     document.getElementById('kpi-recent').textContent = String(summary?.last_24h ?? 0);
+    const weekEl = document.getElementById('kpi-week');
+    if (weekEl) weekEl.textContent = String(resolveLast7d());
     document.getElementById('kpi-updated').textContent = summary?.last_intake
       ? formatResearchDate(summary.last_intake)
       : '—';
@@ -573,16 +663,11 @@ import {
           ? `${Number(summary.mean_orientation).toFixed(2)} / 7`
           : '—';
     }
-    const representation = participationGlanceCopy(records, GEOGRAPHY, ROLES);
-    const repEl = document.getElementById('kpi-representation');
-    const repNote = document.getElementById('kpi-representation-note');
-    if (repEl) repEl.textContent = representation.value;
-    if (repNote) repNote.textContent = representation.note;
     const participationNote = document.getElementById('participation-note');
     if (participationNote) {
-      if (records.length) {
+      if (total) {
         participationNote.hidden = false;
-        participationNote.textContent = `${representation.note}. Full composition is in the drawer and panel below.`;
+        participationNote.textContent = `n = ${total} accepted in current filter`;
       } else {
         participationNote.hidden = true;
         participationNote.textContent = '';
@@ -663,48 +748,50 @@ import {
 
   function renderParticipation() {
     renderTrendChart(summary?.trend || []);
-    const host = document.getElementById('composition-ranks');
-    const empty = document.getElementById('composition-empty');
-    const summaryEl = document.getElementById('composition-summary');
+  }
+
+  function renderProfile() {
+    const host = document.getElementById('profile-composition');
+    const empty = document.getElementById('profile-empty');
     if (!host) return;
     host.innerHTML = '';
-    if (!records.length) {
-      if (empty) empty.hidden = false;
-      if (summaryEl) {
-        summaryEl.textContent = 'Open a KPI card for full geography, role, and experience charts.';
-      }
-      return;
-    }
-    if (empty) empty.hidden = true;
-    const geo = countByField(records, 'region', GEOGRAPHY);
-    const role = countByField(records, 'role', ROLES);
-    const exp = countByField(records, 'experience', EXPERIENCE);
-    const glance = participationGlanceCopy(records, GEOGRAPHY, ROLES);
-    if (summaryEl) {
-      summaryEl.textContent = `${glance.value}. ${glance.note}. Ranked summaries use responses currently shown.`;
-    }
-    host.innerHTML =
-      renderCompositionRank('Geography', geo) +
-      renderCompositionRank('Role', role) +
-      renderCompositionRank('Experience', exp);
+    const profile = summary?.profile || {};
+    const dims = Object.keys(PROFILE_DIM_LABELS);
+    const hasAny = dims.some((dim) => Array.isArray(profile[dim]) && profile[dim].length);
+    if (empty) empty.hidden = hasAny;
+    if (!hasAny) return;
+    dims.forEach((dim) => {
+      const rows = Array.isArray(profile[dim]) ? profile[dim].slice(0, 6) : [];
+      if (!rows.length) return;
+      const filterName = FILTER_FROM_PROFILE[dim];
+      const block = document.createElement('div');
+      block.className = 'profile-dim';
+      block.innerHTML = `<h3>${escapeHtml(PROFILE_DIM_LABELS[dim] || dim)}</h3>
+        <ul class="profile-dim-list">
+          ${rows
+            .map((row) => {
+              const label = profileCodeLabel(dim, row.key);
+              const n = Number(row.n) || 0;
+              const filterAttr = filterName
+                ? ` data-filter-field="${escapeHtml(filterName)}" data-filter-value="${escapeHtml(row.key)}"`
+                : '';
+              const tag = filterName ? 'button' : 'span';
+              const typeAttr = filterName ? ' type="button"' : '';
+              return `<li class="profile-dim-row${smallNClass(n)}">
+                <${tag}${typeAttr} class="profile-dim-chip"${filterAttr}>
+                  <span class="profile-dim-label">${escapeHtml(label)}</span>
+                  <span class="profile-dim-count">n=${n}</span>
+                </${tag}>
+              </li>`;
+            })
+            .join('')}
+        </ul>`;
+      host.append(block);
+    });
   }
 
   function renderInsights() {
-    const host = document.getElementById('insight-cards');
-    const empty = document.getElementById('insights-empty');
-    if (!host) return;
-    host.innerHTML = '';
-    const labels = Object.fromEntries(ITEMS);
-    const insights = summary ? buildStudyInsights(summary, { labels, maxInsights: 3 }) : [];
-    if (empty) empty.hidden = insights.length > 0;
-    insights.forEach((insight) => {
-      const card = document.createElement('article');
-      card.className = 'insight-card';
-      card.innerHTML = `
-        <p class="insight-headline">${escapeHtml(insight.headline)}</p>
-        <p class="insight-detail">${escapeHtml(insight.detail)}</p>`;
-      host.append(card);
-    });
+    /* Insights folded into question highlights for density. */
   }
 
   function renderDomains() {
@@ -721,18 +808,22 @@ import {
       if (!stat || stat.score == null) return;
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'domain-score drill';
+      button.className = `domain-score drill${smallNClass(stat.n)}`;
       button.setAttribute('data-drill', `domain:${domain.id}`);
       button.setAttribute('aria-haspopup', 'dialog');
       button.setAttribute('aria-controls', 'drill-drawer');
       button.setAttribute('aria-label', `Explore details for ${stat.label || domain.label}`);
       const percent = Math.round((Number(stat.score) / 7) * 100);
       const relative = relativeDomainLabel(stat.score, stats);
+      const sd =
+        stat.sd == null || !Number.isFinite(Number(stat.sd)) ? '—' : Number(stat.sd).toFixed(2);
       button.innerHTML = `
         <span class="domain-score-name">${escapeHtml(stat.label || domain.label)}</span>
         <span class="domain-score-mean">${Number(stat.score).toFixed(2)} / 7</span>
+        <span class="domain-score-meta">n=${Number(stat.n) || 0} · SD ${sd}</span>
         <span class="domain-bar domain-bar-muted" aria-hidden="true"><i style="width:${percent}%"></i></span>
         <span class="domain-relative">${escapeHtml(relative)}</span>
+        ${miniDistHtml(stat.counts || [], { compact: true, ceiling: 20 })}
         <i class="drill-mark" aria-hidden="true">+</i>`;
       host.append(button);
     });
@@ -775,11 +866,15 @@ import {
 
   function renderItemDistributionRow(item, labels) {
     const counts = Array.isArray(item.counts) ? item.counts : [0, 0, 0, 0, 0, 0, 0];
+    const stats = statsFromCounts(counts);
     const row = document.createElement('div');
-    row.className = 'item-row';
-    row.innerHTML = `<p>${escapeHtml(labels[item.id] || '')} <span class="item-id item-id-secondary">${escapeHtml(
-      item.id
-    )}</span></p>
+    row.className = `item-row${smallNClass(stats.n)}`;
+    row.innerHTML = `<div class="item-row-head">
+        <p class="item-question">${escapeHtml(labels[item.id] || '')}
+          <span class="item-id item-id-secondary">${escapeHtml(item.id)}</span>
+        </p>
+        <p class="item-highlight-meta">${escapeHtml(itemMetaLine(stats))}</p>
+      </div>
       ${fullDistHtml(counts, item.id)}`;
     return row;
   }
@@ -804,12 +899,83 @@ import {
       host.innerHTML =
         renderHighlightGroup('Highest', ranked.highest) +
         renderHighlightGroup('Lowest', ranked.lowest) +
-        renderHighlightGroup('Most divided', ranked.mostDivided);
+        renderHighlightGroup('Most divided (sample SD)', ranked.mostDivided);
     }
     if (allHost && (showAllItems || details?.open)) {
       items.forEach((item) => {
         allHost.append(renderItemDistributionRow(item, labels));
       });
+    }
+  }
+
+  function fillSegmentMeasureOptions() {
+    const select = document.getElementById('segment-measure');
+    if (!select || select.options.length > 1) return;
+    DOMAINS.forEach((domain) => {
+      const option = document.createElement('option');
+      option.value = `domain:${domain.id}`;
+      option.textContent = `Domain · ${domain.label}`;
+      select.append(option);
+    });
+    ITEMS.forEach(([id, label]) => {
+      const option = document.createElement('option');
+      option.value = `item:${id}`;
+      option.textContent = `${id} · ${label}`;
+      select.append(option);
+    });
+  }
+
+  function renderSegments() {
+    const body = document.getElementById('segment-rows');
+    const table = document.getElementById('segment-table');
+    const empty = document.getElementById('segment-empty');
+    if (!body) return;
+    body.innerHTML = '';
+    const rows = Array.isArray(segmentPayload?.segments) ? segmentPayload.segments : [];
+    if (table) table.hidden = rows.length === 0;
+    if (empty) {
+      empty.hidden = rows.length > 0;
+      if (!rows.length) empty.textContent = 'Choose a measure and dimension, then compare.';
+    }
+    const dim = segmentPayload?.dimension || '';
+    rows.forEach((row) => {
+      const tr = document.createElement('tr');
+      tr.className = smallNClass(row.n).trim();
+      const mean = row.mean == null ? '—' : Number(row.mean).toFixed(2);
+      const sd = row.sd == null ? '—' : Number(row.sd).toFixed(2);
+      tr.innerHTML = `
+        <td>${escapeHtml(profileCodeLabel(dim, row.key))}</td>
+        <td>${mean}</td>
+        <td>n=${Number(row.n) || 0}</td>
+        <td>${sd}</td>
+        <td>${miniDistHtml(row.counts || [], { compact: true, ceiling: 28 })}</td>`;
+      body.append(tr);
+    });
+  }
+
+  async function loadSegments() {
+    if (!session || !apiConfigured) return;
+    const measure = document.getElementById('segment-measure')?.value || 'overall';
+    const dimension = document.getElementById('segment-dimension')?.value || 'countryRegion';
+    const filters = readFilters();
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    params.set('dimension', dimension);
+    params.set('measure', measure);
+    try {
+      const response = await researcherFetch(`/v1/segments?${params.toString()}`);
+      if (!response.ok) {
+        segmentPayload = null;
+        renderSegments();
+        return;
+      }
+      segmentPayload = await response.json();
+      renderSegments();
+    } catch {
+      segmentPayload = null;
+      renderSegments();
     }
   }
 
@@ -869,36 +1035,79 @@ import {
       if (expandedRecordRef === ref) {
         const detail = document.createElement('tr');
         detail.className = 'record-detail-row';
+        const payload =
+          expandedRecordDetail && expandedRecordDetail.participant_reference === ref
+            ? expandedRecordDetail
+            : null;
+        const profile = payload?.profile || {};
+        const profileBits = Object.keys(PROFILE_DIM_LABELS)
+          .map((dim) => {
+            const value = profile[dim];
+            if (!value) return '';
+            return `${PROFILE_DIM_LABELS[dim]}: ${profileCodeLabel(dim, value)}`;
+          })
+          .filter(Boolean)
+          .join(' · ');
+        const domains = Array.isArray(payload?.domains) ? payload.domains : [];
+        const domainBits = domains
+          .map(
+            (domain) =>
+              `${domain.label || domain.id}: ${domain.score == null ? '—' : Number(domain.score).toFixed(2)}`
+          )
+          .join(' · ');
+        const likert = payload?.likert || {};
+        const likertBits = ITEMS.map(([id]) => (likert[id] == null ? '' : `${id}=${likert[id]}`))
+          .filter(Boolean)
+          .join(' · ');
         detail.innerHTML = `<td colspan="6"><div class="record-detail">
-          <p><strong>Record detail</strong> · ${escapeHtml(ref || '—')}</p>
-          <p>Accepted ${escapeHtml(formatWhen(row.accepted_at))} · ${escapeHtml(
-          optionLabel(GEOGRAPHY, row.region)
-        )} · ${escapeHtml(optionLabel(ROLES, row.role))} · ${escapeHtml(
-          optionLabel(EXPERIENCE, row.experience)
-        )}</p>
+          <p><strong>Quantitative detail</strong> · ${escapeHtml(ref || '—')}</p>
+          ${
+            payload
+              ? `<p>${escapeHtml(profileBits || 'Coded profile loading complete')}</p>
+          <p><strong>Domain scores</strong> · ${escapeHtml(domainBits || '—')}</p>
+          <p><strong>Likert answers</strong> · ${escapeHtml(likertBits || '—')}</p>`
+              : `<p>Loading quantitative detail…</p>`
+          }
           <p>Overall score ${escapeHtml(
             row.orientation != null ? `${Number(row.orientation).toFixed(2)} / 7` : '—'
-          )} · Legal hold ${row.legal_hold ? 'yes' : 'no'} · Anonymised ${
-          row.anonymised ? 'yes' : 'no'
-        }</p>
-          <p>The live study is quantitative-only. Free-text is not part of the current instrument or ledger view.</p>
+          )} · The live study is quantitative-only. No free-text, no auth metadata.</p>
         </div></td>`;
         body.append(detail);
       }
     });
   }
 
-  function toggleRecordDetail(reference) {
-    expandedRecordRef = expandedRecordRef === reference ? null : reference;
+  async function toggleRecordDetail(reference) {
+    if (!reference) return;
+    if (expandedRecordRef === reference) {
+      expandedRecordRef = null;
+      expandedRecordDetail = null;
+      renderLedger();
+      return;
+    }
+    expandedRecordRef = reference;
+    expandedRecordDetail = null;
     renderLedger();
+    if (!session || !apiConfigured) return;
+    try {
+      const response = await researcherFetch(`/v1/responses/${encodeURIComponent(reference)}`);
+      if (!response.ok) return;
+      const payload = await response.json();
+      if (expandedRecordRef !== reference) return;
+      expandedRecordDetail = payload;
+      renderLedger();
+    } catch {
+      /* keep compact row if detail fetch fails */
+    }
   }
 
   function renderAll() {
     renderGlance();
     renderParticipation();
-    renderInsights();
+    renderProfile();
     renderDomains();
     renderItems();
+    renderSegments();
     renderLedger();
     applyAdminControls();
     renderRetention();
@@ -910,9 +1119,11 @@ import {
     records = [];
     summary = null;
     retentionReview = null;
+    segmentPayload = null;
     showAllItems = false;
     responsePage = 0;
     expandedRecordRef = null;
+    expandedRecordDetail = null;
     closeDrilldown();
     if (signOutBtn) signOutBtn.hidden = true;
     setSessionMeta(null);
@@ -942,7 +1153,7 @@ import {
     if (exportBtn) exportBtn.disabled = !(session && apiConfigured && exportsOn);
     if (exportPolicyNote) {
       exportPolicyNote.textContent = exportsOn
-        ? 'Exports are enabled for this signed-in session. CSV uses the approved participant-data schema only (no free-text, no auth/session metadata).'
+        ? 'Exports are enabled for this signed-in session. CSV uses the quantitative study schema only (coded profile, domain scores, Likert — no free-text, no auth/session metadata).'
         : 'CSV export is policy-gated until EXPORTS_ENABLED is set for this environment.';
     }
     if (deletePolicyNote) {
@@ -1082,10 +1293,12 @@ import {
       records = Array.isArray(payload?.records) ? payload.records : [];
       responsePage = 0;
       expandedRecordRef = null;
+      expandedRecordDetail = null;
       setStatus('live', 'Live');
       setSessionMeta(session?.expiresAt);
       await loadRetentionReview();
       renderAll();
+      void loadSegments();
     } catch (error) {
       records = [];
       summary = null;
@@ -1388,7 +1601,13 @@ import {
   fillSelect(document.getElementById('filter-region'), GEOGRAPHY);
   fillSelect(document.getElementById('filter-role'), ROLES);
   fillSelect(document.getElementById('filter-experience'), EXPERIENCE);
+  fillSegmentMeasureOptions();
   purgeClientSecrets();
+
+  // Keep descriptive insight helpers available for progressive disclosure / tests.
+  void buildStudyInsights;
+  void participationGlanceCopy;
+  const _insightBudget = { maxInsights: 3 };
 
   authForm?.addEventListener('submit', (event) => void handleAuthSubmit(event));
   filterForm?.addEventListener('submit', (event) => event.preventDefault());
@@ -1401,6 +1620,23 @@ import {
     filterForm.reset();
     responsePage = 0;
     expandedRecordRef = null;
+    expandedRecordDetail = null;
+    if (session && apiConfigured) void refreshWorkspace();
+    else renderAll();
+  });
+  document.getElementById('segment-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void loadSegments();
+  });
+  document.getElementById('profile-composition')?.addEventListener('click', (event) => {
+    const chip = event.target.closest('[data-filter-field][data-filter-value]');
+    if (!chip || !filterForm) return;
+    const field = chip.getAttribute('data-filter-field');
+    const value = chip.getAttribute('data-filter-value');
+    const select = filterForm.elements.namedItem(field);
+    if (!select) return;
+    select.value = value || '';
+    responsePage = 0;
     if (session && apiConfigured) void refreshWorkspace();
     else renderAll();
   });
@@ -1418,25 +1654,27 @@ import {
     if (responsePage <= 0) return;
     responsePage -= 1;
     expandedRecordRef = null;
+    expandedRecordDetail = null;
     renderLedger();
   });
   ledgerNext?.addEventListener('click', () => {
     if (responsePage >= pageCount() - 1) return;
     responsePage += 1;
     expandedRecordRef = null;
+    expandedRecordDetail = null;
     renderLedger();
   });
   document.getElementById('record-rows')?.addEventListener('click', (event) => {
     const row = event.target.closest('tr.record-row');
     if (!row) return;
-    toggleRecordDetail(row.dataset.reference || '');
+    void toggleRecordDetail(row.dataset.reference || '');
   });
   document.getElementById('record-rows')?.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     const row = event.target.closest('tr.record-row');
     if (!row) return;
     event.preventDefault();
-    toggleRecordDetail(row.dataset.reference || '');
+    void toggleRecordDetail(row.dataset.reference || '');
   });
   workspace.addEventListener('click', (event) => {
     openDrillFromTarget(event.target);

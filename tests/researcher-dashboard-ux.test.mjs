@@ -90,7 +90,7 @@ test('rankItemHighlights selects highest, lowest, and most divided items', () =>
   );
   assert.deepEqual(
     ranked.mostDivided.map((row) => row.id),
-    ['D', 'A', 'B']
+    ['D', 'E', 'F']
   );
   assert.equal(ranked.highest[0].label, 'High');
   assert.equal(ranked.lowest[0].label, 'Low');
@@ -210,35 +210,34 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
 
   const overview = html.indexOf('id="overview-title"');
   const refine = html.indexOf('id="refine-title"');
-  const participation = html.indexOf('id="participation-title"');
   const domains = html.indexOf('id="compass-title"');
-  const insights = html.indexOf('id="insights-title"');
-  const explore = html.indexOf('id="explore-title"');
+  const profile = html.indexOf('id="profile-title"');
   const items = html.indexOf('id="items-title"');
+  const segments = html.indexOf('id="segment-title"');
+  const participation = html.indexOf('id="participation-title"');
   const ledger = html.indexOf('id="ledger-title"');
   const admin = html.indexOf('id="admin-title"');
   assert.ok(overview > 0 && refine > overview);
-  assert.ok(participation > refine && domains > participation);
-  assert.ok(insights > domains && explore > insights);
-  assert.ok(items > explore && ledger > items);
+  assert.ok(domains > refine && profile > domains);
+  assert.ok(items > profile && segments > items);
+  assert.ok(participation > segments && ledger > participation);
   assert.ok(admin > ledger);
   assert.equal(html.indexOf('id="reflections-title"'), -1);
+  assert.equal(html.indexOf('id="insights-title"'), -1);
 
   assert.match(html, /DBA Research Dashboard/);
   assert.match(html, /Inclusive Lending Study/);
-  assert.match(html, /Study at a glance/);
-  assert.match(html, /What we’re learning|What we're learning/);
-  assert.match(html, /How the five research themes compare/);
-  assert.match(html, /Total responses/);
-  assert.match(html, /Last 24 hours/);
-  assert.match(html, /Latest response/);
-  assert.match(html, /Participant composition/);
-  assert.match(html, /Overall orientation/);
+  assert.match(html, /Quantitative study dashboard/);
+  assert.match(html, /Last 7 days/);
+  assert.match(html, /Overall mean/);
+  assert.match(html, /Participant profile/);
+  assert.match(html, /Segment comparison/);
   assert.match(html, /data-drill="kpi:accepted"/);
   assert.match(html, /data-drill="kpi:recent"/);
+  assert.match(html, /data-drill="kpi:week"/);
   assert.match(html, /data-drill="kpi:last-intake"/);
-  assert.match(html, /data-drill="kpi:representation"/);
   assert.match(html, /data-drill="kpi:mean"/);
+  assert.doesNotMatch(html, /data-drill="kpi:representation"/);
   assert.match(html, /kpi-strip/);
   assert.match(html, /id="drill-drawer"/);
   assert.match(html, /role="dialog"/);
@@ -256,20 +255,19 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
   assert.match(html, /id="filter-experience"/);
   assert.match(html, /id="filter-search"/);
   assert.match(html, /participation-analytics/);
-  assert.match(html, /learning-grid/);
+  assert.match(html, /learning-grid|analysis-grid/);
   assert.match(html, /item-highlight-columns/);
   assert.match(html, /ledger-meta/);
   assert.match(html, /ledger-pager/);
   assert.match(html, /Overall score/);
   assert.match(html, /Calculation and methodology notes/);
-  assert.match(html, /explore-nav/);
+  assert.match(html, /sample SD/);
   assert.doesNotMatch(html, /desk assessment/i);
   assert.doesNotMatch(html, /significant differences/i);
   assert.doesNotMatch(html, /\bAI\b|theme extraction|auto-generated themes/i);
   assert.doesNotMatch(html, /Board implication|synergy register|EBITDA/i);
   assert.doesNotMatch(html, /dedicated qualitative endpoint/i);
   assert.doesNotMatch(html, /\/v1\/summary/);
-  assert.doesNotMatch(html, /Overall mean score/);
   assert.doesNotMatch(html, /admin-panel"[^>]*\sopen/);
 
   assert.match(js, /from '\.\/item-analysis\.mjs'/);
@@ -282,6 +280,8 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
   assert.match(js, /formatResearchDateTime/);
   assert.match(js, /renderParticipation/);
   assert.match(js, /renderTrendChart/);
+  assert.match(js, /renderProfile/);
+  assert.match(js, /loadSegments/);
   assert.match(js, /maxInsights: 3/);
   assert.match(js, /In plain English/);
   assert.match(js, /Key evidence/);
@@ -293,12 +293,14 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
   assert.match(js, /closeDrilldown/);
   assert.match(js, /exportsEnabled/);
   assert.match(js, /deletionsEnabled/);
+  assert.match(js, /last_7d|resolveLast7d/);
+  assert.match(js, /SMALL_N_THRESHOLD/);
   assert.doesNotMatch(js, /LIVE_EXPORTS_ENABLED\s*=\s*true/);
   assert.doesNotMatch(js, /LIVE_DELETIONS_ENABLED\s*=\s*true/);
   assert.doesNotMatch(js, /\/v1\/responses\/\$\{encodeURIComponent\(ref\)\}\/qualitative/);
   assert.doesNotMatch(js, /revealBox|loadQualitative|renderReflections/);
-  assert.match(js, /quantitative-only/);
-  assert.match(js, /polarization/);
+  assert.match(js, /quantitative-only|Quantitative-only/);
+  assert.match(js, /sample SD/);
   assert.match(js, /item-question/);
   assert.match(js, /item-id-secondary/);
   assert.match(js, /filter-clear/);
@@ -310,7 +312,6 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
   assert.doesNotMatch(js, /desk assessment/i);
 
   assert.match(css, /item-highlight/);
-  assert.match(css, /insight-card/);
   assert.match(css, /admin-panel/);
   assert.match(css, /filter-toolbar/);
   assert.match(css, /drawer-layer/);
@@ -323,8 +324,8 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
   assert.match(css, /\.dist-col\.is-empty/);
   assert.match(css, /domain-bar-muted/);
   assert.match(css, /item-highlight-columns/);
-  assert.match(css, /learning-grid/);
-  assert.match(css, /participation-grid/);
+  assert.match(css, /learning-grid|analysis-grid/);
+  assert.match(css, /is-small-n/);
   assert.match(css, /@media \(max-width: 1199px\)/);
 });
 
@@ -515,12 +516,12 @@ test('item progressive disclosure stays collapsed by default and shows question 
   assert.match(js, /fullDistHtml/);
   assert.match(js, /renderHighlightGroup\('Highest'/);
   assert.match(js, /renderHighlightGroup\('Lowest'/);
-  assert.match(js, /renderHighlightGroup\('Most divided'/);
+  assert.match(js, /renderHighlightGroup\('Most divided/);
   assert.match(js, /item-question/);
   assert.match(js, /item-id-secondary/);
   assert.match(
     js,
-    /item-question[\s\S]{0,180}?item-id item-id-secondary/
+    /item-question[\s\S]{0,220}?item-id item-id-secondary/
   );
 
   const items = [
@@ -619,24 +620,25 @@ test('drawer hierarchy puts methodology behind deliberate disclosure', () => {
   assert.ok(plain > 0 && evidence > plain && detailed > evidence && methodology > detailed);
 });
 
-test('dense KPI strip stays clickable and includes orientation + composition count', () => {
+test('dense KPI strip stays clickable and includes mean + last 7 days', () => {
   const html = read('researcher/index.html');
   const js = read('researcher/dashboard.js');
   const css = read('researcher/dashboard.css');
   assert.match(html, /class="glance-band kpi-strip"/);
   assert.match(html, /id="kpi-orientation"/);
-  assert.match(html, /id="kpi-representation"/);
+  assert.match(html, /id="kpi-week"/);
+  assert.doesNotMatch(html, /id="kpi-representation"/);
   assert.match(css, /\.glance-band\.kpi-strip[\s\S]*grid-template-columns:\s*repeat\(5/);
   assert.match(js, /kpi-orientation/);
   assert.match(js, /mean_orientation/);
-  assert.match(js, /participationGlanceCopy/);
+  assert.match(js, /resolveLast7d|last_7d/);
 });
 
 test('five research themes remain one compact panel with drawers', () => {
   const html = read('researcher/index.html');
   const js = read('researcher/dashboard.js');
   assert.match(html, /id="domain-scores"/);
-  assert.match(html, /How the five research themes compare/);
+  assert.match(html, /Research themes|Domain analysis/);
   assert.match(js, /DOMAINS = \[/);
   assert.match(js, /psychometric/);
   assert.match(js, /social/);
@@ -648,18 +650,20 @@ test('five research themes remain one compact panel with drawers', () => {
   assert.match(js, /domain-score-name/);
   assert.match(js, /domain-score-mean/);
   assert.match(js, /relativeDomainLabel/);
+  assert.match(js, /domain-score-meta/);
 });
 
-test('descriptive signals sit beside themes with three compact insight rows', () => {
+test('participant profile and segment comparison are first-class quantitative panels', () => {
   const html = read('researcher/index.html');
   const js = read('researcher/dashboard.js');
-  const css = read('researcher/dashboard.css');
-  assert.match(html, /learning-grid/);
-  assert.match(html, /themes-panel/);
-  assert.match(html, /insights-panel/);
-  assert.match(js, /maxInsights: 3/);
-  assert.match(css, /\.learning-grid[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.35fr\)/);
-  assert.match(css, /\.insight-grid[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(html, /id="profile-title"/);
+  assert.match(html, /id="segment-title"/);
+  assert.match(html, /id="segment-form"/);
+  assert.match(html, /Descriptive only — no p-values/);
+  assert.match(js, /renderProfile/);
+  assert.match(js, /loadSegments/);
+  assert.match(js, /\/v1\/segments/);
+  assert.match(js, /data-filter-field/);
 });
 
 test('question highlights render as three desktop columns', () => {
@@ -669,7 +673,7 @@ test('question highlights render as three desktop columns', () => {
   assert.match(html, /item-highlight-columns/);
   assert.match(js, /renderHighlightGroup\('Highest'/);
   assert.match(js, /renderHighlightGroup\('Lowest'/);
-  assert.match(js, /renderHighlightGroup\('Most divided'/);
+  assert.match(js, /renderHighlightGroup\('Most divided/);
   assert.match(js, /highlightCount: 3/);
   assert.match(css, /\.item-highlight-columns[\s\S]*grid-template-columns:\s*repeat\(3/);
 });

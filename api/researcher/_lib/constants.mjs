@@ -34,6 +34,43 @@ export const EXPERIENCE_CODES = Object.freeze(['lt2', '2-5', '6-10', '11-15', 'g
 
 export const SORT_FIELDS = Object.freeze(['created_at']);
 
+export const DOMAIN_ORDER = Object.freeze([
+  'psychometric',
+  'social',
+  'behavioral',
+  'readiness',
+  'inclusiveDecision',
+]);
+
+export const ITEM_ORDER = Object.freeze([
+  'B1',
+  'B2',
+  'B3',
+  'B4',
+  'B5',
+  'C6',
+  'C7',
+  'C8',
+  'C9',
+  'C10',
+  'D11',
+  'D12',
+  'D13',
+  'D14',
+  'D15',
+  'E16',
+  'E17',
+  'E18',
+  'E19',
+  'E20',
+  'F21',
+  'F22',
+  'F23',
+  'F24',
+  'F25',
+]);
+
+/** Legacy short export schema — prefer QUANTITATIVE_EXPORT_COLUMNS for study exports. */
 export const EXPORT_COLUMNS = Object.freeze([
   'participant_reference',
   'accepted_at',
@@ -41,6 +78,30 @@ export const EXPORT_COLUMNS = Object.freeze([
   'role',
   'experience',
   'orientation',
+]);
+
+export const DOMAIN_EXPORT_KEYS = Object.freeze(
+  DOMAIN_ORDER.map((id) => `domain_${id}`)
+);
+
+/** Quantitative study CSV columns (coded profile + domain scores + Likert). No free-text. */
+export const QUANTITATIVE_EXPORT_COLUMNS = Object.freeze([
+  'participant_reference',
+  'accepted_at',
+  'region',
+  'role',
+  'experience',
+  'gender',
+  'age',
+  'education',
+  'institutionType',
+  'yearsFinancialServices',
+  'areaOperation',
+  'involvement',
+  'usesAltIndicators',
+  'orientation',
+  ...DOMAIN_EXPORT_KEYS,
+  ...ITEM_ORDER,
 ]);
 
 export const LEDGER_FIELDS = Object.freeze([

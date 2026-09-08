@@ -20,6 +20,7 @@ export const DOMAIN_ITEM_IDS = Object.freeze({
 export const KPI_IDS = Object.freeze([
   'accepted',
   'recent',
+  'week',
   'mean',
   'last-intake',
   'representation',
@@ -429,6 +430,48 @@ export function buildKpiDrilldown(kpiId, context = {}) {
     };
   }
 
+  if (kpiId === 'week') {
+    const week =
+      summary.last_7d != null && Number.isFinite(Number(summary.last_7d))
+        ? Number(summary.last_7d)
+        : normalizeTrend(summary.trend).reduce((sum, row) => {
+            const day = String(row.day || '');
+            if (!day) return sum;
+            const cutoff = new Date();
+            cutoff.setUTCHours(0, 0, 0, 0);
+            cutoff.setUTCDate(cutoff.getUTCDate() - 6);
+            return day >= cutoff.toISOString().slice(0, 10) ? sum + (Number(row.count) || 0) : sum;
+          }, 0);
+    return {
+      kind: 'kpi',
+      eyebrow: 'Study at a glance',
+      title: 'Last 7 days',
+      value: String(week),
+      summary:
+        week === 0
+          ? 'No responses were accepted in the last 7 days within the current filter.'
+          : `${week} response${week === 1 ? '' : 's'} accepted in the last 7 days within the current filter.`,
+      observations: [
+        ['Last 7 days', String(week)],
+        ['Last 24 hours', String(recent)],
+        ['Accepted in filter', String(total)],
+      ],
+      sections: [
+        {
+          title: 'Daily arrivals (recent)',
+          kind: 'bars',
+          bars: barRows(
+            trend.slice(-14).map((row) => ({
+              label: formatResearchDate(row.day),
+              count: row.count,
+            }))
+          ),
+        },
+      ],
+      note: 'The 7-day count is an archive total for the current filter. Figures are descriptive only.',
+    };
+  }
+
   if (kpiId === 'mean') {
     const scored = records
       .map((row) => Number(row.orientation))
@@ -595,6 +638,7 @@ export function buildDomainDrilldown(domainId, context = {}) {
       ['Average score', formatScore(mean)],
       ['Relative standing', relative || '—'],
       ['Accepted rating sets (n)', String(n)],
+      ['Sample SD', domain?.sd == null ? '—' : Number(domain.sd).toFixed(2)],
       ['Questions in theme', String(domainItemIds.length)],
     ],
     sections: [

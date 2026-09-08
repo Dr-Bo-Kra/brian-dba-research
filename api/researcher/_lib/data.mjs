@@ -3,9 +3,18 @@
  * parameterised SQL through a server-side query adapter — never the service role
  * unless a later review proves there is no safer option.
  */
-import { LEDGER_FIELDS } from './constants.mjs';
+import { DOMAIN_ORDER, ITEM_ORDER, LEDGER_FIELDS } from './constants.mjs';
 import { pickLedger } from './authorize.mjs';
 import { SQL } from './db.mjs';
+import {
+  aggregateProfileComposition,
+  aggregateSegments,
+  binScoresToCounts,
+  pickCodedProfile,
+  sampleSd,
+} from './profile.mjs';
+
+export { DOMAIN_ORDER, ITEM_ORDER };
 
 export const DOMAIN_LABELS = Object.freeze({
   psychometric: 'Psychometric indicators',
@@ -14,42 +23,6 @@ export const DOMAIN_LABELS = Object.freeze({
   readiness: 'Organizational readiness',
   inclusiveDecision: 'Inclusive decision-making',
 });
-
-export const DOMAIN_ORDER = [
-  'psychometric',
-  'social',
-  'behavioral',
-  'readiness',
-  'inclusiveDecision',
-];
-
-export const ITEM_ORDER = [
-  'B1',
-  'B2',
-  'B3',
-  'B4',
-  'B5',
-  'C6',
-  'C7',
-  'C8',
-  'C9',
-  'C10',
-  'D11',
-  'D12',
-  'D13',
-  'D14',
-  'D15',
-  'E16',
-  'E17',
-  'E18',
-  'E19',
-  'E20',
-  'F21',
-  'F22',
-  'F23',
-  'F24',
-  'F25',
-];
 
 function slimLedger(record) {
   const dto = pickLedger(record);
@@ -136,7 +109,7 @@ function aggregateDomains(rows) {
       if (!DOMAIN_ORDER.includes(domain.id)) continue;
       const current = byId.get(domain.id) || {
         id: domain.id,
-        label: domain.label || domain.id,
+        label: domain.label || DOMAIN_LABELS[domain.id] || domain.id,
         scores: [],
       };
       const score = Number(domain.score);
@@ -146,15 +119,71 @@ function aggregateDomains(rows) {
   }
   return DOMAIN_ORDER.map((id) => {
     const current = byId.get(id);
-    if (!current) return { id, label: id, score: null, n: 0 };
+    if (!current) return { id, label: DOMAIN_LABELS[id] || id, score: null, n: 0, sd: null, counts: [0, 0, 0, 0, 0, 0, 0] };
     const n = current.scores.length;
     return {
       id,
-      label: current.label,
+      label: current.label || DOMAIN_LABELS[id] || id,
       score: n ? current.scores.reduce((a, b) => a + b, 0) / n : null,
       n,
+      sd: sampleSd(current.scores),
+      counts: binScoresToCounts(current.scores),
     };
   }).filter((row) => row.n > 0);
+}
+
+function quantitativeDetailDto(record) {
+  const ledger = slimLedger(record);
+  if (!ledger) return null;
+  const profile = pickCodedProfile(record.profile || record.responses?.quantitative?.demographics);
+  const domains = (Array.isArray(record.assessment?.domains) ? record.assessment.domains : [])
+    .filter((domain) => DOMAIN_ORDER.includes(domain.id))
+    .map((domain) => ({
+      id: domain.id,
+      label: DOMAIN_LABELS[domain.id] || domain.label || domain.id,
+      score: Number.isFinite(Number(domain.score)) ? Number(domain.score) : null,
+    }));
+  const rawLikert = record.responses?.quantitative?.likert || {};
+  const likert = {};
+  for (const id of ITEM_ORDER) {
+    const value = Number(rawLikert[id]);
+    if (Number.isInteger(value) && value >= 1 && value <= 7) likert[id] = value;
+  }
+  return {
+    ...ledger,
+    profile,
+    domains,
+    likert,
+  };
+}
+
+function quantitativeExportDto(record) {
+  const detail = quantitativeDetailDto(record);
+  if (!detail) return null;
+  const row = {
+    participant_reference: detail.participant_reference,
+    accepted_at: detail.accepted_at,
+    region: detail.region,
+    role: detail.role,
+    experience: detail.experience,
+    gender: detail.profile?.gender || null,
+    age: detail.profile?.age || null,
+    education: detail.profile?.education || null,
+    institutionType: detail.profile?.institutionType || null,
+    yearsFinancialServices: detail.profile?.yearsFinancialServices || null,
+    areaOperation: detail.profile?.areaOperation || null,
+    involvement: detail.profile?.involvement || null,
+    usesAltIndicators: detail.profile?.usesAltIndicators || null,
+    orientation: detail.orientation,
+  };
+  for (const id of DOMAIN_ORDER) {
+    const domain = detail.domains.find((entry) => entry.id === id);
+    row[`domain_${id}`] = domain?.score ?? null;
+  }
+  for (const id of ITEM_ORDER) {
+    row[id] = detail.likert[id] ?? null;
+  }
+  return row;
 }
 
 function aggregateItems(rows) {
@@ -178,11 +207,25 @@ export function mapDomainAggregates(rows = []) {
   const byId = new Map(rows.map((row) => [row.id, row]));
   return DOMAIN_ORDER.filter((id) => byId.has(id)).map((id) => {
     const row = byId.get(id);
+    const n = Number(row.n) || 0;
+    const counts = Array.isArray(row.counts)
+      ? row.counts.map((value) => Number(value) || 0)
+      : [
+          Number(row.c1) || 0,
+          Number(row.c2) || 0,
+          Number(row.c3) || 0,
+          Number(row.c4) || 0,
+          Number(row.c5) || 0,
+          Number(row.c6) || 0,
+          Number(row.c7) || 0,
+        ];
     return {
       id,
       label: DOMAIN_LABELS[id],
-      score: Number(row.score),
-      n: Number(row.n) || 0,
+      score: row.score == null ? null : Number(row.score),
+      n,
+      sd: row.sd == null || !Number.isFinite(Number(row.sd)) ? null : Number(row.sd),
+      counts: counts.length === 7 ? counts : [0, 0, 0, 0, 0, 0, 0],
     };
   });
 }
@@ -201,12 +244,41 @@ export function mapItemAggregates(rows = []) {
   });
 }
 
+export function mapProfileComposition(rows = []) {
+  const tallies = Object.fromEntries(
+    [
+      'countryRegion',
+      'position',
+      'yearsLending',
+      'gender',
+      'age',
+      'education',
+      'institutionType',
+      'yearsFinancialServices',
+      'areaOperation',
+      'involvement',
+      'usesAltIndicators',
+    ].map((dim) => [dim, []])
+  );
+  for (const row of rows) {
+    const dim = String(row.dim || row.dimension || '');
+    if (!tallies[dim]) continue;
+    const key = String(row.key || '').trim() || 'unknown';
+    tallies[dim].push({ key, n: Number(row.n) || 0 });
+  }
+  for (const dim of Object.keys(tallies)) {
+    tallies[dim].sort((a, b) => b.n - a.n || a.key.localeCompare(b.key));
+  }
+  return tallies;
+}
+
 function summarize(rows) {
   const ledgers = rows.map(pickLedger).filter(Boolean);
   const orientations = ledgers
     .map((row) => Number(row.orientation))
     .filter((value) => Number.isFinite(value));
   const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const trendMap = new Map();
   ledgers.forEach((row) => {
     const day = String(row.accepted_at || '').slice(0, 10);
@@ -216,6 +288,7 @@ function summarize(rows) {
   return {
     total: ledgers.length,
     last_24h: ledgers.filter((row) => Date.parse(row.accepted_at) >= dayAgo).length,
+    last_7d: ledgers.filter((row) => Date.parse(row.accepted_at) >= weekAgo).length,
     mean_orientation: orientations.length
       ? orientations.reduce((a, b) => a + b, 0) / orientations.length
       : null,
@@ -223,6 +296,7 @@ function summarize(rows) {
     trend: [...trendMap.entries()].sort().map(([day, count]) => ({ day, count })),
     domains: aggregateDomains(rows),
     items: aggregateItems(rows),
+    profile: aggregateProfileComposition(rows),
     retention: {
       legal_hold: ledgers.filter((row) => row.legal_hold).length,
       anonymised: 0,
@@ -244,16 +318,20 @@ export function createFixtureResearchStore(records) {
     },
     async getByReference(reference) {
       const row = records.find((item) => item.client_record_id === reference && !item.anonymised_at);
-      return row ? slimLedger(row) : null;
+      return row ? quantitativeDetailDto(row) : null;
     },
     async getQualitative(reference) {
       const row = records.find((item) => item.client_record_id === reference && !item.anonymised_at);
       return row ? qualitativeDto(row) : null;
     },
+    async segments(filters, dimension, measure) {
+      const rows = records.filter((row) => matchesFilters(row, filters));
+      return aggregateSegments(rows, dimension, measure);
+    },
     async exportRows(filters, maxRows) {
       const rows = records.filter((row) => matchesFilters(row, filters));
       if (rows.length > maxRows) return { ok: false, error: 'invalid_request' };
-      return { ok: true, rows: rows.map((row) => slimLedger(row)) };
+      return { ok: true, rows: rows.map((row) => quantitativeExportDto(row)).filter(Boolean) };
     },
     async deleteByReference(reference) {
       const idx = records.findIndex((row) => row.client_record_id === reference);
@@ -303,14 +381,17 @@ export function createDatabaseResearchStore(query) {
       const trend = await query(SQL.trend, params);
       const domains = await query(SQL.domainAggregates, params);
       const items = await query(SQL.itemAggregates, params);
+      const profile = await query(SQL.profileComposition, params);
       return {
         total: Number(row.total) || 0,
         last_24h: Number(row.last_24h) || 0,
+        last_7d: Number(row.last_7d) || 0,
         mean_orientation: row.mean_orientation == null ? null : Number(row.mean_orientation),
         last_intake: row.last_intake || null,
         trend: (trend?.rows || []).map((item) => ({ day: item.day, count: Number(item.count) || 0 })),
         domains: mapDomainAggregates(domains?.rows || []),
         items: mapItemAggregates(items?.rows || []),
+        profile: mapProfileComposition(profile?.rows || []),
         retention: {
           legal_hold: Number(row.legal_hold) || 0,
           anonymised: Number(row.anonymised) || 0,
@@ -338,20 +419,29 @@ export function createDatabaseResearchStore(query) {
       };
     },
     async getByReference(reference) {
-      const result = await query(SQL.getByReference, [reference]);
+      const result = await query(SQL.getQuantitativeByReference, [reference]);
       const row = result?.rows?.[0];
-      return row
-        ? slimLedger({
-            client_record_id: row.client_record_id,
-            created_at: row.created_at,
-            region: row.region,
-            role: row.role,
-            experience: row.experience,
-            orientation: row.orientation,
-            legal_hold: row.legal_hold,
-            anonymised_at: row.anonymised_at,
-          })
-        : null;
+      if (!row) return null;
+      return quantitativeDetailDto({
+        client_record_id: row.client_record_id,
+        created_at: row.created_at,
+        region: row.region,
+        role: row.role,
+        experience: row.experience,
+        orientation: row.orientation,
+        legal_hold: row.legal_hold,
+        anonymised_at: row.anonymised_at,
+        profile: row.profile || {},
+        assessment: {
+          domains: Array.isArray(row.domains) ? row.domains : [],
+          overall: { score: row.orientation },
+        },
+        responses: {
+          quantitative: {
+            likert: row.likert && typeof row.likert === 'object' ? row.likert : {},
+          },
+        },
+      });
     },
     async getQualitative(reference) {
       const result = await query(SQL.getQualitativeByReference, [reference]);
@@ -362,8 +452,42 @@ export function createDatabaseResearchStore(query) {
         qualitative: row.qualitative || {},
       });
     },
+    async segments(filters, dimension, measure) {
+      const params = [...filterParams(filters).slice(0, 5), dimension];
+      let result;
+      if (measure.type === 'overall') {
+        result = await query(SQL.segmentOverall, params);
+      } else if (measure.type === 'domain') {
+        result = await query(SQL.segmentDomain, [...params, measure.id]);
+      } else {
+        result = await query(SQL.segmentItem, [...params, measure.id]);
+      }
+      const segments = (result?.rows || []).map((row) => ({
+        key: String(row.key || 'unknown'),
+        n: Number(row.n) || 0,
+        mean: row.mean == null ? null : Number(row.mean),
+        sd: row.sd == null || !Number.isFinite(Number(row.sd)) ? null : Number(row.sd),
+        sdKind: Number(row.n) > 1 ? 'sample' : Number(row.n) === 1 ? 'population' : null,
+        counts: [
+          Number(row.c1) || 0,
+          Number(row.c2) || 0,
+          Number(row.c3) || 0,
+          Number(row.c4) || 0,
+          Number(row.c5) || 0,
+          Number(row.c6) || 0,
+          Number(row.c7) || 0,
+        ],
+      }));
+      return {
+        ok: true,
+        dimension,
+        measure,
+        segments,
+        descriptive_only: true,
+      };
+    },
     async exportRows(filters, maxRows) {
-      const result = await query(SQL.exportRows, [
+      const result = await query(SQL.exportQuantitativeRows, [
         ...filterParams(filters),
         filters.reference || null,
         maxRows + 1,
@@ -373,13 +497,23 @@ export function createDatabaseResearchStore(query) {
       return {
         ok: true,
         rows: rows.map((row) =>
-          slimLedger({
+          quantitativeExportDto({
             client_record_id: row.participant_reference,
             created_at: row.accepted_at,
             region: row.region,
             role: row.role,
             experience: row.experience,
             orientation: row.orientation,
+            profile: row.profile || {},
+            assessment: {
+              domains: Array.isArray(row.domains) ? row.domains : [],
+              overall: { score: row.orientation },
+            },
+            responses: {
+              quantitative: {
+                likert: row.likert && typeof row.likert === 'object' ? row.likert : {},
+              },
+            },
           })
         ),
       };
@@ -438,6 +572,9 @@ export function createUnavailableResearchStore() {
     },
     async getQualitative() {
       return null;
+    },
+    async segments() {
+      throw Object.assign(new Error('unavailable'), { code: 'unavailable' });
     },
     async exportRows() {
       return { ok: false, error: 'unavailable' };

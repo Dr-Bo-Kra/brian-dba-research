@@ -44,7 +44,7 @@ import { isDbDiagnosticAllowed, logDiagnosticFailure, runDbDiagnostic } from './
 import { resolveQueryAdapter } from './query.mjs';
 import { RATE_CATEGORIES, clientRateKey, resolveRateLimiter } from './rate-limit.mjs';
 import { resolveSessionStore } from './sessions.mjs';
-import { parseDeletionBody, parseExportBody, parseFilters, parseParticipantRef } from './validate.mjs';
+import { parseDeletionBody, parseExportBody, parseFilters, parseParticipantRef, parseSegmentQuery } from './validate.mjs';
 
 function readBody(request) {
   if (request.body == null || request.body === '') return {};
@@ -675,6 +675,30 @@ export function createResearcherApp(overrides = {}) {
           review_opens_at: policy.reviewOpensAt,
         };
         return respond(json(200, summary));
+      } catch {
+        return respond(fail('unavailable'));
+      }
+    }
+
+    if (path === '/v1/segments' && method === 'GET') {
+      const needed = authorize(identity, 'segments');
+      if (!needed.ok) {
+        await writeAudit(identity, 'authz_failure', { reason: needed.error }, requestId);
+        return respond(fail(needed.error));
+      }
+      const parsed = parseSegmentQuery(queryOf(request));
+      if (!parsed.ok) return respond(fail(parsed.error));
+      try {
+        const result = await store.segments(parsed.filters, parsed.dimension, parsed.measure);
+        if (!result?.ok) return respond(fail(result?.error || 'invalid_request'));
+        return respond(
+          json(200, {
+            dimension: result.dimension,
+            measure: result.measure,
+            segments: result.segments,
+            descriptive_only: true,
+          })
+        );
       } catch {
         return respond(fail('unavailable'));
       }

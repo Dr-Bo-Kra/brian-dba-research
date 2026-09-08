@@ -78,6 +78,7 @@ export const SQL = Object.freeze({
     text: `select
              count(*)::int as total,
              count(*) filter (where created_at >= now() - interval '24 hours')::int as last_24h,
+             count(*) filter (where created_at >= now() - interval '7 days')::int as last_7d,
              avg((assessment -> 'overall' ->> 'score')::numeric) as mean_orientation,
              max(created_at) as last_intake,
              count(*) filter (where legal_hold is true)::int as legal_hold,
@@ -119,6 +120,20 @@ export const SQL = Object.freeze({
            where client_record_id = $1 and anonymised_at is null
            limit 1`,
   },
+  getQuantitativeByReference: {
+    text: `select client_record_id, created_at,
+                  profile ->> 'countryRegion' as region,
+                  profile ->> 'position' as role,
+                  profile ->> 'yearsLending' as experience,
+                  (assessment -> 'overall' ->> 'score')::numeric as orientation,
+                  legal_hold, anonymised_at,
+                  profile,
+                  coalesce(assessment -> 'domains', '[]'::jsonb) as domains,
+                  coalesce(responses -> 'quantitative' -> 'likert', '{}'::jsonb) as likert
+           from public.assessment_responses
+           where client_record_id = $1 and anonymised_at is null
+           limit 1`,
+  },
   getQualitativeByReference: {
     text: `select client_record_id,
                   responses -> 'qualitative' as qualitative
@@ -133,6 +148,28 @@ export const SQL = Object.freeze({
                   profile ->> 'position' as role,
                   profile ->> 'yearsLending' as experience,
                   (assessment -> 'overall' ->> 'score')::numeric as orientation
+           from public.assessment_responses
+           where anonymised_at is null
+             and ($1::date is null or created_at::date >= $1)
+             and ($2::date is null or created_at::date <= $2)
+             and ($3::text is null or profile ->> 'countryRegion' = $3)
+             and ($4::text is null or profile ->> 'position' = $4)
+             and ($5::text is null or profile ->> 'yearsLending' = $5)
+             and ($6::text is null or client_record_id ilike $6)
+             and ($7::text is null or client_record_id = $7)
+           order by created_at desc
+           limit $8`,
+  },
+  exportQuantitativeRows: {
+    text: `select client_record_id as participant_reference,
+                  created_at as accepted_at,
+                  profile ->> 'countryRegion' as region,
+                  profile ->> 'position' as role,
+                  profile ->> 'yearsLending' as experience,
+                  (assessment -> 'overall' ->> 'score')::numeric as orientation,
+                  profile,
+                  coalesce(assessment -> 'domains', '[]'::jsonb) as domains,
+                  coalesce(responses -> 'quantitative' -> 'likert', '{}'::jsonb) as likert
            from public.assessment_responses
            where anonymised_at is null
              and ($1::date is null or created_at::date >= $1)
@@ -213,7 +250,15 @@ export const SQL = Object.freeze({
     name: 'domainAggregates',
     text: `select d.id as id,
                   avg(d.score)::float8 as score,
-                  count(*)::int as n
+                  count(*)::int as n,
+                  stddev_samp(d.score)::float8 as sd,
+                  count(*) filter (where round(d.score) = 1)::int as c1,
+                  count(*) filter (where round(d.score) = 2)::int as c2,
+                  count(*) filter (where round(d.score) = 3)::int as c3,
+                  count(*) filter (where round(d.score) = 4)::int as c4,
+                  count(*) filter (where round(d.score) = 5)::int as c5,
+                  count(*) filter (where round(d.score) = 6)::int as c6,
+                  count(*) filter (where round(d.score) = 7)::int as c7
            from public.assessment_responses r
            cross join lateral jsonb_to_recordset(coalesce(r.assessment -> 'domains', '[]'::jsonb))
              as d(id text, label text, score numeric)
@@ -252,6 +297,120 @@ export const SQL = Object.freeze({
              and ($4::text is null or r.profile ->> 'position' = $4)
              and ($5::text is null or r.profile ->> 'yearsLending' = $5)
            group by e.key`,
+  },
+  profileComposition: {
+    name: 'profileComposition',
+    text: `select dim, key, count(*)::int as n
+           from public.assessment_responses r
+           cross join lateral (
+             values
+               ('countryRegion', r.profile ->> 'countryRegion'),
+               ('position', r.profile ->> 'position'),
+               ('yearsLending', r.profile ->> 'yearsLending'),
+               ('gender', r.profile ->> 'gender'),
+               ('age', r.profile ->> 'age'),
+               ('education', r.profile ->> 'education'),
+               ('institutionType', r.profile ->> 'institutionType'),
+               ('yearsFinancialServices', r.profile ->> 'yearsFinancialServices'),
+               ('areaOperation', r.profile ->> 'areaOperation'),
+               ('involvement', r.profile ->> 'involvement'),
+               ('usesAltIndicators', r.profile ->> 'usesAltIndicators')
+           ) as p(dim, key)
+           where r.anonymised_at is null
+             and ($1::date is null or r.created_at::date >= $1)
+             and ($2::date is null or r.created_at::date <= $2)
+             and ($3::text is null or r.profile ->> 'countryRegion' = $3)
+             and ($4::text is null or r.profile ->> 'position' = $4)
+             and ($5::text is null or r.profile ->> 'yearsLending' = $5)
+           group by dim, key`,
+  },
+  segmentOverall: {
+    name: 'segmentOverall',
+    text: `select coalesce(r.profile ->> $6::text, 'unknown') as key,
+                  count(*)::int as n,
+                  avg((r.assessment -> 'overall' ->> 'score')::numeric)::float8 as mean,
+                  stddev_samp((r.assessment -> 'overall' ->> 'score')::numeric)::float8 as sd,
+                  count(*) filter (where round((r.assessment -> 'overall' ->> 'score')::numeric) = 1)::int as c1,
+                  count(*) filter (where round((r.assessment -> 'overall' ->> 'score')::numeric) = 2)::int as c2,
+                  count(*) filter (where round((r.assessment -> 'overall' ->> 'score')::numeric) = 3)::int as c3,
+                  count(*) filter (where round((r.assessment -> 'overall' ->> 'score')::numeric) = 4)::int as c4,
+                  count(*) filter (where round((r.assessment -> 'overall' ->> 'score')::numeric) = 5)::int as c5,
+                  count(*) filter (where round((r.assessment -> 'overall' ->> 'score')::numeric) = 6)::int as c6,
+                  count(*) filter (where round((r.assessment -> 'overall' ->> 'score')::numeric) = 7)::int as c7
+           from public.assessment_responses r
+           where r.anonymised_at is null
+             and ($1::date is null or r.created_at::date >= $1)
+             and ($2::date is null or r.created_at::date <= $2)
+             and ($3::text is null or r.profile ->> 'countryRegion' = $3)
+             and ($4::text is null or r.profile ->> 'position' = $4)
+             and ($5::text is null or r.profile ->> 'yearsLending' = $5)
+             and $6::text in (
+               'countryRegion','position','yearsLending','gender','age','education',
+               'institutionType','yearsFinancialServices','areaOperation','involvement','usesAltIndicators'
+             )
+           group by 1
+           order by n desc, key asc`,
+  },
+  segmentDomain: {
+    name: 'segmentDomain',
+    text: `select coalesce(r.profile ->> $6::text, 'unknown') as key,
+                  count(*)::int as n,
+                  avg(d.score)::float8 as mean,
+                  stddev_samp(d.score)::float8 as sd,
+                  count(*) filter (where round(d.score) = 1)::int as c1,
+                  count(*) filter (where round(d.score) = 2)::int as c2,
+                  count(*) filter (where round(d.score) = 3)::int as c3,
+                  count(*) filter (where round(d.score) = 4)::int as c4,
+                  count(*) filter (where round(d.score) = 5)::int as c5,
+                  count(*) filter (where round(d.score) = 6)::int as c6,
+                  count(*) filter (where round(d.score) = 7)::int as c7
+           from public.assessment_responses r
+           cross join lateral jsonb_to_recordset(coalesce(r.assessment -> 'domains', '[]'::jsonb))
+             as d(id text, label text, score numeric)
+           where r.anonymised_at is null
+             and d.id = $7::text
+             and d.score is not null
+             and ($1::date is null or r.created_at::date >= $1)
+             and ($2::date is null or r.created_at::date <= $2)
+             and ($3::text is null or r.profile ->> 'countryRegion' = $3)
+             and ($4::text is null or r.profile ->> 'position' = $4)
+             and ($5::text is null or r.profile ->> 'yearsLending' = $5)
+             and $6::text in (
+               'countryRegion','position','yearsLending','gender','age','education',
+               'institutionType','yearsFinancialServices','areaOperation','involvement','usesAltIndicators'
+             )
+           group by 1
+           order by n desc, key asc`,
+  },
+  segmentItem: {
+    name: 'segmentItem',
+    text: `select coalesce(r.profile ->> $6::text, 'unknown') as key,
+                  count(*) filter (where e.value in ('1','2','3','4','5','6','7'))::int as n,
+                  avg(nullif(e.value, '')::numeric)::float8 as mean,
+                  stddev_samp(nullif(e.value, '')::numeric)::float8 as sd,
+                  count(*) filter (where e.value = '1')::int as c1,
+                  count(*) filter (where e.value = '2')::int as c2,
+                  count(*) filter (where e.value = '3')::int as c3,
+                  count(*) filter (where e.value = '4')::int as c4,
+                  count(*) filter (where e.value = '5')::int as c5,
+                  count(*) filter (where e.value = '6')::int as c6,
+                  count(*) filter (where e.value = '7')::int as c7
+           from public.assessment_responses r
+           cross join lateral jsonb_each_text(coalesce(r.responses -> 'quantitative' -> 'likert', '{}'::jsonb)) e
+           where r.anonymised_at is null
+             and e.key = $7::text
+             and e.value in ('1','2','3','4','5','6','7')
+             and ($1::date is null or r.created_at::date >= $1)
+             and ($2::date is null or r.created_at::date <= $2)
+             and ($3::text is null or r.profile ->> 'countryRegion' = $3)
+             and ($4::text is null or r.profile ->> 'position' = $4)
+             and ($5::text is null or r.profile ->> 'yearsLending' = $5)
+             and $6::text in (
+               'countryRegion','position','yearsLending','gender','age','education',
+               'institutionType','yearsFinancialServices','areaOperation','involvement','usesAltIndicators'
+             )
+           group by 1
+           order by n desc, key asc`,
   },
 });
 

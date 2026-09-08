@@ -426,3 +426,151 @@ test('repository files do not embed privileged credentials', () => {
     assert.doesNotMatch(source, /service_role_[A-Za-z0-9]/);
   }
 });
+
+function quantitativeRecord(ref, overrides = {}) {
+  const profile = {
+    gender: 'female',
+    age: '30-39',
+    education: 'masters',
+    institutionType: 'commercial-bank',
+    position: 'credit-manager',
+    yearsLending: '6-10',
+    yearsFinancialServices: '6-10',
+    areaOperation: 'urban',
+    involvement: 'assess',
+    usesAltIndicators: 'yes',
+    countryRegion: 'india',
+    ...(overrides.profile || {}),
+  };
+  const likert = Object.fromEntries(
+    ['B1','B2','B3','B4','B5','C6','C7','C8','C9','C10','D11','D12','D13','D14','D15','E16','E17','E18','E19','E20','F21','F22','F23','F24','F25'].map(
+      (id) => [id, overrides.likertFill ?? 5]
+    )
+  );
+  return {
+    client_record_id: ref,
+    created_at: overrides.created_at || '2026-08-01T12:00:00.000Z',
+    profile,
+    region: profile.countryRegion,
+    role: profile.position,
+    experience: profile.yearsLending,
+    orientation: 5.0,
+    assessment: {
+      overall: { score: 5.0 },
+      domains: [
+        { id: 'psychometric', label: 'Psychometric indicators', score: 5.0 },
+        { id: 'social', label: 'Social capital', score: 5.0 },
+        { id: 'behavioral', label: 'Behavioral economics', score: 5.0 },
+        { id: 'readiness', label: 'Organizational readiness', score: 5.0 },
+        { id: 'inclusiveDecision', label: 'Inclusive decision-making', score: 5.0 },
+      ],
+    },
+    responses: {
+      quantitative: {
+        demographics: { ...profile },
+        likert,
+      },
+    },
+    legal_hold: false,
+    ...overrides.rest,
+  };
+}
+
+test('summary exposes last_7d, profile composition, and domain sample SD', async () => {
+  const now = new Date().toISOString();
+  const app = testApp({
+    records: [
+      quantitativeRecord('resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', { created_at: now }),
+      quantitativeRecord('resp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', {
+        created_at: '2026-01-01T12:00:00.000Z',
+        profile: { countryRegion: 'europe-uk', position: 'risk-manager', gender: 'male' },
+      }),
+    ],
+  });
+  const { headers } = await authed(app);
+  const response = await app.handle({ method: 'GET', url: '/v1/summary', headers, ip: 'q1' });
+  assert.equal(response.status, 200);
+  const body = JSON.parse(response.body);
+  assert.equal(body.total, 2);
+  assert.ok(Number.isInteger(body.last_7d));
+  assert.ok(body.last_7d >= 1);
+  assert.ok(body.profile?.countryRegion?.length >= 1);
+  assert.ok(body.domains.every((row) => 'sd' in row && Array.isArray(row.counts)));
+  assert.doesNotMatch(JSON.stringify(body), /openResponses|roleDescription|not for logs/);
+});
+
+test('segments endpoint returns descriptive stats without free-text or significance', async () => {
+  const app = testApp({
+    records: [
+      quantitativeRecord('resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', {
+        profile: { countryRegion: 'india', gender: 'female' },
+        likertFill: 6,
+      }),
+      quantitativeRecord('resp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', {
+        profile: { countryRegion: 'europe-uk', gender: 'male' },
+        likertFill: 3,
+      }),
+    ],
+  });
+  const { headers } = await authed(app);
+  const denied = await app.handle({
+    method: 'GET',
+    url: '/v1/segments?dimension=countryRegion&measure=overall',
+    ip: 'q2',
+  });
+  assert.equal(denied.status, 401);
+  const response = await app.handle({
+    method: 'GET',
+    url: '/v1/segments?dimension=countryRegion&measure=overall',
+    headers,
+    ip: 'q2',
+  });
+  assert.equal(response.status, 200);
+  const body = JSON.parse(response.body);
+  assert.equal(body.descriptive_only, true);
+  assert.equal(body.dimension, 'countryRegion');
+  assert.ok(body.segments.length >= 2);
+  assert.ok(body.segments.every((row) => Number.isFinite(row.mean) && Number.isInteger(row.n)));
+  assert.doesNotMatch(JSON.stringify(body), /p-value|significant|openResponses|password/i);
+  const bad = await app.handle({
+    method: 'GET',
+    url: '/v1/segments?dimension=password&measure=overall',
+    headers,
+    ip: 'q2',
+  });
+  assert.equal(bad.status, 400);
+});
+
+test('record detail returns quantitative fields only and export uses study columns', async () => {
+  const app = testApp({
+    records: [quantitativeRecord('resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')],
+    config: { exportsEnabled: true },
+  });
+  const { headers } = await authed(app);
+  const detail = await app.handle({
+    method: 'GET',
+    url: '/v1/responses/resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    headers,
+    ip: 'q3',
+  });
+  assert.equal(detail.status, 200);
+  const row = JSON.parse(detail.body);
+  assert.equal(row.profile.gender, 'female');
+  assert.ok(Array.isArray(row.domains));
+  assert.equal(row.likert.B1, 5);
+  assert.equal(row.qualitative, undefined);
+  assert.doesNotMatch(JSON.stringify(row), /openResponses|roleDescription/);
+
+  const exported = await app.handle({
+    method: 'POST',
+    url: '/v1/exports',
+    headers,
+    body: { confirm: true },
+    ip: 'q3',
+  });
+  assert.equal(exported.status, 200);
+  assert.match(exported.body, /gender,age,education/);
+  assert.match(exported.body, /domain_psychometric/);
+  assert.match(exported.body, /,B1,/);
+  assert.doesNotMatch(exported.body, /not for logs|openResponses|password|csrf/i);
+});

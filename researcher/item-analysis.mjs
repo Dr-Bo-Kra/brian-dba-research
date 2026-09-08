@@ -7,12 +7,18 @@
  *   mean = Σ(v * c_v) / n for v = 1..7
  *   sample SD (n > 1): sqrt( Σ(c_v * (v - mean)^2) / (n - 1) )
  *   population SD (n ≤ 1 or fallback): sqrt( Σ(c_v * (v - mean)^2) / n )
- *   polarization P = (c1 + c7) / n
+ *   polarization P = (c1 + c7) / n  (kept for detail layers; not used for “most divided”)
+ *
+ * Ranking:
+ *   highest / lowest = mean
+ *   most divided = highest sample SD (explicit dispersion measure used across the dashboard)
  */
 
 export const LIKERT_MIN = 1;
 export const LIKERT_MAX = 7;
 export const DEFAULT_HIGHLIGHT_COUNT = 5;
+/** Flag small-n cells in UI when n is below this threshold. */
+export const SMALL_N_THRESHOLD = 5;
 
 function asCounts(counts) {
   const raw = Array.isArray(counts) ? counts : [];
@@ -83,17 +89,15 @@ export function rankItemHighlights(items, options = {}) {
 
   const byMeanDesc = [...scored].sort((a, b) => b.mean - a.mean || a.id.localeCompare(b.id));
   const byMeanAsc = [...scored].sort((a, b) => a.mean - b.mean || a.id.localeCompare(b.id));
-  const byPolarizationDesc = [...scored].sort(
-    (a, b) =>
-      b.polarization - a.polarization ||
-      (b.sd ?? 0) - (a.sd ?? 0) ||
-      a.id.localeCompare(b.id)
+  // Most divided = highest sample SD (documented dispersion measure).
+  const bySdDesc = [...scored].sort(
+    (a, b) => (b.sd ?? 0) - (a.sd ?? 0) || a.id.localeCompare(b.id)
   );
 
   return {
     highest: byMeanDesc.slice(0, highlightCount),
     lowest: byMeanAsc.slice(0, highlightCount),
-    mostDivided: byPolarizationDesc.slice(0, highlightCount),
+    mostDivided: bySdDesc.slice(0, highlightCount),
     all: scored,
   };
 }

@@ -1653,3 +1653,75 @@ body.drawer-open {
     transition: none;
   }
 }
+
+/* Quantitative redesign density additions */
+.kpi-strip .kpi-card span { font-size: 11px; }
+.filter-n-note { margin: 6px 0 0; font-size: 12px; color: var(--muted, #5a6b75); }
+.analysis-grid { align-items: start; }
+.profile-composition {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+.profile-dim h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.profile-dim-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.profile-dim-chip {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+}
+button.profile-dim-chip { cursor: pointer; }
+button.profile-dim-chip:hover,
+button.profile-dim-chip:focus-visible {
+  color: var(--teal, #0f766e);
+}
+.profile-dim-count { font-variant-numeric: tabular-nums; opacity: 0.75; font-size: 11px; }
+.domain-score-meta {
+  font-size: 11px;
+  opacity: 0.8;
+  grid-column: 1 / -1;
+}
+.is-small-n,
+tr.is-small-n td,
+.domain-score.is-small-n,
+.item-row.is-small-n {
+  outline: 1px dashed #b45309;
+  outline-offset: 1px;
+}
+.segment-controls { margin-bottom: 10px; }
+.segment-table .dist-scale { min-width: 88px; }
+.ledger-trend-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+  gap: 14px;
+  margin: 14px 0;
+}
+.item-row-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+@media (max-width: 1199px) {
+  .profile-composition { grid-template-columns: 1fr; }
+  .ledger-trend-grid { grid-template-columns: 1fr; }
+}

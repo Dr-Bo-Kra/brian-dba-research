@@ -1,4 +1,4 @@
-import { EXPORT_COLUMNS } from './constants.mjs';
+import { QUANTITATIVE_EXPORT_COLUMNS } from './constants.mjs';
 
 const FORMULA_PREFIX = /^[=+\-@\t\r]/;
 
@@ -13,7 +13,7 @@ export function escapeCsvCell(value) {
   return text;
 }
 
-export function buildCsv(rows, columns = EXPORT_COLUMNS) {
+export function buildCsv(rows, columns = QUANTITATIVE_EXPORT_COLUMNS) {
   const header = columns.join(',');
   const lines = [header];
   for (const row of rows) {
@@ -23,12 +23,25 @@ export function buildCsv(rows, columns = EXPORT_COLUMNS) {
 }
 
 export function mapExportRow(record) {
-  return {
+  const row = {
     participant_reference: record.participant_reference || '',
     accepted_at: record.accepted_at || '',
     region: record.region || '',
     role: record.role || '',
     experience: record.experience || '',
+    gender: record.gender || '',
+    age: record.age || '',
+    education: record.education || '',
+    institutionType: record.institutionType || '',
+    yearsFinancialServices: record.yearsFinancialServices || '',
+    areaOperation: record.areaOperation || '',
+    involvement: record.involvement || '',
+    usesAltIndicators: record.usesAltIndicators || '',
     orientation: record.orientation == null ? '' : record.orientation,
   };
+  for (const column of QUANTITATIVE_EXPORT_COLUMNS) {
+    if (column in row) continue;
+    row[column] = record[column] == null ? '' : record[column];
+  }
+  return row;
 }

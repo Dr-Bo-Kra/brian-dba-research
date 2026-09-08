@@ -66,9 +66,10 @@ Do not include stack traces, SQL, whether a participant reference exists on dele
 | POST | `/v1/session/mfa` | No (rate-limited) | Verify TOTP against the pending Auth ticket; rotate application session. |
 | GET | `/v1/session` | Session optional | `{ authenticated, role, expiresAt, csrfToken, exportsEnabled, deletionsEnabled, retention… }` or unauthenticated. Never a raw access token. |
 | POST | `/v1/session/logout` | CSRF if cookie present | Revoke session; expire cookies. |
-| GET | `/v1/summary` | Authorised researcher | Aggregates for the approved filters. Retention metadata included; no auto-delete. |
+| GET | `/v1/summary` | Authorised researcher | Aggregates for the approved filters (`total`, `last_24h`, `last_7d`, domains with sample SD, items, coded `profile` composition). Retention metadata included; no auto-delete. |
+| GET | `/v1/segments` | Authorised researcher | Descriptive segment stats only (mean, n, sample SD, 1–7 counts) by coded profile dimension and measure (`overall` / `domain:id` / `item:id`). No free-text. No p-values. |
 | GET | `/v1/responses` | Authorised researcher | Paginated ledger DTOs. |
-| GET | `/v1/responses/{ref}` | Authorised researcher | One record DTO. Audit `view_record`. |
+| GET | `/v1/responses/{ref}` | Authorised researcher | One quantitative record DTO (ledger + coded profile + domain scores + Likert). Audit `view_record`. |
 | GET | `/v1/responses/{ref}/qualitative` | Authorised researcher | **Legacy / historical free-text only.** Not part of the live quantitative instrument UI. Audit `view_qualitative`. Endpoint retained for older rows; current-study dashboard does not expose it. |
 | GET | `/v1/retention-review` | Authorised researcher | Participant refs at retention threshold for review. Audit `retention_review`. Never deletes. |
 | POST | `/v1/exports` | Authorised researcher | CSV of the **approved export schema** (optional exact `reference`). Disabled by default. Audit `export`. |
@@ -93,15 +94,15 @@ Unknown fields → `invalid_request`.
 Allowlisted fields only, for example:
 
 - `participant_reference`, `accepted_at`, `region`, `role`, `experience`, `orientation`
-- summary: `total`, `last_24h`, `mean_orientation`, `last_intake`, `trend[]`, `domains[]`, `items[]`, `retention` (`legal_hold`, `anonymised` counts — no period invented)
+- summary: `total`, `last_24h`, `last_7d`, `mean_orientation`, `last_intake`, `trend[]`, `domains[]` (score, n, sample SD, binned counts), `items[]`, `profile` (coded tallies), `retention` (`legal_hold`, `anonymised` counts — no period invented)
 
 Never return `id` (internal UUID) to the browser if `client_record_id` is the participant reference. Never return raw `jsonb` dumps, service metadata, or audit payloads.
 
 ## Export schema (approved columns)
 
-`participant_reference,accepted_at,region,role,experience,orientation`
+Quantitative study columns only: `participant_reference,accepted_at,region,role,experience`, coded profile fields (`gender,age,education,institutionType,yearsFinancialServices,areaOperation,involvement,usesAltIndicators`), `orientation`, domain scores (`domain_*`), and Likert item columns (`B1`…`F25`).
 
-No internal UUID, no JSON blobs, no qualitative text in the default export. Formula-injection prefixes (`=`, `+`, `-`, `@`, tab, CR) are escaped. `MAX_EXPORT_ROWS` applies. Requesting more is `invalid_request`.
+No internal UUID, no JSON blobs, no qualitative text. Formula-injection prefixes (`=`, `+`, `-`, `@`, tab, CR) are escaped. `MAX_EXPORT_ROWS` applies. Requesting more is `invalid_request`.
 
 ## Deletion body
 

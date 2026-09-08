@@ -7,6 +7,7 @@ import {
   ROLE_CODES,
   SORT_FIELDS,
 } from './constants.mjs';
+import { SEGMENT_DIMENSIONS, parseSegmentMeasure } from './profile.mjs';
 
 export function errorBody(code) {
   return { error: GENERIC_ERRORS[code] || GENERIC_ERRORS.unavailable };
@@ -47,6 +48,8 @@ export function parseFilters(input = {}) {
         'cursor',
         'sort',
         'include_qualitative',
+        'dimension',
+        'measure',
       ].includes(key)
   );
   if (unknown.length) {
@@ -110,6 +113,23 @@ export function parseFilters(input = {}) {
       sort: 'created_at',
       includeQualitative: input.include_qualitative === '1' || input.include_qualitative === 'true',
     },
+  };
+}
+
+export function parseSegmentQuery(input = {}) {
+  const parsed = parseFilters(input);
+  if (!parsed.ok) return parsed;
+  const dimension = String(input.dimension || '').trim();
+  if (!SEGMENT_DIMENSIONS.includes(dimension)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const measure = parseSegmentMeasure(input.measure);
+  if (!measure.ok) return measure;
+  return {
+    ok: true,
+    filters: parsed.filters,
+    dimension,
+    measure: { type: measure.type, id: measure.id },
   };
 }
 
