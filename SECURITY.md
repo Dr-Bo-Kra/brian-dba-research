@@ -17,7 +17,7 @@ Live survey collection is **disabled** by default. Do not enable it until the pr
 Full trust-boundary notes: `docs/researcher-dashboard-architecture.md`. API contract: `api/researcher/SPEC.md`.
 
 - The public browser submits only after consent, and only if `COLLECTION_ENABLED === true` and `SUBMISSION_ENDPOINT` is a credential-free `https://` URL that is **not** a PostgREST table path (`/rest/v1/`).
-- The submission endpoint (not yet deployed) must authenticate itself to the database with a **server-side** credential.
+- The submission endpoint (`api/submission`) authenticates itself to the database with a **server-side** `submission_inserter` credential. It stays fail-closed unless `SUBMISSION_API_ENABLED=true` and durable rate-limit configuration are set. Browser collection stays off until `COLLECTION_ENABLED` is deliberately enabled after institutional approval.
 - For the **initial release**, authorised researchers review completed results in **Supabase’s authenticated dashboard**. Access is role-based. Brian may be the only provisioned authorised researcher at first. Application code must not hard-code his name or email as an access check.
 - There is no anonymous database read. `anon` and `authenticated` have no table privileges.
 - The protected researcher API is **fail-closed** unless the host sets `RESEARCHER_API_ENABLED=true` with durable Auth, session, and database configuration.
@@ -33,7 +33,7 @@ Full trust-boundary notes: `docs/researcher-dashboard-architecture.md`. API cont
 - No direct anonymous database insert or select from the participant browser.
 - Restrictive Content-Security-Policy **meta** tags (`script-src 'self'` on application pages; `script-src 'none'` on the privacy page). No inline event handlers, no Google Fonts, no third-party analytics.
 - Database row-level security is enabled and forced; former public insert/select policies are dropped.
-- Researcher API scaffold: deny-by-default roles, HttpOnly session cookies, CSRF on mutations, allowlisted DTOs, CSV formula escaping, deletion generic responses, export/delete policy flags off.
+- Researcher API: deny-by-default roles, HttpOnly session cookies, CSRF on mutations, allowlisted DTOs, CSV formula escaping, deletion generic responses, export/delete policy flags off.
 
 ## Initial-release researcher workflow (Supabase dashboard)
 

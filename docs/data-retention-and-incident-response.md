@@ -14,7 +14,7 @@ Live collection must stay **disabled** until the institution completes the items
 | Backups of the research database | Follow the processor’s backup cycle, then expire | **TBD** |
 | Researcher CSV exports | Approved institutional location only; no personal email or shared drives | **TBD** (no longer than the source records) |
 | Dashboard / project audit material | Sign-in, export, and deletion actions | **TBD** |
-| `researcher_audit_events` | Reserved for a later researcher API; unused while that API is disabled | **TBD** |
+| `researcher_audit_events` | Researcher API metadata audit (no survey answers) | **TBD** |
 | Irreversible anonymisation | Strip participant reference and free-text as approved | **TBD** |
 
 Until those periods exist, do not accept live submissions.
