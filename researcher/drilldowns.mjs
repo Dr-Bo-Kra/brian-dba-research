@@ -104,8 +104,8 @@ export function formatPolarizationLabel(polarization) {
  */
 export function explainTechnicalTerm(term) {
   const key = String(term || '').toLowerCase();
-  if (key === 'n' || key === 'sample size') {
-    return 'n is the count of accepted rating sets (or answers) included in this figure for the current filter.';
+  if (key === 'n' || key === 'sample size' || key === 'responses') {
+    return 'Responses is the count of accepted rating sets (or answers) included in this figure for the current filter.';
   }
   if (key === 'polarization') {
     return 'Polarization is the share of answers at the scale edges (1 and 7). It describes spread, not quality.';
@@ -165,7 +165,7 @@ export function descriptiveDomainInterpretation(mean, n, label) {
   }
   return (
     `${label} currently averages ${Number(mean).toFixed(2)} on the survey’s 1–7 scale ` +
-    `across n = ${n} accepted rating set${n === 1 ? '' : 's'} in the current filter. ` +
+    `across ${n} response${n === 1 ? '' : 's'} in the current filter. ` +
     `This figure is a descriptive average only; it does not test difference, causation, or quality.`
   );
 }
@@ -637,7 +637,7 @@ export function buildDomainDrilldown(domainId, context = {}) {
     observations: [
       ['Average score', formatScore(mean)],
       ['Relative standing', relative || '—'],
-      ['Accepted rating sets (n)', String(n)],
+      ['Responses', String(n)],
       ['Sample SD', domain?.sd == null ? '—' : Number(domain.sd).toFixed(2)],
       ['Questions in theme', String(domainItemIds.length)],
     ],
@@ -666,7 +666,7 @@ export function buildDomainDrilldown(domainId, context = {}) {
           {
             title: 'Glossary',
             rows: [
-              ['n', explainTechnicalTerm('n')],
+              ['Responses', explainTechnicalTerm('responses')],
               ['Polarization', explainTechnicalTerm('polarization')],
               ['Mean', explainTechnicalTerm('mean')],
               [

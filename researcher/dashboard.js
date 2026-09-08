@@ -391,7 +391,7 @@ import {
   function itemMetaLine(item) {
     const parts = [
       `mean ${item.mean == null ? '—' : Number(item.mean).toFixed(2)} / 7`,
-      `n = ${item.n ?? 0}`,
+      `${item.n ?? 0} responses`,
       `sample SD ${item.sd == null ? '—' : Number(item.sd).toFixed(2)}`,
     ];
     return parts.join(' · ');
@@ -662,7 +662,7 @@ import {
 
   function smallNBadge(n) {
     return Number(n) > 0 && Number(n) < SMALL_N_THRESHOLD
-      ? '<span class="small-n-flag" title="Small group — descriptive only">small n</span>'
+      ? '<span class="small-n-flag" title="Small group — descriptive only">Small sample</span>'
       : '';
   }
 
@@ -691,7 +691,7 @@ import {
     if (participationNote) {
       if (total) {
         participationNote.hidden = false;
-        participationNote.textContent = `n = ${total} accepted in current filter`;
+        participationNote.textContent = `${total} responses accepted in current filter`;
       } else {
         participationNote.hidden = true;
         participationNote.textContent = '';
@@ -795,7 +795,7 @@ import {
             return `<li class="profile-dim-row${smallNClass(n)}">
               <${tag}${typeAttr} class="profile-dim-chip"${filterAttr}>
                 <span class="profile-dim-label">${escapeHtml(label)}</span>
-                <span class="profile-dim-count">n=${n}</span>
+                <span class="profile-dim-count">${n} responses</span>
                 <span class="profile-dim-bar" aria-hidden="true"><i style="width:${share}%"></i></span>
               </${tag}>
             </li>`;
@@ -865,7 +865,7 @@ import {
         <span class="domain-score-name">${escapeHtml(stat.label || domain.label)}</span>
         <span class="domain-score-mean">${Number(stat.score).toFixed(2)} / 7</span>
         <span class="domain-bar domain-bar-muted" aria-hidden="true"><i style="width:${percent}%"></i></span>
-        <span class="domain-score-meta">n=${Number(stat.n) || 0} · SD ${sd}</span>
+        <span class="domain-score-meta">${Number(stat.n) || 0} responses · SD ${sd}</span>
         <i class="drill-mark" aria-hidden="true">+</i>`;
       host.append(button);
     });
@@ -1009,7 +1009,7 @@ import {
             <span class="segment-compare-bar" aria-hidden="true"><i style="width:${barPct}%"></i></span>
           </span>
         </td>
-        <td>n=${n}</td>
+        <td>${n}</td>
         <td>${sd}</td>`;
       body.append(tr);
     });

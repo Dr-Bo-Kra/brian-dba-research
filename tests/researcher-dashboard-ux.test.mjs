@@ -371,7 +371,7 @@ test('drilldown calculations stay descriptive and domain-scoped', () => {
 
   const interpretation = descriptiveDomainInterpretation(5.25, 12, 'Social capital');
   assert.match(interpretation, /averages 5\.25/);
-  assert.match(interpretation, /n = 12/);
+  assert.match(interpretation, /across 12 responses/);
   assert.doesNotMatch(interpretation, /significant|causal|good|bad|underperform/i);
 
   const records = [
