@@ -11,7 +11,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; upgrade-insecure-requests">
   <title>Inquiry archive | Brian E Pereira DBA Research</title>
   <link rel="stylesheet" href="../styles.css?v=15">
-  <link rel="stylesheet" href="dashboard.css?v=12">
+  <link rel="stylesheet" href="dashboard.css?v=13">
 </head>
 <body class="workspace-body">
   <a class="skip-link" href="#workspace-main">Skip to inquiry archive</a>
@@ -68,10 +68,11 @@
     </div>
 
     <main id="workspace-main">
-      <!-- 1. Executive KPIs -->
+      <!-- STUDY STATE -->
       <section class="workspace-intro" aria-labelledby="overview-title">
+        <p class="band-kicker">Study state</p>
         <h1 id="overview-title">Quantitative study dashboard</h1>
-        <p>Who responded, what the sample thinks, strongest and weakest signals, where answers divide, and how groups compare. Descriptive only — open a figure for evidence.</p>
+        <p>Open any figure for evidence. Descriptive only.</p>
       </section>
 
       <section class="glance-band kpi-strip" aria-label="Executive KPIs">
@@ -102,7 +103,6 @@
         </button>
       </section>
 
-      <!-- 2. Filter toolbar -->
       <section class="filter-toolbar-wrap" id="filter-toolbar" aria-labelledby="refine-title">
         <h2 id="refine-title" class="sr-only">Filters</h2>
         <form id="filter-form" class="filter-toolbar" novalidate>
@@ -143,15 +143,15 @@
         <p class="filter-n-note" id="participation-note" hidden></p>
       </section>
 
-      <!-- 3. Domains + participant profile -->
+      <!-- RESEARCH FINDINGS + WHO RESPONDED -->
+      <p class="band-kicker band-kicker-inline">Research findings · Who responded</p>
       <div class="learning-grid analysis-grid" id="learning-grid">
-        <section class="workspace-panel themes-panel" aria-labelledby="compass-title">
+        <section class="workspace-panel themes-panel panel-priority" aria-labelledby="compass-title">
           <div class="panel-head compact">
             <p class="kicker">Domain analysis</p>
             <h2 id="compass-title">Research themes</h2>
           </div>
-          <p class="section-lede compact">Mean / 7, n, spread (sample SD), relative standing. Descriptive only.</p>
-          <div class="domain-scores" id="domain-scores"></div>
+          <div class="domain-scores" id="domain-scores" title="Mean / 7 · n · sample SD"></div>
           <p class="empty-copy" id="domain-empty">Theme scores will appear when responses arrive.</p>
         </section>
 
@@ -160,19 +160,18 @@
             <p class="kicker">Who responded</p>
             <h2 id="profile-title">Participant profile</h2>
           </div>
-          <p class="section-lede compact">Coded profile dimensions for the current filter. Click geography, role, or experience to apply that filter.</p>
           <div class="profile-composition" id="profile-composition"></div>
           <p class="empty-copy" id="profile-empty">Profile composition will appear when responses arrive.</p>
         </section>
       </div>
 
-      <!-- 4. Question analysis -->
-      <section class="workspace-panel explore-panel" aria-labelledby="items-title">
+      <!-- COMPARISONS -->
+      <p class="band-kicker band-kicker-inline">Comparisons</p>
+      <section class="workspace-panel explore-panel panel-priority" aria-labelledby="items-title">
         <div class="panel-head compact">
           <p class="kicker">Question analysis</p>
           <h2 id="items-title">Likert items</h2>
         </div>
-        <p class="section-lede compact">Highest / lowest by mean. Most divided = highest <strong>sample SD</strong>. Every item shows mean, n, full 1–7 distribution, and sample SD.</p>
         <div class="item-highlight-columns" id="item-highlights"></div>
         <p class="empty-copy" id="items-empty">Question highlights will appear when responses arrive.</p>
         <details class="item-all-details" id="item-all-details">
@@ -181,98 +180,97 @@
         </details>
       </section>
 
-      <!-- 5. Segment comparison -->
-      <section class="workspace-panel segment-panel" aria-labelledby="segment-title">
-        <div class="panel-head compact">
-          <p class="kicker">Group comparison</p>
-          <h2 id="segment-title">Segment comparison</h2>
-        </div>
-        <p class="section-lede compact">Side-by-side means, n, and spread by profile dimension. Descriptive only — no p-values or significance tests.</p>
-        <form id="segment-form" class="segment-controls filter-toolbar" novalidate>
-          <div class="filter-chip">
-            <label class="filter-chip-label" for="segment-measure">Measure</label>
-            <select id="segment-measure" name="measure">
-              <option value="overall">Overall score</option>
-            </select>
+      <div class="compare-trend-grid">
+        <section class="workspace-panel segment-panel" aria-labelledby="segment-title">
+          <div class="panel-head compact">
+            <p class="kicker">Group comparison</p>
+            <h2 id="segment-title">Segment comparison</h2>
           </div>
-          <div class="filter-chip">
-            <label class="filter-chip-label" for="segment-dimension">Compare by</label>
-            <select id="segment-dimension" name="dimension">
-              <option value="countryRegion">Geography</option>
-              <option value="position">Role</option>
-              <option value="yearsLending">Lending experience</option>
-              <option value="gender">Gender</option>
-              <option value="age">Age</option>
-              <option value="education">Education</option>
-              <option value="institutionType">Institution type</option>
-              <option value="yearsFinancialServices">Financial services experience</option>
-              <option value="areaOperation">Area of operation</option>
-              <option value="involvement">Involvement</option>
-              <option value="usesAltIndicators">Uses alternative indicators</option>
-            </select>
+          <p class="section-lede compact" title="Descriptive side-by-side means only">Descriptive only — no p-values or significance tests.</p>
+          <form id="segment-form" class="segment-controls filter-toolbar" novalidate>
+            <div class="filter-chip">
+              <label class="filter-chip-label" for="segment-measure">Measure</label>
+              <select id="segment-measure" name="measure">
+                <option value="overall">Overall score</option>
+              </select>
+            </div>
+            <div class="filter-chip">
+              <label class="filter-chip-label" for="segment-dimension">Compare by</label>
+              <select id="segment-dimension" name="dimension">
+                <option value="countryRegion">Geography</option>
+                <option value="position">Role</option>
+                <option value="yearsLending">Lending experience</option>
+                <option value="gender">Gender</option>
+                <option value="age">Age</option>
+                <option value="education">Education</option>
+                <option value="institutionType">Institution type</option>
+                <option value="yearsFinancialServices">Financial services experience</option>
+                <option value="areaOperation">Area of operation</option>
+                <option value="involvement">Involvement</option>
+                <option value="usesAltIndicators">Uses alternative indicators</option>
+              </select>
+            </div>
+            <button type="submit" class="button ghost" id="segment-run">Compare</button>
+          </form>
+          <div class="table-wrap segment-table-wrap">
+            <table class="data-table segment-table" id="segment-table" hidden>
+              <thead>
+                <tr>
+                  <th scope="col">Segment</th>
+                  <th scope="col">Mean / 7</th>
+                  <th scope="col">n</th>
+                  <th scope="col">Sample SD</th>
+                </tr>
+              </thead>
+              <tbody id="segment-rows"></tbody>
+            </table>
           </div>
-          <button type="submit" class="button ghost" id="segment-run">Compare</button>
-        </form>
-        <div class="table-wrap segment-table-wrap">
-          <table class="data-table segment-table" id="segment-table" hidden>
-            <thead>
-              <tr>
-                <th scope="col">Segment</th>
-                <th scope="col">Mean / 7</th>
-                <th scope="col">n</th>
-                <th scope="col">Sample SD</th>
-                <th scope="col">Distribution</th>
-              </tr>
-            </thead>
-            <tbody id="segment-rows"></tbody>
-          </table>
-        </div>
-        <p class="empty-copy" id="segment-empty">Choose a measure and dimension, then compare.</p>
-      </section>
+          <p class="empty-copy" id="segment-empty">Choose a measure and dimension, then compare.</p>
+        </section>
 
-      <!-- 6. Participation trend + ledger -->
-      <div class="ledger-trend-grid">
         <section class="workspace-panel participation-analytics" aria-labelledby="participation-title">
           <div class="panel-head compact">
             <p class="kicker">Participation</p>
             <h2 id="participation-title">Responses over time</h2>
           </div>
-          <div class="chart-frame" id="trend-chart" aria-live="polite"></div>
+          <div class="chart-frame chart-frame-compact" id="trend-chart" aria-live="polite"></div>
           <p class="empty-copy" id="trend-empty">Arrival pattern will appear when responses arrive.</p>
         </section>
-
-        <section class="workspace-panel ledger-panel" aria-labelledby="ledger-title">
-          <div class="ledger-head">
-            <div>
-              <p class="kicker">Response ledger</p>
-              <h2 id="ledger-title">Accepted responses</h2>
-            </div>
-            <p class="ledger-meta" id="ledger-meta" hidden></p>
-          </div>
-          <p class="section-lede compact">Quantitative only. Expand a row for profile, domain scores, and Likert answers. Ten records per page.</p>
-          <div class="table-wrap">
-            <table class="record-table">
-              <thead>
-                <tr>
-                  <th scope="col">Ref</th>
-                  <th scope="col">Accepted</th>
-                  <th scope="col">Region</th>
-                  <th scope="col">Role</th>
-                  <th scope="col">Experience</th>
-                  <th scope="col">Overall score</th>
-                </tr>
-              </thead>
-              <tbody id="record-rows"></tbody>
-            </table>
-          </div>
-          <div class="ledger-pager" id="ledger-pager" hidden>
-            <button type="button" class="button ghost" id="ledger-prev">Previous</button>
-            <p class="ledger-page-label" id="ledger-page-label"></p>
-            <button type="button" class="button ghost" id="ledger-next">Next</button>
-          </div>
-          <p class="empty-copy" id="ledger-empty">No accepted responses yet.</p>
-        </section>
       </div>
+
+      <!-- EVIDENCE -->
+      <p class="band-kicker band-kicker-inline">Evidence</p>
+      <section class="workspace-panel ledger-panel panel-secondary" aria-labelledby="ledger-title">
+        <div class="ledger-head">
+          <div>
+            <p class="kicker">Response ledger</p>
+            <h2 id="ledger-title">Accepted responses</h2>
+          </div>
+          <p class="ledger-meta" id="ledger-meta" hidden></p>
+        </div>
+        <p class="section-lede compact">Ten records per page. Expand a row for detail.</p>
+        <div class="table-wrap">
+          <table class="record-table">
+            <thead>
+              <tr>
+                <th scope="col">Ref</th>
+                <th scope="col">Accepted</th>
+                <th scope="col">Region</th>
+                <th scope="col">Role</th>
+                <th scope="col">Experience</th>
+                <th scope="col">Overall score</th>
+              </tr>
+            </thead>
+            <tbody id="record-rows"></tbody>
+          </table>
+        </div>
+        <div class="ledger-pager" id="ledger-pager" hidden>
+          <button type="button" class="button ghost" id="ledger-prev">Previous</button>
+          <p class="ledger-page-label" id="ledger-page-label"></p>
+          <button type="button" class="button ghost" id="ledger-next">Next</button>
+        </div>
+        <p class="empty-copy" id="ledger-empty">No accepted responses yet.</p>
+      </section>
 
       <details class="explore-block methodology-block" id="methodology-block">
         <summary>Calculation and methodology notes</summary>
@@ -286,7 +284,6 @@
         </div>
       </details>
 
-      <!-- 7. Administration -->
       <details class="workspace-panel admin-panel" id="admin-panel">
         <summary class="admin-summary">
           <p class="kicker">Administration</p>
@@ -362,6 +359,6 @@
   </div>
 
   <script src="config.js?v=3"></script>
-  <script type="module" src="dashboard.js?v=12"></script>
+  <script type="module" src="dashboard.js?v=13"></script>
 </body>
 </html>

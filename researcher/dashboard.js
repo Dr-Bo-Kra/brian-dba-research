@@ -113,6 +113,17 @@ import {
     involvement: 'Involvement',
     usesAltIndicators: 'Uses alternative indicators',
   };
+  const PROFILE_PRIMARY_DIMS = [
+    'countryRegion',
+    'position',
+    'yearsLending',
+    'gender',
+    'age',
+    'institutionType',
+  ];
+  const PROFILE_SECONDARY_DIMS = Object.keys(PROFILE_DIM_LABELS).filter(
+    (dim) => !PROFILE_PRIMARY_DIMS.includes(dim)
+  );
   const PROFILE_CODE_LABELS = {
     countryRegion: Object.fromEntries(GEOGRAPHY),
     position: Object.fromEntries(ROLES),
@@ -642,6 +653,19 @@ import {
     return Number(n) > 0 && Number(n) < SMALL_N_THRESHOLD ? ' is-small-n' : '';
   }
 
+  function formatKpiShortDate(value) {
+    const full = formatResearchDate(value);
+    if (!full || full === '—') return '—';
+    const parts = full.split(' ');
+    return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : full;
+  }
+
+  function smallNBadge(n) {
+    return Number(n) > 0 && Number(n) < SMALL_N_THRESHOLD
+      ? '<span class="small-n-flag" title="Small group — descriptive only">small n</span>'
+      : '';
+  }
+
   function profileCodeLabel(dim, key) {
     const map = PROFILE_CODE_LABELS[dim] || {};
     return map[key] || key || '—';
@@ -654,13 +678,13 @@ import {
     const weekEl = document.getElementById('kpi-week');
     if (weekEl) weekEl.textContent = String(resolveLast7d());
     document.getElementById('kpi-updated').textContent = summary?.last_intake
-      ? formatResearchDate(summary.last_intake)
+      ? formatKpiShortDate(summary.last_intake)
       : '—';
     const orientationEl = document.getElementById('kpi-orientation');
     if (orientationEl) {
       orientationEl.textContent =
         summary?.mean_orientation != null && Number.isFinite(Number(summary.mean_orientation))
-          ? `${Number(summary.mean_orientation).toFixed(2)} / 7`
+          ? `${Number(summary.mean_orientation).toFixed(2)}/7`
           : '—';
     }
     const participationNote = document.getElementById('participation-note');
@@ -688,9 +712,9 @@ import {
     }
     if (empty) empty.hidden = true;
     const width = 520;
-    const height = 140;
+    const height = 112;
     const padX = 12;
-    const padY = 16;
+    const padY = 14;
     const max = Math.max(1, ...points.map((row) => Number(row.count) || 0));
     const step = points.length > 1 ? (width - padX * 2) / (points.length - 1) : 0;
     const coords = points.map((row, index) => {
@@ -750,6 +774,37 @@ import {
     renderTrendChart(summary?.trend || []);
   }
 
+  function renderProfileDim(dim, profile) {
+    const rows = Array.isArray(profile[dim]) ? profile[dim].slice(0, 8) : [];
+    if (!rows.length) return '';
+    const filterName = FILTER_FROM_PROFILE[dim];
+    const max = Math.max(1, ...rows.map((row) => Number(row.n) || 0));
+    return `<div class="profile-dim">
+      <h3>${escapeHtml(PROFILE_DIM_LABELS[dim] || dim)}</h3>
+      <ul class="profile-dim-list">
+        ${rows
+          .map((row) => {
+            const label = profileCodeLabel(dim, row.key);
+            const n = Number(row.n) || 0;
+            const share = Math.round((n / max) * 100);
+            const filterAttr = filterName
+              ? ` data-filter-field="${escapeHtml(filterName)}" data-filter-value="${escapeHtml(row.key)}"`
+              : '';
+            const tag = filterName ? 'button' : 'span';
+            const typeAttr = filterName ? ' type="button"' : '';
+            return `<li class="profile-dim-row${smallNClass(n)}">
+              <${tag}${typeAttr} class="profile-dim-chip"${filterAttr}>
+                <span class="profile-dim-label">${escapeHtml(label)}</span>
+                <span class="profile-dim-count">n=${n}</span>
+                <span class="profile-dim-bar" aria-hidden="true"><i style="width:${share}%"></i></span>
+              </${tag}>
+            </li>`;
+          })
+          .join('')}
+      </ul>
+    </div>`;
+  }
+
   function renderProfile() {
     const host = document.getElementById('profile-composition');
     const empty = document.getElementById('profile-empty');
@@ -760,34 +815,22 @@ import {
     const hasAny = dims.some((dim) => Array.isArray(profile[dim]) && profile[dim].length);
     if (empty) empty.hidden = hasAny;
     if (!hasAny) return;
-    dims.forEach((dim) => {
-      const rows = Array.isArray(profile[dim]) ? profile[dim].slice(0, 6) : [];
-      if (!rows.length) return;
-      const filterName = FILTER_FROM_PROFILE[dim];
-      const block = document.createElement('div');
-      block.className = 'profile-dim';
-      block.innerHTML = `<h3>${escapeHtml(PROFILE_DIM_LABELS[dim] || dim)}</h3>
-        <ul class="profile-dim-list">
-          ${rows
-            .map((row) => {
-              const label = profileCodeLabel(dim, row.key);
-              const n = Number(row.n) || 0;
-              const filterAttr = filterName
-                ? ` data-filter-field="${escapeHtml(filterName)}" data-filter-value="${escapeHtml(row.key)}"`
-                : '';
-              const tag = filterName ? 'button' : 'span';
-              const typeAttr = filterName ? ' type="button"' : '';
-              return `<li class="profile-dim-row${smallNClass(n)}">
-                <${tag}${typeAttr} class="profile-dim-chip"${filterAttr}>
-                  <span class="profile-dim-label">${escapeHtml(label)}</span>
-                  <span class="profile-dim-count">n=${n}</span>
-                </${tag}>
-              </li>`;
-            })
-            .join('')}
-        </ul>`;
-      host.append(block);
-    });
+
+    const primaryHost = document.createElement('div');
+    primaryHost.className = 'profile-dim-grid';
+    primaryHost.innerHTML = PROFILE_PRIMARY_DIMS.map((dim) => renderProfileDim(dim, profile)).join('');
+    host.append(primaryHost);
+
+    const secondaryHtml = PROFILE_SECONDARY_DIMS.map((dim) => renderProfileDim(dim, profile))
+      .filter(Boolean)
+      .join('');
+    if (secondaryHtml) {
+      const more = document.createElement('details');
+      more.className = 'profile-more';
+      more.innerHTML = `<summary>More profile dimensions</summary>
+        <div class="profile-dim-grid profile-dim-grid-secondary">${secondaryHtml}</div>`;
+      host.append(more);
+    }
   }
 
   function renderInsights() {
@@ -817,13 +860,12 @@ import {
       const relative = relativeDomainLabel(stat.score, stats);
       const sd =
         stat.sd == null || !Number.isFinite(Number(stat.sd)) ? '—' : Number(stat.sd).toFixed(2);
+      button.title = relative;
       button.innerHTML = `
         <span class="domain-score-name">${escapeHtml(stat.label || domain.label)}</span>
         <span class="domain-score-mean">${Number(stat.score).toFixed(2)} / 7</span>
-        <span class="domain-score-meta">n=${Number(stat.n) || 0} · SD ${sd}</span>
         <span class="domain-bar domain-bar-muted" aria-hidden="true"><i style="width:${percent}%"></i></span>
-        <span class="domain-relative">${escapeHtml(relative)}</span>
-        ${miniDistHtml(stat.counts || [], { compact: true, ceiling: 20 })}
+        <span class="domain-score-meta">n=${Number(stat.n) || 0} · SD ${sd}</span>
         <i class="drill-mark" aria-hidden="true">+</i>`;
       host.append(button);
     });
@@ -841,24 +883,30 @@ import {
       <h3>${escapeHtml(title)}</h3>
       <ul class="item-highlight-list">
         ${rows
-          .map(
-            (row) => `<li>
+          .map((row) => {
+            const sd =
+              row.sd == null || !Number.isFinite(Number(row.sd))
+                ? '—'
+                : Number(row.sd).toFixed(2);
+            return `<li>
               <details class="item-highlight">
                 <summary class="item-highlight-summary">
                   <span class="item-highlight-copy">
                     <span class="item-question">${escapeHtml(shortItemLabel(row.label || row.id))}</span>
                     <span class="item-id item-id-secondary">${escapeHtml(row.id)}</span>
                   </span>
-                  <span class="item-highlight-meta">mean ${Number(row.mean).toFixed(2)} / 7</span>
-                  ${miniDistHtml(row.counts, { compact: true, ceiling: 24 })}
+                  <span class="item-highlight-meta">
+                    <span>${Number(row.mean).toFixed(2)} / 7</span>
+                    <span class="item-sd">SD ${sd}</span>
+                  </span>
                 </summary>
                 <div class="item-highlight-expand">
                   <p class="item-highlight-meta">${escapeHtml(itemMetaLine(row))}</p>
                   ${fullDistHtml(row.counts, row.id)}
                 </div>
               </details>
-            </li>`
-          )
+            </li>`;
+          })
           .join('')}
       </ul>
     </div>`;
@@ -938,17 +986,31 @@ import {
       if (!rows.length) empty.textContent = 'Choose a measure and dimension, then compare.';
     }
     const dim = segmentPayload?.dimension || '';
+    const maxMean = Math.max(
+      0.01,
+      ...rows.map((row) => (row.mean == null ? 0 : Number(row.mean) || 0))
+    );
     rows.forEach((row) => {
       const tr = document.createElement('tr');
       tr.className = smallNClass(row.n).trim();
+      const n = Number(row.n) || 0;
       const mean = row.mean == null ? '—' : Number(row.mean).toFixed(2);
       const sd = row.sd == null ? '—' : Number(row.sd).toFixed(2);
+      const barPct =
+        row.mean == null ? 0 : Math.round((Number(row.mean) / Math.max(maxMean, 7)) * 100);
       tr.innerHTML = `
-        <td>${escapeHtml(profileCodeLabel(dim, row.key))}</td>
-        <td>${mean}</td>
-        <td>n=${Number(row.n) || 0}</td>
-        <td>${sd}</td>
-        <td>${miniDistHtml(row.counts || [], { compact: true, ceiling: 28 })}</td>`;
+        <td>
+          <span class="segment-label">${escapeHtml(profileCodeLabel(dim, row.key))}</span>
+          ${smallNBadge(n)}
+        </td>
+        <td>
+          <span class="segment-mean-wrap">
+            <span class="segment-mean">${mean}</span>
+            <span class="segment-compare-bar" aria-hidden="true"><i style="width:${barPct}%"></i></span>
+          </span>
+        </td>
+        <td>n=${n}</td>
+        <td>${sd}</td>`;
       body.append(tr);
     });
   }
