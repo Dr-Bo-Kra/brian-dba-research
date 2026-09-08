@@ -39,7 +39,7 @@ Hosting region for the research archive: **Singapore** (approved).
 
 - Authenticated authorised researcher only; MFA session; CSRF on POST.
 - Fail-closed unless `EXPORTS_ENABLED=true`.
-- Approved CSV schema only (participant reference, accepted_at, region, role, experience, orientation). No free-text, no auth/session metadata.
+- Approved CSV schema only (quantitative study columns: coded profile, domain scores, Likert — no free-text, no auth/session metadata).
 - Optional single-participant export via `reference` in the export body.
 - No public export URLs. Actions are audit-logged.
 

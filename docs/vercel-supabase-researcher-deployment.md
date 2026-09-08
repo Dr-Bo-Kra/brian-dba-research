@@ -109,17 +109,24 @@ session/auth-state/rate-limit use; expired-session cleanup; audit INSERT.
 It may not: change schema, execute `delete_assessment_by_reference`, use the
 service-role, or administer the database.
 
-## Vercel project setup (do not perform yet)
+## Vercel project setup (current)
 
-1. Create a Vercel project for this repository after institutional approval.
-2. Framework preset: Other / no framework. Root is this repo.
-3. Set server-only environment variables. Do not expose them to the browser.
+Project `kay-bee1/brian-dba-research` already exists.
+
+| Target | URL / notes |
+| --- | --- |
+| Clean Production URL | `https://brian-dba-research.vercel.app` (also `https://brian-dba-research-kay-bee1.vercel.app`) |
+| Production path | Promote / `vercel deploy --prod` from `privacy-security-baseline` — **do not** merge `main` for this cutover; **do not** change custom DNS |
+| Stable Preview alias | `https://brian-dba-research-git-privacy-security-baseline-kay-bee1.vercel.app` (SSO-protected) |
+
+1. Framework preset: Other / no framework. Root is this repo. Node 20+ (project currently 24.x).
+2. Production: keep `SUBMISSION_API_ENABLED=false`, `EXPORTS_ENABLED=false`, `DELETIONS_ENABLED=false` until the documented cutover/go-live steps.
+3. Production fail-closed flags are set; **copy Preview secrets into Production** (owner) before enabling `RESEARCHER_API_ENABLED=true`.
 4. Confirm function `api/researcher/index.mjs` runs as Node. Nested `/api/researcher/:path*` is rewritten to that function.
 5. Confirm `_lib`, `_server`, and `_vercel` are not public routes.
-6. Attach the future custom domain only after IT/DPO approval.
-7. Create Brian’s Supabase Auth user, enroll TOTP, then insert that exact user id into `authorised_researchers`.
-8. Keep `RESEARCHER_API_ENABLED=false` until Auth, MFA, region, and DPO items
-   are closed.
+6. Attach a custom domain only after IT/DPO approval (not required for Brian cutover on `*.vercel.app`).
+7. Create Brian’s Supabase Auth user, enroll **his** TOTP, then cut over `authorised_researchers` (see `docs/launch-readiness.md`).
+8. Never place `SYNTHETIC_OPERATOR_DATABASE_URL`, service-role keys, or operator SQL in Vercel.
 
 ## Security headers and CORS
 
@@ -144,13 +151,13 @@ On Vercel, client IP is the function socket address unless
 ## What must not be done before approval
 
 - Enable `COLLECTION_ENABLED` or fill `SUBMISSION_ENDPOINT`
-- Build or connect a participant submission API
-- Enable exports or deletions
-- Deploy this project to a production Vercel target
-- Choose or hard-code a production region
+- Enable `SUBMISSION_API_ENABLED` on Production before go-live
+- Enable exports or deletions before Brian cutover
+- Merge `main` solely to obtain the Production URL (promote the privacy branch instead)
 - Invent a Supabase user id / `auth_subject` without reading it from Auth
 - Use a Supabase service-role key
 - Give the browser any database credential
+- Place `SYNTHETIC_OPERATOR_DATABASE_URL` or other elevated operator credentials in Vercel
 - Weaken RLS so anon/authenticated can SELECT survey rows
 - Trust `X-Forwarded-For` globally
 

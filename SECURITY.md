@@ -35,28 +35,28 @@ Full trust-boundary notes: `docs/researcher-dashboard-architecture.md`. API cont
 - Database row-level security is enabled and forced; former public insert/select policies are dropped.
 - Researcher API: deny-by-default roles, HttpOnly session cookies, CSRF on mutations, allowlisted DTOs, CSV formula escaping, deletion generic responses, export/delete policy flags off.
 
-## Initial-release researcher workflow (Supabase dashboard)
+## Researcher workflow (Inquiry Archive)
 
 | Control | Expectation |
 | --- | --- |
-| Interface | Authenticated Supabase dashboard (not `researcher/`) |
-| Accounts | Role-based authorised-researcher identities. Brian may be the only provisioned researcher initially. No shared login. |
+| Interface | Authenticated Inquiry Archive at `/researcher/` via `/api/researcher` (Preview-proven; Production promote pending) |
+| Accounts | Role-based identities in `authorised_researchers`. Exactly one active row. Brian is the intended Production researcher. No shared login. |
 | MFA | Required: Supabase Auth TOTP (`aal2`). AIM / Entra is not used |
-| Least privilege | Minimum dashboard permissions to review, export, and delete research rows |
+| Least privilege | `researcher_api` for reads/sessions/audit; deletion only via `delete_assessment_by_reference` (EXECUTE), not table DELETE |
 | Public reads | None. Do not add `anon` or `authenticated` SELECT policies |
-| Aggregate reporting | Dashboard counts and filters only; nothing published on the public site |
-| CSV export | Authenticated dashboard session; store extracts in an approved location |
-| Deletion | By participant reference (`client_record_id` / `resp_…`) before anonymisation |
-| Retention | Follow the approved schedule once it exists; collection stays off until then |
-| Audit logging | Supabase project logs plus a written export/deletion record |
+| Aggregate reporting | Quantitative dashboard only; nothing published on the public site |
+| CSV export | Policy-gated (`EXPORTS_ENABLED`); MFA session; approved quantitative columns; formula-escaped |
+| Deletion | Policy-gated (`DELETIONS_ENABLED`); by participant reference (`resp_…`); legal hold respected |
+| Retention | 12 months after research completion unless AIM requires otherwise; review listing only (no auto-delete) |
+| Audit logging | `researcher_audit_events` metadata plus institutional written record |
 
 Never put the service-role key in `config.js`, `researcher/config.js`, GitHub Pages, or client-side JavaScript. Never add a public “view responses” page on the survey site.
 
-## Inquiry archive (`researcher/`) and protected researcher API — future only
+## Inquiry archive (`researcher/`) and protected researcher API
 
-Static files under `researcher/` may remain in the repository. They talk only to `/api/researcher` and still return no research data without a server session. Do not describe GitHub Pages as the live results system.
+Static files under `researcher/` talk only to `/api/researcher` and return no research data without a server MFA session. Do not describe GitHub Pages as the live results system.
 
-The archive UI has no password form, no mock login, and no public-data fallback. Unauthenticated callers receive no survey records. Sessions, when later enabled, are HttpOnly cookies — not `localStorage` tokens.
+The archive UI has no mock login and no public-data fallback. Unauthenticated callers receive no survey records. Sessions are HttpOnly `__Host-` cookies — not `localStorage` tokens. The live study UI is quantitative-only; a legacy qualitative API path may remain for historical rows but is not exposed in the current-study dashboard.
 
 `noindex`, `robots.txt`, and `X-Robots-Tag` are crawl hints. **They are not access controls.** Anyone who knows the URL can fetch the static HTML/CSS/JS. Those files hold no participant records.
 
