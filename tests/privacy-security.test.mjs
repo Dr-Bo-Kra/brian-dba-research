@@ -150,6 +150,8 @@ test('inquiry archive connects to the same-origin API without secrets or a passw
   assert.match(researcherHtml, /noindex/);
   assert.match(researcherHtml, /href="\.\.\/styles\.css/);
   assert.match(researcherHtml, /href="dashboard\.css/);
+  assert.match(researcherHtml, /class="filter-n-note" id="participation-note"/);
+  assert.match(researcherCss, /\.filter-n-note\[hidden\]/);
   assert.match(researcherCss, /workspace-panel/);
   assert.match(researcherJs, /RESEARCHER_ENDPOINT/);
   assert.match(researcherJs, /sessionStorage\.removeItem/);

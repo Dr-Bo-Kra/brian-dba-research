@@ -343,7 +343,7 @@
   max-width: 68ch;
 }
 
-.participation-note[hidden] {
+.filter-n-note[hidden] {
   display: none;
 }
 

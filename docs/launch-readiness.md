@@ -4,6 +4,8 @@ This checklist is for a **privacy-hardened** research platform. Completing engin
 
 **Engineering snapshot (Preview / `privacy-security-baseline`):** protected submission API and researcher API are implemented and fail-closed. Committed `config.js` keeps `COLLECTION_ENABLED: false` and an empty `SUBMISSION_ENDPOINT`. Preview env includes researcher + submission wiring names; Production env must stay empty until an approved Production promote. Vercel Deployment Protection (SSO) currently gates Preview URLs.
 
+**Preview access (required):** open Preview only after Vercel team SSO, or with Automation Protection Bypass that also sets the cookie: `?x-vercel-protection-bypass=…&x-vercel-set-bypass-cookie=true`. A bypass query **without** `x-vercel-set-bypass-cookie=true` authorizes the HTML document once but leaves `/styles.css`, `/researcher/*.css`, and `/researcher/*.js` on SSO redirects. The browser then looks unstyled, CSP blocks the redirected “assets”, and Sign-in cannot advance to TOTP because `dashboard.js` never runs (`form-action 'none'` also blocks a native form post).
+
 ## Governance blockers (block live collection)
 
 | Blocker | Current state |
