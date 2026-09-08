@@ -58,7 +58,7 @@ Public browser configuration lives in `config.js` (see `config.example.js`).
 | --- | --- |
 | `COLLECTION_ENABLED` | `false` |
 | `SUBMISSION_ENDPOINT` | `''` (empty) |
-| `PRIVACY_NOTICE_VERSION` | Match `privacy.html` (currently `2026-08-28`) |
+| `PRIVACY_NOTICE_VERSION` | Match `privacy.html` (currently `2026-09-08`) |
 | `LINKEDIN_URL` | Public researcher contact profile |
 
 Researcher workspace configuration lives in `researcher/config.js`.

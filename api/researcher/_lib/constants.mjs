@@ -62,6 +62,7 @@ export const AUDIT_ACTIONS = Object.freeze([
   'view_qualitative',
   'export',
   'delete',
+  'retention_review',
   'anonymise',
   'role_change',
   'config_change',

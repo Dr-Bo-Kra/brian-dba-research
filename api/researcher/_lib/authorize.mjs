@@ -18,6 +18,7 @@ export function authorize(identity, action) {
     list: true,
     view_record: true,
     view_qualitative: true,
+    retention_review: true,
     export: identity.role === 'authorised_researcher' || identity.role === 'researcher_admin',
     delete: identity.role === 'authorised_researcher' || identity.role === 'researcher_admin',
     role_change: identity.role === 'researcher_admin',

@@ -85,10 +85,47 @@ function matchesFilters(record, filters) {
   if (filters.region && dto.region !== filters.region) return false;
   if (filters.role && dto.role !== filters.role) return false;
   if (filters.experience && dto.experience !== filters.experience) return false;
-  if (filters.q && !String(dto.participant_reference || '').toLowerCase().includes(filters.q)) {
+  if (filters.reference && dto.participant_reference !== filters.reference) return false;
+  if (
+    !filters.reference &&
+    filters.q &&
+    !String(dto.participant_reference || '').toLowerCase().includes(String(filters.q).toLowerCase())
+  ) {
     return false;
   }
   return true;
+}
+
+function addMonthsIso(iso, months) {
+  const base = Date.parse(iso);
+  if (!Number.isFinite(base)) return null;
+  const d = new Date(base);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d.toISOString();
+}
+
+function isRetentionDue(record, policy) {
+  if (!policy || record.anonymised_at) return false;
+  const accepted = record.created_at || record.accepted_at || record.consented_at;
+  if (!accepted) return false;
+  if (policy.basis === 'study_completion') {
+    if (!policy.reviewOpen || !policy.studyCompletionDate) return false;
+    return String(accepted).slice(0, 10) <= policy.studyCompletionDate;
+  }
+  const dueAt = addMonthsIso(accepted, policy.retentionMonths || 12);
+  return Boolean(dueAt && Date.now() >= Date.parse(dueAt));
+}
+
+function retentionDueRows(records, policy, maxRows) {
+  return records
+    .filter((row) => isRetentionDue(row, policy))
+    .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
+    .slice(0, maxRows)
+    .map((row) => ({
+      participant_reference: row.client_record_id || row.participant_reference,
+      accepted_at: row.created_at || row.accepted_at || null,
+      legal_hold: Boolean(row.legal_hold),
+    }));
 }
 
 function aggregateDomains(rows) {
@@ -189,6 +226,8 @@ function summarize(rows) {
     retention: {
       legal_hold: ledgers.filter((row) => row.legal_hold).length,
       anonymised: 0,
+      due_for_review: 0,
+      auto_delete: false,
     },
   };
 }
@@ -223,6 +262,12 @@ export function createFixtureResearchStore(records) {
       if (deleted) records.splice(idx, 1);
       return { legal_hold: Boolean(held), deleted };
     },
+    async listRetentionDue(policy, maxRows = 100) {
+      return retentionDueRows(records, policy, maxRows);
+    },
+    async countRetentionDue(policy) {
+      return retentionDueRows(records, policy, Number.MAX_SAFE_INTEGER).length;
+    },
     async lookupResearcher() {
       return null;
     },
@@ -240,6 +285,13 @@ export function createDatabaseResearchStore(query) {
     filters.role,
     filters.experience,
     filters.q ? `%${filters.q}%` : null,
+  ];
+
+  const retentionParams = (policy) => [
+    policy.basis,
+    policy.retentionMonths,
+    policy.basis === 'study_completion' ? Boolean(policy.reviewOpen) : false,
+    policy.studyCompletionDate || null,
   ];
 
   return {
@@ -262,6 +314,8 @@ export function createDatabaseResearchStore(query) {
         retention: {
           legal_hold: Number(row.legal_hold) || 0,
           anonymised: Number(row.anonymised) || 0,
+          due_for_review: 0,
+          auto_delete: false,
         },
       };
     },
@@ -309,7 +363,11 @@ export function createDatabaseResearchStore(query) {
       });
     },
     async exportRows(filters, maxRows) {
-      const result = await query(SQL.exportRows, [...filterParams(filters), maxRows + 1]);
+      const result = await query(SQL.exportRows, [
+        ...filterParams(filters),
+        filters.reference || null,
+        maxRows + 1,
+      ]);
       const rows = result?.rows || [];
       if (rows.length > maxRows) return { ok: false, error: 'invalid_request' };
       return {
@@ -327,8 +385,26 @@ export function createDatabaseResearchStore(query) {
       };
     },
     async deleteByReference(reference) {
-      await query(SQL.deleteByReference, [reference]);
-      return { legal_hold: false, deleted: false };
+      const result = await query(SQL.deleteByReference, [reference]);
+      const row = result?.rows?.[0] || {};
+      return {
+        legal_hold: Boolean(row.legal_hold),
+        deleted: Boolean(row.deleted),
+      };
+    },
+    async listRetentionDue(policy, maxRows = 100) {
+      if (policy.basis === 'study_completion' && !policy.reviewOpen) return [];
+      const result = await query(SQL.retentionDue, [...retentionParams(policy), maxRows]);
+      return (result?.rows || []).map((row) => ({
+        participant_reference: row.participant_reference,
+        accepted_at: row.accepted_at || null,
+        legal_hold: Boolean(row.legal_hold),
+      }));
+    },
+    async countRetentionDue(policy) {
+      if (policy.basis === 'study_completion' && !policy.reviewOpen) return 0;
+      const result = await query(SQL.retentionDueCount, retentionParams(policy));
+      return Number(result?.rows?.[0]?.n) || 0;
     },
     async lookupResearcher(subject) {
       const result = await query(SQL.lookupResearcher, [subject]);
@@ -368,6 +444,12 @@ export function createUnavailableResearchStore() {
     },
     async deleteByReference() {
       return { legal_hold: false, deleted: false };
+    },
+    async listRetentionDue() {
+      return [];
+    },
+    async countRetentionDue() {
+      return 0;
     },
     async lookupResearcher() {
       return null;

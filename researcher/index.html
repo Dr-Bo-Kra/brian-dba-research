@@ -269,20 +269,25 @@
       <details class="workspace-panel admin-panel" id="admin-panel">
         <summary class="admin-summary">
           <p class="kicker">Administration</p>
-          <h2 id="admin-title">Export and deletion</h2>
-          <p class="section-lede compact">CSV export and deletion stay disabled until the study enables them.</p>
+          <h2 id="admin-title">Export, deletion, and retention</h2>
+          <p class="section-lede compact">Export and deletion follow server policy flags. Retention review lists records at threshold without auto-delete.</p>
         </summary>
         <div class="admin-body">
           <div class="admin-block">
             <h3>CSV export</h3>
+            <p class="survey-footnote admin-footnote" id="export-policy-note">CSV export is policy-gated until <code>EXPORTS_ENABLED</code> is set for this environment.</p>
+            <div class="field">
+              <label for="export-reference">Optional participant reference (single-record export)</label>
+              <input id="export-reference" name="export-reference" type="text" placeholder="resp_…" autocomplete="off">
+            </div>
             <div class="survey-actions admin-actions">
               <button type="button" class="button ghost" id="export-csv" disabled>Request controlled CSV export</button>
             </div>
-            <p class="survey-footnote admin-footnote">CSV export is unavailable until it is enabled for this study.</p>
           </div>
 
           <div class="admin-block" aria-labelledby="withdrawal-title">
             <h3 id="withdrawal-title">Delete by participant reference</h3>
+            <p class="survey-footnote admin-footnote" id="delete-policy-note">Deletion is policy-gated until <code>DELETIONS_ENABLED</code> is set. Participants contact Brian with their reference; you process deletion here.</p>
             <form id="delete-form" class="survey-form" novalidate>
               <div class="field">
                 <label for="delete-reference">Participant reference</label>
@@ -290,14 +295,34 @@
               </div>
               <label class="reveal-check">
                 <input type="checkbox" id="delete-confirm">
-                I confirm this deletion is authorised, policy-approved, and will be audit-logged.
+                I confirm this deletion is authorised, deliberate, and will be audit-logged.
               </label>
               <p class="field-error" id="delete-error" hidden role="alert"></p>
               <div class="survey-actions admin-actions">
                 <button type="submit" class="button ghost" id="delete-submit" disabled>Request deletion</button>
               </div>
             </form>
-            <p class="survey-footnote admin-footnote">Deletion is unavailable until it is enabled for this study.</p>
+          </div>
+
+          <div class="admin-block" aria-labelledby="retention-title">
+            <h3 id="retention-title">Retention review</h3>
+            <p class="survey-footnote admin-footnote" id="retention-policy-note">Records at the 12-month-after-completion threshold are listed for authorised review. Nothing is auto-deleted.</p>
+            <div class="survey-actions admin-actions">
+              <button type="button" class="button ghost" id="retention-refresh">Refresh retention review</button>
+            </div>
+            <p class="empty-copy" id="retention-empty">No retention-due records in the current policy window.</p>
+            <div class="table-wrap" id="retention-table-wrap" hidden>
+              <table class="data-table" aria-labelledby="retention-title">
+                <thead>
+                  <tr>
+                    <th scope="col">Participant reference</th>
+                    <th scope="col">Accepted</th>
+                    <th scope="col">Legal hold</th>
+                  </tr>
+                </thead>
+                <tbody id="retention-rows"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </details>
@@ -316,6 +341,6 @@
   </div>
 
   <script src="config.js?v=3"></script>
-  <script type="module" src="dashboard.js?v=10"></script>
+  <script type="module" src="dashboard.js?v=11"></script>
 </body>
 </html>

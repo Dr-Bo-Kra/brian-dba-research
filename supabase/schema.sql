@@ -283,19 +283,53 @@ begin
 end $$;
 
 create or replace function public.delete_assessment_by_reference(p_ref text)
-returns void
+returns table(deleted boolean, legal_hold boolean)
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_hold boolean := false;
+  v_exists boolean := false;
+  v_deleted integer := 0;
 begin
   if p_ref !~ '^resp_[0-9a-f-]{32,36}$' then
+    return query select false, false;
     return;
   end if;
+
+  select
+    exists (
+      select 1
+      from public.assessment_responses
+      where client_record_id = p_ref
+        and anonymised_at is null
+    ),
+    exists (
+      select 1
+      from public.assessment_responses
+      where client_record_id = p_ref
+        and anonymised_at is null
+        and legal_hold is true
+    )
+  into v_exists, v_hold;
+
+  if not v_exists then
+    return query select false, false;
+    return;
+  end if;
+
+  if v_hold then
+    return query select false, true;
+    return;
+  end if;
+
   delete from public.assessment_responses
    where client_record_id = p_ref
      and legal_hold is not true
      and anonymised_at is null;
+  get diagnostics v_deleted = row_count;
+  return query select (v_deleted > 0), false;
 end;
 $$;
 
@@ -309,6 +343,8 @@ revoke all on function public.delete_assessment_by_reference(text) from authenti
 --   FORCE RLS stays on. This role is not BYPASSRLS. Access is GRANT plus
 --   role-scoped policies below — not a public or browser SELECT policy.
 --   The Inquiry Archive browser never receives this connection string.
+--   Table DELETE on assessment_responses stays revoked; controlled deletion
+--   uses EXECUTE on delete_assessment_by_reference only when the API flag is on.
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'researcher_api') then
@@ -319,7 +355,7 @@ begin
     grant select, insert, update on table public.researcher_auth_states to researcher_api;
     grant select, insert, update on table public.researcher_rate_limits to researcher_api;
     grant insert on table public.researcher_audit_events to researcher_api;
-    revoke all on function public.delete_assessment_by_reference(text) from researcher_api;
+    grant execute on function public.delete_assessment_by_reference(text) to researcher_api;
   end if;
 end $$;
 

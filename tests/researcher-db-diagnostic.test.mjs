@@ -158,7 +158,7 @@ function createCatalogQuery(identityOverrides = {}, extra = {}) {
       };
     }
     if (/has_function_privilege/.test(text)) {
-      return { rows: extra.deleteExecuteRows || [{ can_execute: false }] };
+      return { rows: extra.deleteExecuteRows || [{ can_execute: true }] };
     }
     throw new Error('unexpected_diagnostic_sql');
   };

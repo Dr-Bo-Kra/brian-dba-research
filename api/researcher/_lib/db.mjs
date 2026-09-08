@@ -141,14 +141,43 @@ export const SQL = Object.freeze({
              and ($4::text is null or profile ->> 'position' = $4)
              and ($5::text is null or profile ->> 'yearsLending' = $5)
              and ($6::text is null or client_record_id ilike $6)
+             and ($7::text is null or client_record_id = $7)
            order by created_at desc
-           limit $7`,
+           limit $8`,
   },
   deleteByReference: {
-    text: `delete from public.assessment_responses
-           where client_record_id = $1
-             and legal_hold is not true
-             and anonymised_at is null`,
+    text: `select deleted, legal_hold
+           from public.delete_assessment_by_reference($1)`,
+  },
+  retentionDue: {
+    text: `select client_record_id as participant_reference,
+                  created_at as accepted_at,
+                  legal_hold
+           from public.assessment_responses
+           where anonymised_at is null
+             and (
+               ($1::text = 'record_age'
+                 and created_at <= now() - ($2::int * interval '1 month'))
+               or
+               ($1::text = 'study_completion'
+                 and $3::boolean is true
+                 and created_at::date <= $4::date)
+             )
+           order by created_at asc
+           limit $5`,
+  },
+  retentionDueCount: {
+    text: `select count(*)::int as n
+           from public.assessment_responses
+           where anonymised_at is null
+             and (
+               ($1::text = 'record_age'
+                 and created_at <= now() - ($2::int * interval '1 month'))
+               or
+               ($1::text = 'study_completion'
+                 and $3::boolean is true
+                 and created_at::date <= $4::date)
+             )`,
   },
   insertAudit: {
     name: 'insertAudit',

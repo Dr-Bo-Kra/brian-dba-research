@@ -82,8 +82,10 @@ Never put secrets in `researcher/config.js`, `config.js`, or any `NEXT_PUBLIC_` 
 | `SUPABASE_JWT_AUD` | Optional; default `authenticated`. Tokens are verified with `supabase.auth.getClaims()`. Do not set `SUPABASE_JWT_SECRET` or `SUPABASE_SECRET_KEY` for this login flow. |
 | `TRUSTED_PROXY` | Leave unset/`false` until Vercel is accepted as the TLS terminator. Then `vercel` to read only `x-vercel-forwarded-for`. |
 | `AUDIT_STORE_RESEARCHER_IP` | Keep `false` until DPO approval |
-| `EXPORTS_ENABLED` | Keep `false` |
-| `DELETIONS_ENABLED` | Keep `false` |
+| `EXPORTS_ENABLED` | Keep `false` until Brian Production cutover (then `true` on researcher API only) |
+| `DELETIONS_ENABLED` | Keep `false` until Brian Production cutover (then `true` on researcher API only) |
+| `RETENTION_MONTHS` | Default `12`; optional |
+| `STUDY_COMPLETION_DATE` | Optional `YYYY-MM-DD`; set when research completes |
 | `ALLOWED_ORIGIN` | Leave empty. Never `*` |
 
 See `api/researcher/env.example`.

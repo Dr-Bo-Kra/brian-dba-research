@@ -255,7 +255,7 @@ export async function runDbDiagnostic(query) {
     if (!browserGrantsVerified) return failedCheck('browser_grants');
 
     const deleteExecute = await stagedQuery(query, DIAGNOSTIC_SQL.deleteExecute, [], 'function_privilege');
-    const deleteExecuteVerified = asBool(deleteExecute?.rows?.[0]?.can_execute) === false;
+    const deleteExecuteVerified = asBool(deleteExecute?.rows?.[0]?.can_execute) === true;
     if (!deleteExecuteVerified) return failedCheck('function_privilege');
 
     return {

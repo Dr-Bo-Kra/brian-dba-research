@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { authorize, sanitizeAuditDetail } from './authorize.mjs';
-import { loadConfig } from './config.mjs';
+import { loadConfig, retentionPolicy } from './config.mjs';
 import { ROLES } from './constants.mjs';
 import { resolveResearchStore } from './data.mjs';
 import { buildCsv, mapExportRow } from './csv.mjs';
@@ -351,9 +351,23 @@ export function createResearcherApp(overrides = {}) {
           role: researcher.role,
           expiresAt: established.expiresAt,
           csrfToken: established.csrf,
+          ...sessionCapabilityPayload(),
         },
         established.headers
       ),
+    };
+  }
+
+  function sessionCapabilityPayload() {
+    const policy = retentionPolicy(config);
+    return {
+      exportsEnabled: config.exportsEnabled === true,
+      deletionsEnabled: config.deletionsEnabled === true,
+      retentionMonths: policy.retentionMonths,
+      studyCompletionDate: policy.studyCompletionDate,
+      retentionBasis: policy.basis,
+      retentionReviewOpensAt: policy.reviewOpensAt,
+      retentionAutoDelete: false,
     };
   }
 
@@ -605,6 +619,7 @@ export function createResearcherApp(overrides = {}) {
           role: identity.role,
           expiresAt: identity.expiresAt,
           csrfToken: csrfFromSession(identity.sessionId, config.sessionSecret),
+          ...sessionCapabilityPayload(),
         })
       );
     }
@@ -640,7 +655,58 @@ export function createResearcherApp(overrides = {}) {
       const parsed = parseFilters(queryOf(request));
       if (!parsed.ok) return respond(fail(parsed.error));
       try {
-        return respond(json(200, await store.summary(parsed.filters)));
+        const summary = await store.summary(parsed.filters);
+        const policy = retentionPolicy(config);
+        let due = 0;
+        try {
+          due = await store.countRetentionDue(policy);
+        } catch {
+          due = 0;
+        }
+        summary.retention = {
+          ...(summary.retention || {}),
+          legal_hold: Number(summary.retention?.legal_hold) || 0,
+          anonymised: Number(summary.retention?.anonymised) || 0,
+          due_for_review: Number(due) || 0,
+          auto_delete: false,
+          basis: policy.basis,
+          retention_months: policy.retentionMonths,
+          study_completion_date: policy.studyCompletionDate,
+          review_opens_at: policy.reviewOpensAt,
+        };
+        return respond(json(200, summary));
+      } catch {
+        return respond(fail('unavailable'));
+      }
+    }
+
+    if (path === '/v1/retention-review' && method === 'GET') {
+      const needed = authorize(identity, 'retention_review');
+      if (!needed.ok) {
+        await writeAudit(identity, 'authz_failure', { reason: needed.error }, requestId);
+        return respond(fail(needed.error));
+      }
+      const policy = retentionPolicy(config);
+      try {
+        const records = await store.listRetentionDue(policy, 100);
+        await writeAudit(identity, 'retention_review', {
+          count: records.length,
+          basis: policy.basis,
+          outcome: 'ok',
+        }, requestId);
+        return respond(
+          json(200, {
+            policy: {
+              basis: policy.basis,
+              retention_months: policy.retentionMonths,
+              study_completion_date: policy.studyCompletionDate,
+              review_opens_at: policy.reviewOpensAt,
+              review_open: policy.reviewOpen,
+              auto_delete: false,
+            },
+            records,
+          })
+        );
       } catch {
         return respond(fail('unavailable'));
       }
@@ -695,14 +761,20 @@ export function createResearcherApp(overrides = {}) {
       if (!exported.ok) return respond(fail(exported.error));
       await writeAudit(identity, 'export', {
         count: exported.rows.length,
-        scope: 'approved_export_schema',
+        scope: parsed.participantLevel ? 'participant_export_schema' : 'approved_export_schema',
+        ...(parsed.participantLevel
+          ? { participant_reference: parsed.filters.reference }
+          : {}),
       }, requestId);
+      const filename = parsed.participantLevel
+        ? 'inquiry-archive-participant-export.csv'
+        : 'inquiry-archive-export.csv';
       return respond({
         status: 200,
         headers: {
           ...securityHeaders(),
           'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': 'attachment; filename="inquiry-archive-export.csv"',
+          'Content-Disposition': `attachment; filename="${filename}"`,
         },
         body: buildCsv(exported.rows.map((row) => mapExportRow(row))),
       });

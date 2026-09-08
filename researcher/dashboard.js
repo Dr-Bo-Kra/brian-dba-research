@@ -50,7 +50,17 @@ import {
   const deleteConfirm = document.getElementById('delete-confirm');
   const deleteSubmit = document.getElementById('delete-submit');
   const deleteError = document.getElementById('delete-error');
+  const deleteReference = document.getElementById('delete-reference');
   const exportBtn = document.getElementById('export-csv');
+  const exportReference = document.getElementById('export-reference');
+  const exportPolicyNote = document.getElementById('export-policy-note');
+  const deletePolicyNote = document.getElementById('delete-policy-note');
+  const retentionRefresh = document.getElementById('retention-refresh');
+  const retentionEmpty = document.getElementById('retention-empty');
+  const retentionTableWrap = document.getElementById('retention-table-wrap');
+  const retentionRows = document.getElementById('retention-rows');
+  const retentionPolicyNote = document.getElementById('retention-policy-note');
+  const PARTICIPANT_REF = /^resp_[0-9a-f-]{32,36}$/i;
   const drillLayer = document.getElementById('drill-layer');
   const drillDrawer = document.getElementById('drill-drawer');
   const drillContent = document.getElementById('drill-content');
@@ -133,6 +143,7 @@ import {
   let records = [];
   let summary = null;
   let qualitative = [];
+  let retentionReview = null;
   let pollTimer = null;
   let showAllItems = false;
   let responsePage = 0;
@@ -877,7 +888,6 @@ import {
         body.append(detail);
       }
     });
-    if (exportBtn) exportBtn.disabled = true;
   }
 
   function toggleRecordDetail(reference) {
@@ -927,6 +937,8 @@ import {
     renderItems();
     renderLedger();
     renderReflections();
+    applyAdminControls();
+    renderRetention();
   }
 
   function clearWorkspaceData() {
@@ -935,14 +947,111 @@ import {
     records = [];
     summary = null;
     qualitative = [];
+    retentionReview = null;
     showAllItems = false;
     responsePage = 0;
     expandedRecordRef = null;
     closeDrilldown();
     if (signOutBtn) signOutBtn.hidden = true;
     setSessionMeta(null);
-    if (exportBtn) exportBtn.disabled = true;
-    if (deleteSubmit) deleteSubmit.disabled = true;
+    applyAdminControls();
+    renderRetention();
+  }
+
+  function sessionFromPayload(payload) {
+    if (payload?.authenticated !== true) return null;
+    return {
+      role: payload.role || 'authorised_researcher',
+      expiresAt: payload.expiresAt,
+      csrfToken: payload.csrfToken,
+      exportsEnabled: payload.exportsEnabled === true,
+      deletionsEnabled: payload.deletionsEnabled === true,
+      retentionMonths: Number(payload.retentionMonths) || 12,
+      studyCompletionDate: payload.studyCompletionDate || null,
+      retentionBasis: payload.retentionBasis || 'record_age',
+      retentionReviewOpensAt: payload.retentionReviewOpensAt || null,
+      retentionAutoDelete: false,
+    };
+  }
+
+  function applyAdminControls() {
+    const exportsOn = Boolean(session?.exportsEnabled);
+    const deletionsOn = Boolean(session?.deletionsEnabled);
+    if (exportBtn) exportBtn.disabled = !(session && apiConfigured && exportsOn);
+    if (exportPolicyNote) {
+      exportPolicyNote.textContent = exportsOn
+        ? 'Exports are enabled for this signed-in session. CSV uses the approved participant-data schema only (no free-text, no auth/session metadata).'
+        : 'CSV export is policy-gated until EXPORTS_ENABLED is set for this environment.';
+    }
+    if (deletePolicyNote) {
+      deletePolicyNote.textContent = deletionsOn
+        ? 'Deletions are enabled for this signed-in session. Locate by participant reference, confirm deliberately, then submit. Actions are CSRF-protected and audited.'
+        : 'Deletion is policy-gated until DELETIONS_ENABLED is set. Participants contact Brian with their reference; you process deletion here when enabled.';
+    }
+    if (retentionPolicyNote && session) {
+      const months = session.retentionMonths || 12;
+      const basis =
+        session.retentionBasis === 'study_completion' && session.studyCompletionDate
+          ? `study completion ${session.studyCompletionDate} + ${months} months`
+          : `record age (${months} months after acceptance; set STUDY_COMPLETION_DATE when research completes)`;
+      retentionPolicyNote.textContent = `Retention review uses ${basis}. Records are surfaced for authorised review; nothing is auto-deleted.`;
+    }
+    updateDeleteSubmitState();
+  }
+
+  function updateDeleteSubmitState() {
+    const deletionsOn = Boolean(session?.deletionsEnabled);
+    const reference = String(deleteReference?.value || '').trim();
+    const ok =
+      Boolean(session && apiConfigured && deletionsOn) &&
+      PARTICIPANT_REF.test(reference) &&
+      Boolean(deleteConfirm?.checked);
+    if (deleteSubmit) deleteSubmit.disabled = !ok;
+  }
+
+  function renderRetention() {
+    if (!retentionRows || !retentionEmpty || !retentionTableWrap) return;
+    retentionRows.innerHTML = '';
+    const rows = retentionReview?.records || [];
+    if (!session || !apiConfigured) {
+      retentionEmpty.hidden = false;
+      retentionEmpty.textContent = 'Sign in to review retention-due participant references.';
+      retentionTableWrap.hidden = true;
+      return;
+    }
+    if (!rows.length) {
+      retentionEmpty.hidden = false;
+      retentionEmpty.textContent =
+        retentionReview?.policy?.review_open === false
+          ? 'Retention review is not open yet (study completion + retention months still in the future).'
+          : 'No retention-due records in the current policy window.';
+      retentionTableWrap.hidden = true;
+      return;
+    }
+    retentionEmpty.hidden = true;
+    retentionTableWrap.hidden = false;
+    rows.forEach((row) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><code>${escapeHtml(row.participant_reference || '')}</code></td>
+        <td>${escapeHtml(formatWhen(row.accepted_at))}</td>
+        <td>${row.legal_hold ? 'yes' : 'no'}</td>`;
+      retentionRows.append(tr);
+    });
+  }
+
+  async function loadRetentionReview() {
+    if (!session || !apiConfigured) {
+      retentionReview = null;
+      renderRetention();
+      return;
+    }
+    try {
+      const response = await researcherFetch('/v1/retention-review');
+      retentionReview = await response.json();
+    } catch {
+      retentionReview = { records: [], policy: null };
+    }
+    renderRetention();
   }
 
   function apiUrl(path) {
@@ -1015,11 +1124,13 @@ import {
       setStatus('live', 'Live');
       setSessionMeta(session?.expiresAt);
       if (revealBox?.checked) await loadQualitative();
+      await loadRetentionReview();
       renderAll();
     } catch (error) {
       records = [];
       summary = null;
       qualitative = [];
+      retentionReview = null;
       renderAll();
       if (error.code === 'session-expired') {
         showAuth('Your session ended. Sign in again.');
@@ -1112,11 +1223,9 @@ import {
   function applySessionPayload(payload) {
     if (payload?.authenticated !== true) return false;
     if (payload?.mfaRequired) return false;
-    session = {
-      role: payload.role || 'authorised_researcher',
-      expiresAt: payload.expiresAt,
-      csrfToken: payload.csrfToken,
-    };
+    session = sessionFromPayload(payload);
+    if (!session) return false;
+    applyAdminControls();
     showWorkspace();
     startPolling();
     void refreshWorkspace();
@@ -1236,12 +1345,7 @@ import {
       });
       if (!response.ok) return null;
       const payload = await response.json();
-      if (payload?.authenticated !== true) return null;
-      return {
-        role: payload.role || 'authorised_researcher',
-        expiresAt: payload.expiresAt,
-        csrfToken: payload.csrfToken,
-      };
+      return sessionFromPayload(payload);
     } catch {
       return null;
     }
@@ -1273,16 +1377,15 @@ import {
       deleteError.hidden = true;
       deleteError.textContent = '';
     }
-    const LIVE_DELETIONS_ENABLED = false;
-    if (!LIVE_DELETIONS_ENABLED || !session || !apiConfigured) {
+    if (!session?.deletionsEnabled || !session || !apiConfigured) {
       if (deleteError) {
         deleteError.hidden = false;
         deleteError.textContent = 'Deletion is unavailable until it is enabled for this study.';
       }
       return;
     }
-    const reference = String(document.getElementById('delete-reference')?.value || '').trim();
-    if (!/^resp_[0-9a-f-]{32,36}$/i.test(reference) || !deleteConfirm?.checked) {
+    const reference = String(deleteReference?.value || '').trim();
+    if (!PARTICIPANT_REF.test(reference) || !deleteConfirm?.checked) {
       if (deleteError) {
         deleteError.hidden = false;
         deleteError.textContent = 'Enter a valid participant reference and confirm the deletion.';
@@ -1294,38 +1397,51 @@ import {
         method: 'POST',
         body: JSON.stringify({ reference, confirm: true }),
       });
-      document.getElementById('delete-reference').value = '';
-      deleteConfirm.checked = false;
-      deleteSubmit.disabled = true;
+      if (deleteReference) deleteReference.value = '';
+      if (deleteConfirm) deleteConfirm.checked = false;
+      updateDeleteSubmitState();
       await refreshWorkspace();
+      setStatus('live', 'Deletion request submitted.');
     } catch {
       if (deleteError) {
         deleteError.hidden = false;
-        deleteError.textContent = 'Deletion is unavailable until it is enabled for this study.';
+        deleteError.textContent = 'Deletion could not be completed. Try again or check study policy flags.';
       }
     }
   }
 
   async function handleExport() {
-    const LIVE_EXPORTS_ENABLED = false;
-    if (!LIVE_EXPORTS_ENABLED || !session || !apiConfigured) {
+    if (!session?.exportsEnabled || !session || !apiConfigured) {
       setStatus('error', 'CSV export is unavailable until it is enabled for this study.');
       return;
     }
     try {
+      const reference = String(exportReference?.value || '').trim();
+      const body = { ...readFilters(), confirm: true };
+      if (reference) {
+        if (!PARTICIPANT_REF.test(reference)) {
+          setStatus('error', 'Enter a valid participant reference for single-record export, or leave it blank.');
+          return;
+        }
+        body.reference = reference;
+        delete body.q;
+      }
       const response = await researcherFetch('/v1/exports', {
         method: 'POST',
-        body: JSON.stringify({ ...readFilters(), confirm: true }),
+        body: JSON.stringify(body),
       });
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'inquiry-archive-export.csv';
+      link.download = reference
+        ? 'inquiry-archive-participant-export.csv'
+        : 'inquiry-archive-export.csv';
       link.click();
       URL.revokeObjectURL(url);
+      setStatus('live', 'Export downloaded.');
     } catch {
-      setStatus('error', 'CSV export is unavailable until it is enabled for this study.');
+      setStatus('error', 'CSV export could not be completed. Try again or check study policy flags.');
     }
   }
 
@@ -1357,11 +1473,10 @@ import {
     }
   });
   deleteForm?.addEventListener('submit', handleDelete);
-  deleteConfirm?.addEventListener('change', () => {
-    // Deletion remains disabled until LIVE_DELETIONS_ENABLED is turned on.
-    deleteSubmit.disabled = true;
-  });
+  deleteConfirm?.addEventListener('change', () => updateDeleteSubmitState());
+  deleteReference?.addEventListener('input', () => updateDeleteSubmitState());
   exportBtn?.addEventListener('click', () => void handleExport());
+  retentionRefresh?.addEventListener('click', () => void loadRetentionReview());
   signOutBtn?.addEventListener('click', () => void handleSignOut());
   document.getElementById('item-all-details')?.addEventListener('toggle', (event) => {
     showAllItems = Boolean(event.target.open);
@@ -1426,6 +1541,7 @@ import {
   void restoreSession().then((restored) => {
     if (restored) {
       session = restored;
+      applyAdminControls();
       showWorkspace();
       startPolling();
       void refreshWorkspace();

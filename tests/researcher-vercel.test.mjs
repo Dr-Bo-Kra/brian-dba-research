@@ -570,8 +570,10 @@ test('browser files have no Supabase credentials or direct database access', () 
   assert.match(read('researcher/config.js'), /RESEARCHER_ENDPOINT:\s*'\/api\/researcher'/);
   assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
   assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*''/);
-  assert.doesNotMatch(read('researcher/dashboard.js'), /LIVE_EXPORTS_ENABLED = true/);
-  assert.doesNotMatch(read('researcher/dashboard.js'), /LIVE_DELETIONS_ENABLED = true/);
+  assert.doesNotMatch(read('researcher/dashboard.js'), /LIVE_EXPORTS_ENABLED\s*=\s*true/);
+  assert.doesNotMatch(read('researcher/dashboard.js'), /LIVE_DELETIONS_ENABLED\s*=\s*true/);
+  assert.match(read('researcher/dashboard.js'), /exportsEnabled/);
+  assert.match(read('researcher/dashboard.js'), /deletionsEnabled/);
 });
 
 test('repository scan finds no committed env secrets or service-role keys', () => {

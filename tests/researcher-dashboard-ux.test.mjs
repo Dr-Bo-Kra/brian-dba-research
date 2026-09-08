@@ -291,8 +291,10 @@ test('dashboard IA order and progressive disclosure shell match redesign', () =>
   assert.match(js, /RESPONSE_FETCH_LIMIT = 50/);
   assert.match(js, /openDrilldown/);
   assert.match(js, /closeDrilldown/);
-  assert.match(js, /LIVE_EXPORTS_ENABLED = false/);
-  assert.match(js, /LIVE_DELETIONS_ENABLED = false/);
+  assert.match(js, /exportsEnabled/);
+  assert.match(js, /deletionsEnabled/);
+  assert.doesNotMatch(js, /LIVE_EXPORTS_ENABLED\s*=\s*true/);
+  assert.doesNotMatch(js, /LIVE_DELETIONS_ENABLED\s*=\s*true/);
   assert.match(js, /\/v1\/responses\/\$\{encodeURIComponent\(ref\)\}\/qualitative/);
   assert.match(js, /revealBox\?\.checked/);
   assert.match(js, /polarization/);
@@ -551,17 +553,21 @@ test('response ledger paginates ten records per page with progressive detail', (
   assert.doesNotMatch(js, /loaded ·/);
 });
 
-test('exports and deletions stay disabled in researcher UI source', () => {
+test('exports and deletions are session-gated and default disabled in UI', () => {
   const js = read('researcher/dashboard.js');
   const html = read('researcher/index.html');
-  assert.match(js, /LIVE_EXPORTS_ENABLED = false/);
-  assert.match(js, /LIVE_DELETIONS_ENABLED = false/);
-  assert.doesNotMatch(js, /LIVE_EXPORTS_ENABLED = true/);
-  assert.doesNotMatch(js, /LIVE_DELETIONS_ENABLED = true/);
+  assert.match(js, /exportsEnabled/);
+  assert.match(js, /deletionsEnabled/);
+  assert.match(js, /session\?\.exportsEnabled|session\.exportsEnabled/);
+  assert.match(js, /session\?\.deletionsEnabled|session\.deletionsEnabled/);
+  assert.doesNotMatch(js, /LIVE_EXPORTS_ENABLED\s*=\s*true/);
+  assert.doesNotMatch(js, /LIVE_DELETIONS_ENABLED\s*=\s*true/);
   assert.match(html, /id="export-csv"[^>]*disabled/);
   assert.match(html, /id="delete-submit"[^>]*disabled/);
-  assert.match(html, /CSV export is unavailable until it is enabled/);
-  assert.match(html, /Deletion is unavailable until it is enabled/);
+  assert.match(html, /EXPORTS_ENABLED/);
+  assert.match(html, /DELETIONS_ENABLED/);
+  assert.match(html, /Retention review/);
+  assert.match(html, /id="retention-refresh"/);
   assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
 });
 
@@ -586,8 +592,10 @@ test('qualitative access boundary remains dedicated-endpoint + reveal checkbox',
 test('researcher-facing drilldown copy keeps security surfaces unchanged', () => {
   const js = read('researcher/dashboard.js');
   const html = read('researcher/index.html');
-  assert.match(js, /LIVE_EXPORTS_ENABLED = false/);
-  assert.match(js, /LIVE_DELETIONS_ENABLED = false/);
+  assert.match(js, /exportsEnabled/);
+  assert.match(js, /deletionsEnabled/);
+  assert.doesNotMatch(js, /LIVE_EXPORTS_ENABLED\s*=\s*true/);
+  assert.doesNotMatch(js, /LIVE_DELETIONS_ENABLED\s*=\s*true/);
   assert.match(html, /<details class="workspace-panel admin-panel"/);
   assert.match(html, /id="reveal-reflections"/);
   assert.doesNotMatch(html, /COLLECTION_ENABLED:\s*true/);

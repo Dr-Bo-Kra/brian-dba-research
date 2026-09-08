@@ -13,6 +13,49 @@ function envInt(name, fallback) {
   return Number.isInteger(n) && n > 0 ? n : fallback;
 }
 
+function envIsoDate(name) {
+  const raw = String(process.env[name] || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const parsed = Date.parse(`${raw}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed)) return null;
+  return raw;
+}
+
+export function addCalendarMonthsUtc(isoDate, months) {
+  const base = Date.parse(`${isoDate}T00:00:00.000Z`);
+  if (!Number.isFinite(base)) return null;
+  const d = new Date(base);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
+export function retentionPolicy(config = {}) {
+  const retentionMonths = Number.isInteger(config.retentionMonths) && config.retentionMonths > 0
+    ? config.retentionMonths
+    : 12;
+  const studyCompletionDate = config.studyCompletionDate || null;
+  if (studyCompletionDate) {
+    const reviewOpensAt = addCalendarMonthsUtc(studyCompletionDate, retentionMonths);
+    const reviewOpen = Boolean(reviewOpensAt && Date.now() >= Date.parse(`${reviewOpensAt}T00:00:00.000Z`));
+    return {
+      basis: 'study_completion',
+      studyCompletionDate,
+      retentionMonths,
+      reviewOpensAt,
+      reviewOpen,
+      autoDelete: false,
+    };
+  }
+  return {
+    basis: 'record_age',
+    studyCompletionDate: null,
+    retentionMonths,
+    reviewOpensAt: null,
+    reviewOpen: true,
+    autoDelete: false,
+  };
+}
+
 export function loadConfig(env = process.env) {
   const enabled = env.RESEARCHER_API_ENABLED === 'true';
   const databaseUrl = String(env.DATABASE_URL || '').trim();
@@ -51,6 +94,8 @@ export function loadConfig(env = process.env) {
     enabled,
     exportsEnabled: env.EXPORTS_ENABLED === 'true',
     deletionsEnabled: env.DELETIONS_ENABLED === 'true',
+    studyCompletionDate: envIsoDate('STUDY_COMPLETION_DATE'),
+    retentionMonths: envInt('RETENTION_MONTHS', 12),
     dbDiagnosticEnabled: env.RESEARCHER_DB_DIAGNOSTIC_ENABLED === 'true',
     vercelEnv: String(env.VERCEL_ENV || '').trim().toLowerCase(),
     databaseUrl,

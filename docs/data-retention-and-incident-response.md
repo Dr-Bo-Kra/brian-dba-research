@@ -1,63 +1,76 @@
-# Data retention and incident response (draft)
+# Data retention and incident response
 
-**Status:** Working draft for this privacy-hardened demonstration. Retention periods, anonymisation dates, and incident contacts are **unresolved**. This file is not an approved policy and is not a claim of legal compliance.
+**Status:** Working governance baseline for the privacy-hardened platform. This file documents the agreed retention and withdrawal practice. It is **not** a claim of GDPR, ISO, or other legal certification.
 
-Live collection must stay **disabled** until the institution completes the items marked TBD.
+Live public collection must stay **disabled** until go-live is explicitly approved. Export and deletion capabilities are implemented but fail-closed (`EXPORTS_ENABLED=false`, `DELETIONS_ENABLED=false`) until Production env enables them for Brian.
 
-## Retention (intended, not yet approved)
+## Retention (agreed)
 
-| Store | Intended handling | Period |
+| Store | Handling | Period |
 | --- | --- | --- |
 | Browser `sessionStorage` | Latest local result for the current tab; cleared on tab end, reset, or successful protected submit | Session only |
 | Legacy `localStorage` keys | Deleted by the current client | Immediate deletion |
-| `assessment_responses` | Identifiable-enough research records until anonymisation | **TBD** |
-| Backups of the research database | Follow the processor’s backup cycle, then expire | **TBD** |
-| Researcher CSV exports | Approved institutional location only; no personal email or shared drives | **TBD** (no longer than the source records) |
-| Dashboard / project audit material | Sign-in, export, and deletion actions | **TBD** |
-| `researcher_audit_events` | Researcher API metadata audit (no survey answers) | **TBD** |
-| Irreversible anonymisation | Strip participant reference and free-text as approved | **TBD** |
+| `assessment_responses` | Identifiable-enough research records until authorised review after the retention threshold | **12 months after research completion**, unless AIM requires otherwise |
+| Backups of the research database | Follow the processor’s backup cycle, then expire | Processor-dependent |
+| Researcher CSV exports | Approved institutional location only; no personal email or shared drives | No longer than the source records |
+| Dashboard / project audit material | Sign-in, export, deletion, and retention-review actions | Institutional schedule TBD |
+| `researcher_audit_events` | Researcher API metadata audit (no survey answers) | Institutional schedule TBD |
+| Irreversible anonymisation / deletion | Only after authorised researcher review — **never silent auto-destroy** | After retention review |
 
-Until those periods exist, do not accept live submissions.
+### Retention review in the Inquiry Archive
 
-## Anonymisation and deletion
+- Configure optional `STUDY_COMPLETION_DATE` (YYYY-MM-DD) and `RETENTION_MONTHS` (default 12) on the researcher API.
+- When `STUDY_COMPLETION_DATE` is set, review opens at completion date + retention months and lists non-anonymised records accepted on or before completion.
+- Until completion date is set, the dashboard surfaces records whose **acceptance age** exceeds retention months (heuristic) for authorised review.
+- `GET /v1/retention-review` is authenticated, audited, and does **not** delete rows.
 
-- Participants can delete local data with **Delete local data and restart**.
-- After a protected submission, withdrawal uses the participant reference in the downloaded record.
-- Authorised researchers delete matching rows in the **authenticated Supabase dashboard** by participant reference (`client_record_id`) while the reference still exists.
-- After the approved anonymisation point, individual deletion may no longer be possible. That limit must appear in the approved privacy notice.
+Hosting region for the research archive: **Singapore** (approved).
 
-## Authorised-researcher stewardship (initial release)
+## Withdrawal and deletion
 
-- Role-based authorised-researcher identities on the authenticated Supabase dashboard. Brian may be the only provisioned researcher initially. Do not hard-code his name or email in application code.
+1. Participant contacts Brian (published LinkedIn profile until a Production institutional email is supplied) and supplies the participant reference from the downloaded record.
+2. Authorised researcher locates the row by `resp_…` reference in the Inquiry Archive.
+3. Researcher confirms deliberately in the Administration panel and submits deletion.
+4. Server path: authenticated session + CSRF + `DELETIONS_ENABLED=true` + `POST /v1/deletions` → `delete_assessment_by_reference` (security definer). Table-level DELETE stays revoked for `researcher_api`. `submission_inserter` cannot DELETE.
+5. Legal hold blocks deletion. Client always receives generic `{ "ok": true }` after a well-formed authorised request.
+6. Audit records actor, reference, legal_hold, and deleted flags (not answers).
+
+## Export
+
+- Authenticated authorised researcher only; MFA session; CSRF on POST.
+- Fail-closed unless `EXPORTS_ENABLED=true`.
+- Approved CSV schema only (participant reference, accepted_at, region, role, experience, orientation). No free-text, no auth/session metadata.
+- Optional single-participant export via `reference` in the export body.
+- No public export URLs. Actions are audit-logged.
+
+## Authorised-researcher stewardship
+
+- Role-based identities in `authorised_researchers`. Brian is expected to be the sole active researcher. Do not hard-code his name or email in application code.
 - MFA and least-privilege project permissions.
 - No anonymous or public SELECT.
-- Aggregate reporting only inside the authenticated dashboard.
-- CSV export only from an authenticated dashboard session; treat the file as restricted research material.
-- Deletion by participant reference before anonymisation.
-- Keep a written record of exports and deletions alongside processor logs.
+- Aggregate reporting inside the authenticated dashboard.
+- Keep a written institutional record of exports and deletions alongside processor logs.
 
-The Inquiry archive is not used for this initial stewardship path.
-
-## Incident contacts (TBD)
+## Incident contacts
 
 | Role | Name | How to notify | Time to acknowledge |
 | --- | --- | --- | --- |
-| Researcher | Brian E Pereira | Published LinkedIn profile until an institutional address is issued | **TBD** |
-| Data controller | **TBD** | **TBD** | **TBD** |
-| Privacy / DPO | **TBD** | **TBD** | **TBD** |
-| Hosting / database processor | **TBD** | **TBD** | **TBD** |
-| Supervisory / privacy authority | **TBD** (depends on recruitment countries) | **TBD** | Statutory |
+| Researcher | Brian E Pereira | Published LinkedIn profile until an institutional address is issued | AIM to confirm |
+| Data controller | AIM / sponsoring institution | TBD | TBD |
+| Privacy / DPO | TBD | TBD | TBD |
+| Hosting / database processor | Singapore-hosted research DB + approved app host | Processor channels | Processor SLA |
+| Supervisory / privacy authority | Depends on recruitment countries | TBD | Statutory |
 
 Do not post participant records, keys, or raw logs in a public issue tracker.
 
-## Draft incident steps (to be approved)
+## Draft incident steps
 
-1. Contain: disable `COLLECTION_ENABLED`, rotate endpoint credentials, revoke dashboard sessions.
+1. Contain: disable `COLLECTION_ENABLED` / `SUBMISSION_API_ENABLED`, rotate endpoint credentials, revoke dashboard sessions.
 2. Preserve: keep logs and a factual timeline; do not delete evidence.
 3. Assess: what was accessed, which participant references are involved, whether free-text or exports were involved.
-4. Notify: controller, DPO, and any required authority using the approved thresholds — **those thresholds are TBD**.
+4. Notify: controller, DPO, and any required authority using approved thresholds.
 5. Recover: patch the endpoint, review RLS and grants, confirm there is still no public read path.
-6. Record: write the outcome into the institutional incident register (not yet created).
+6. Record: write the outcome into the institutional incident register.
 
 ## Related files
 

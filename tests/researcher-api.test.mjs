@@ -290,6 +290,86 @@ test('enabled export uses approved schema and cookies are host-scoped', async ()
   );
 });
 
+test('participant-level export requires auth, CSRF, and approved columns only', async () => {
+  const target = sampleRecord('resp_dddddddddddddddddddddddddddddddd');
+  const other = sampleRecord('resp_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee');
+  const app = testApp({
+    records: [target, other],
+    config: { exportsEnabled: true },
+  });
+  const { headers } = await authed(app);
+  const noCsrf = await app.handle({
+    method: 'POST',
+    url: '/v1/exports',
+    headers: { cookie: headers.cookie },
+    body: { confirm: true, reference: target.client_record_id },
+    ip: '6b',
+  });
+  assert.equal(noCsrf.status, 403);
+  const exported = await app.handle({
+    method: 'POST',
+    url: '/v1/exports',
+    headers,
+    body: { confirm: true, reference: target.client_record_id },
+    ip: '6b',
+  });
+  assert.equal(exported.status, 200);
+  assert.match(exported.body, /resp_dddddddddddddddddddddddddddddddd/);
+  assert.doesNotMatch(exported.body, /resp_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/);
+  assert.doesNotMatch(exported.body, /not for logs/);
+  assert.doesNotMatch(exported.body, /password|csrf|session/i);
+  assert.equal(
+    app.auditLog.some(
+      (row) =>
+        row.action === 'export' &&
+        row.detail?.scope === 'participant_export_schema' &&
+        row.detail?.participant_reference === target.client_record_id
+    ),
+    true
+  );
+});
+
+test('retention review lists due refs without auto-delete and stays authenticated', async () => {
+  const old = sampleRecord('resp_ffffffffffffffffffffffffffffffff');
+  old.created_at = '2024-01-01T00:00:00.000Z';
+  const recent = sampleRecord('resp_99999999999999999999999999999999');
+  recent.created_at = new Date().toISOString();
+  const app = testApp({
+    records: [old, recent],
+    config: { retentionMonths: 12 },
+  });
+  const anon = await app.handle({ method: 'GET', url: '/v1/retention-review', headers: {}, ip: '7' });
+  assert.equal(anon.status, 401);
+  const { headers } = await authed(app);
+  const review = await app.handle({
+    method: 'GET',
+    url: '/v1/retention-review',
+    headers,
+    ip: '7',
+  });
+  assert.equal(review.status, 200);
+  const payload = JSON.parse(review.body);
+  assert.equal(payload.policy.auto_delete, false);
+  assert.equal(payload.policy.basis, 'record_age');
+  assert.equal(payload.records.length, 1);
+  assert.equal(payload.records[0].participant_reference, old.client_record_id);
+  assert.equal(app.records.some((row) => row.client_record_id === old.client_record_id), true);
+  assert.equal(app.auditLog.some((row) => row.action === 'retention_review'), true);
+});
+
+test('session advertises export and deletion capability flags without enabling them by default', async () => {
+  const app = testApp({ records: [sampleRecord()] });
+  const { headers } = await authed(app);
+  const session = await app.handle({ method: 'GET', url: '/v1/session', headers, ip: '8' });
+  assert.equal(session.status, 200);
+  const payload = JSON.parse(session.body);
+  assert.equal(payload.authenticated, true);
+  assert.equal(payload.exportsEnabled, false);
+  assert.equal(payload.deletionsEnabled, false);
+  assert.equal(payload.retentionAutoDelete, false);
+  assert.equal(payload.retentionMonths, 12);
+});
+
 test('researcher UI connects to the same-origin API without secrets or a password-only workspace', () => {
   const html = read('researcher/index.html');
   const js = read('researcher/dashboard.js');
@@ -319,10 +399,15 @@ test('researcher UI connects to the same-origin API without secrets or a passwor
   assert.doesNotMatch(html, /correct-horse-battery|default password/i);
   assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
   assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*''/);
-  assert.match(js, /LIVE_EXPORTS_ENABLED = false/);
-  assert.match(js, /LIVE_DELETIONS_ENABLED = false/);
+  assert.match(js, /exportsEnabled/);
+  assert.match(js, /deletionsEnabled/);
+  assert.match(js, /session\?\.exportsEnabled|session\.exportsEnabled/);
+  assert.match(js, /session\?\.deletionsEnabled|session\.deletionsEnabled/);
+  assert.doesNotMatch(js, /LIVE_EXPORTS_ENABLED\s*=\s*true/);
+  assert.doesNotMatch(js, /LIVE_DELETIONS_ENABLED\s*=\s*true/);
   assert.match(js, /\/v1\/exports/);
   assert.match(js, /\/v1\/deletions/);
+  assert.match(js, /\/v1\/retention-review/);
 });
 
 test('repository files do not embed privileged credentials', () => {

@@ -129,19 +129,31 @@ export function parseExportBody(body, maxRows) {
     return { ok: false, error: 'invalid_request' };
   }
   const extra = Object.keys(body).filter(
-    (key) => !['from', 'to', 'region', 'role', 'experience', 'q', 'confirm'].includes(key)
+    (key) => !['from', 'to', 'region', 'role', 'experience', 'q', 'reference', 'confirm'].includes(key)
   );
   if (extra.length) return { ok: false, error: 'invalid_request' };
   if (body.confirm !== true) return { ok: false, error: 'invalid_request' };
+  const reference =
+    body.reference == null || body.reference === ''
+      ? null
+      : parseParticipantRef(body.reference);
+  if (body.reference != null && body.reference !== '' && !reference) {
+    return { ok: false, error: 'invalid_request' };
+  }
   const parsed = parseFilters({
     from: body.from,
     to: body.to,
     region: body.region,
     role: body.role,
     experience: body.experience,
-    q: body.q,
+    q: reference ? undefined : body.q,
     limit: 1,
   });
   if (!parsed.ok) return parsed;
-  return { ok: true, filters: parsed.filters, maxRows };
+  return {
+    ok: true,
+    filters: { ...parsed.filters, reference },
+    maxRows,
+    participantLevel: Boolean(reference),
+  };
 }

@@ -85,7 +85,7 @@ function selectTab(selected) {
 
   const cfg = window.BRIAN_DBA_CONFIG || {};
   const SUBMISSION_ENDPOINT = String(cfg.SUBMISSION_ENDPOINT || '').trim();
-  const PRIVACY_NOTICE_VERSION = String(cfg.PRIVACY_NOTICE_VERSION || '2026-08-28').trim();
+  const PRIVACY_NOTICE_VERSION = String(cfg.PRIVACY_NOTICE_VERSION || '2026-09-08').trim();
 
   function isProtectedSubmissionEndpoint(url) {
     if (!url) return false;

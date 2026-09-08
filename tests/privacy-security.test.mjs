@@ -38,6 +38,17 @@ test('consent and privacy notice exist', () => {
   assert.match(indexHtml, /href="privacy\.html"/);
   assert.match(privacyHtml, /Privacy and participant information/);
   assert.match(privacyHtml, /Protected research collection is currently disabled/);
+  assert.match(privacyHtml, /Notice version:<\/strong>\s*8 September 2026/);
+  assert.match(privacyHtml, /12 months after research completion/);
+  assert.match(privacyHtml, /Singapore/);
+  assert.match(privacyHtml, /not<\/strong> automatically destroyed/);
+  assert.match(privacyHtml, /published LinkedIn profile/);
+  assert.doesNotMatch(privacyHtml, /is GDPR compliant/i);
+  assert.doesNotMatch(privacyHtml, /ISO 27001 certified/i);
+  assert.match(privacyHtml, /not completely anonymous/);
+  assert.match(privacyHtml, /No system can guarantee absolute security/);
+  assert.doesNotMatch(privacyHtml, /ethics approval reference:\s*ETH/i);
+  assert.match(configJs, /PRIVACY_NOTICE_VERSION:\s*'2026-09-08'/);
   assert.match(scriptJs, /hasValidConsent/);
   assert.match(scriptJs, /returnToConsentGate/);
 });
@@ -163,6 +174,8 @@ test('inquiry archive connects to the same-origin API without secrets or a passw
   );
   assert.match(schemaSql, /authorised_researchers/);
   assert.match(schemaSql, /delete_assessment_by_reference/);
+  assert.match(schemaSql, /grant execute on function public\.delete_assessment_by_reference\(text\) to researcher_api/i);
+  assert.match(schemaSql, /revoke all on function public\.delete_assessment_by_reference\(text\) from submission_inserter/i);
 });
 
 test('documentation names launch blockers and does not claim legal compliance', () => {

@@ -13,11 +13,11 @@ This checklist is for a **privacy-hardened** research platform. Completing engin
 | Ethics approval and reference | Not recorded |
 | Countries where participants will be recruited | Not confirmed |
 | Lawful basis and consent wording approved by the institution | On-page checkboxes are a research-consent record only |
-| Retention and anonymisation periods | TBD |
-| Hosting / database region | TBD (Preview DB currently ap-southeast-1; not an institutional approval) |
-| Processor agreements and international-transfer safeguards | TBD |
-| Incident contacts | TBD |
-| Controlled CSV export, deletion-by-reference, retention, and audit practice | Policy flags stay off; operational procedure not yet approved |
+| Retention and anonymisation periods | Agreed: 12 months after research completion; surface for review; no auto-delete. `STUDY_COMPLETION_DATE` still to be set at study end |
+| Hosting / database region | Singapore hosting approved |
+| Processor agreements and international-transfer safeguards | TBD (AIM) |
+| Incident contacts | Researcher: Brian via LinkedIn until institutional email; controller/DPO TBD |
+| Controlled CSV export, deletion-by-reference, retention, and audit practice | Workflows implemented; `EXPORTS_ENABLED` / `DELETIONS_ENABLED` stay false in committed/env defaults until Production cutover enables them for Brian |
 | Institutional approval to use the Inquiry Archive as the live results interface | Preview-proven; Production use not approved |
 
 ## Technical readiness (engineering)
@@ -30,10 +30,10 @@ This checklist is for a **privacy-hardened** research platform. Completing engin
 | Database RLS / privilege revocation | Ready — FORCE RLS; `anon`/`authenticated` have no table privileges; `submission_inserter` + `researcher_api` roles provisioned |
 | Researcher Auth + TOTP MFA + sessions/logout | Ready on Preview when `RESEARCHER_API_ENABLED` and durable stores are set |
 | Researcher authorization (`authorised_researchers`) | Ready in code (deny-by-default; sole-active-row model). Brian cutover not performed |
-| Inquiry Archive dashboard + qualitative acknowledgement path | Ready on Preview (exports/deletions remain off) |
+| Inquiry Archive dashboard + qualitative acknowledgement path | Ready on Preview; Administration export/deletion UI session-gated; retention review listing available |
 | Application audit trail | Ready for researcher API metadata events; institutional retention of logs TBD |
-| Participant withdrawal / deletion | Mechanism exists; `DELETIONS_ENABLED` stays false until policy approval |
-| Exports | Mechanism exists; `EXPORTS_ENABLED` stays false until policy approval |
+| Participant withdrawal / deletion | End-to-end controlled deletion via RPC + CSRF + audit; `DELETIONS_ENABLED` stays false until Production enables for Brian |
+| Exports | Filtered + participant-level CSV; approved schema; `EXPORTS_ENABLED` stays false until Production enables for Brian |
 | Backup / recovery | Processor-dependent; institutional schedule TBD |
 | Monitoring / error handling | Generic API errors + ops logs (no answers); Production alerting TBD |
 | Secrets / configuration | Preview secrets in Vercel; Production unset (fail-closed). Never in browser files |
@@ -71,7 +71,7 @@ This checklist is for a **privacy-hardened** research platform. Completing engin
 5. Confirm Production Vercel env (researcher + submission) with secrets in the host secret store — never in git.
 6. Confirm schema grants still apply; **no** public SELECT/INSERT policies.
 7. Cut over to Brian as the sole active `authorised_researchers` row; enroll **his** TOTP; revoke test researchers.
-8. Agree procedure for aggregate review, controlled CSV export (if ever enabled), deletion by participant reference, and audit notes. Keep `EXPORTS_ENABLED` / `DELETIONS_ENABLED` false until that approval.
+8. For Brian Production cutover: set `EXPORTS_ENABLED=true` and `DELETIONS_ENABLED=true` only on the researcher API env (does not open public collection). Keep them false until that cutover. Set `STUDY_COMPLETION_DATE` when research completes.
 9. Disable Vercel Deployment Protection on the **public** Production hostname (survey must be reachable). Researcher data remains behind app MFA.
 10. Keep `COLLECTION_ENABLED` false until a documented go-live decision. Then: server `SUBMISSION_API_ENABLED=true` → browser `COLLECTION_ENABLED=true` with HTTPS `SUBMISSION_ENDPOINT` → smoke → researcher verify → monitor.
 11. Inquiry Archive uses `RESEARCHER_ENDPOINT: '/api/researcher'`. Do not host it on GitHub Pages.

@@ -64,13 +64,14 @@ Do not include stack traces, SQL, whether a participant reference exists on dele
 | GET | `/health` | No | Liveness. No configuration secrets. No data. |
 | POST | `/v1/session/login` | No (rate-limited) | Email + password to Supabase Auth. `unavailable` if Auth or API disabled. Returns MFA step or an application session. |
 | POST | `/v1/session/mfa` | No (rate-limited) | Verify TOTP against the pending Auth ticket; rotate application session. |
-| GET | `/v1/session` | Session optional | `{ authenticated, role, expiresAt, csrfToken }` or unauthenticated. Never a raw access token. |
+| GET | `/v1/session` | Session optional | `{ authenticated, role, expiresAt, csrfToken, exportsEnabled, deletionsEnabled, retention… }` or unauthenticated. Never a raw access token. |
 | POST | `/v1/session/logout` | CSRF if cookie present | Revoke session; expire cookies. |
-| GET | `/v1/summary` | Authorised researcher | Aggregates for the approved filters. |
+| GET | `/v1/summary` | Authorised researcher | Aggregates for the approved filters. Retention metadata included; no auto-delete. |
 | GET | `/v1/responses` | Authorised researcher | Paginated ledger DTOs. |
 | GET | `/v1/responses/{ref}` | Authorised researcher | One record DTO. Audit `view_record`. |
 | GET | `/v1/responses/{ref}/qualitative` | Authorised researcher | Free-text only when requested. Audit `view_qualitative`. |
-| POST | `/v1/exports` | Authorised researcher | CSV of the **approved export schema**. Disabled by default. Audit `export`. |
+| GET | `/v1/retention-review` | Authorised researcher | Participant refs at retention threshold for review. Audit `retention_review`. Never deletes. |
+| POST | `/v1/exports` | Authorised researcher | CSV of the **approved export schema** (optional exact `reference`). Disabled by default. Audit `export`. |
 | POST | `/v1/deletions` | Authorised researcher | Delete by `resp_…`. Disabled by default. Legal hold. Audit `delete`. Generic result. |
 
 No SQL, no arbitrary `columns=` query, no generic `/audit` write from the client, no database-admin routes.
