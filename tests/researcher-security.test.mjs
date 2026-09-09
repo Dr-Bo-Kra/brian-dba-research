@@ -720,9 +720,9 @@ test('dashboard escapes dynamic text and never persists records; free-text UI re
   assert.match(eventHandler, /&lt;img src=x onerror=alert\(1\)&gt;/);
 });
 
-test('public collection remains disabled and is not coupled to researcher auth', () => {
-  assert.match(publicConfig, /COLLECTION_ENABLED:\s*false/);
-  assert.match(publicConfig, /SUBMISSION_ENDPOINT:\s*''/);
+test('public collection uses protected HTTPS endpoint and is not coupled to researcher auth', () => {
+  assert.match(publicConfig, /COLLECTION_ENABLED:\s*true/);
+  assert.match(publicConfig, /SUBMISSION_ENDPOINT:\s*'https:\/\/brian-dba-research\.vercel\.app\/api\/submission'/);
   assert.match(publicScript, /COLLECTION_ENABLED === true/);
   assert.doesNotMatch(publicScript, /createResearcherApp/);
   assert.doesNotMatch(publicScript, /OIDC_/);

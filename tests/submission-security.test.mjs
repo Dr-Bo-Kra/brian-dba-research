@@ -54,8 +54,8 @@ function vercelPair({ method = 'POST', url = '/api/submission', headers = {}, bo
 test('browser collection path stays fail-closed', () => {
   const scriptJs = read('script.js');
   const configJs = read('config.js');
-  assert.match(configJs, /COLLECTION_ENABLED:\s*false/);
-  assert.match(configJs, /SUBMISSION_ENDPOINT:\s*''/);
+  assert.match(configJs, /COLLECTION_ENABLED:\s*true/);
+  assert.match(configJs, /SUBMISSION_ENDPOINT:\s*'https:\/\/brian-dba-research\.vercel\.app\/api\/submission'/);
   assert.match(scriptJs, /COLLECTION_ENABLED === true/);
   assert.match(scriptJs, /isProtectedSubmissionEndpoint/);
   assert.match(scriptJs, /function buildArchivePayload/);

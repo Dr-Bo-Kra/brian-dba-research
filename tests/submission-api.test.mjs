@@ -47,14 +47,14 @@ test('submission instrument constants match researcher analytics order', () => {
   assert.deepEqual([...DOMAIN_ORDER], [...RESEARCHER_DOMAIN_ORDER]);
 });
 
-test('collection remains disabled in public config while API scaffold exists', async () => {
+test('public config enables protected HTTPS collection endpoint', async () => {
   const { readFileSync } = await import('node:fs');
   const { join, dirname } = await import('node:path');
   const { fileURLToPath } = await import('node:url');
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
   const configJs = readFileSync(join(root, 'config.js'), 'utf8');
-  assert.match(configJs, /COLLECTION_ENABLED:\s*false/);
-  assert.match(configJs, /SUBMISSION_ENDPOINT:\s*''/);
+  assert.match(configJs, /COLLECTION_ENABLED:\s*true/);
+  assert.match(configJs, /SUBMISSION_ENDPOINT:\s*'https:\/\/brian-dba-research\.vercel\.app\/api\/submission'/);
 });
 
 test('server kill switch fail-closed when SUBMISSION_API_ENABLED is not true', async () => {

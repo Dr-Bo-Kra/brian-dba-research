@@ -222,8 +222,8 @@ test('operator scripts are gated and not wired into deploy or browser code', () 
   assert.match(cleanup, /resolveInspectDatabaseUrl/);
   assert.doesNotMatch(vercel, /seed-synthetic|cleanup-synthetic/);
   assert.doesNotMatch(dashboard, /seed-synthetic|cleanup-synthetic/);
-  assert.match(publicConfig, /COLLECTION_ENABLED:\s*false/);
-  assert.match(publicConfig, /SUBMISSION_ENDPOINT:\s*''/);
+  assert.match(publicConfig, /COLLECTION_ENABLED:\s*true/);
+  assert.match(publicConfig, /SUBMISSION_ENDPOINT:\s*'https:\/\/brian-dba-research\.vercel\.app\/api\/submission'/);
 });
 
 test('operator env loader recognizes SYNTHETIC_OPERATOR_DATABASE_URL', () => {

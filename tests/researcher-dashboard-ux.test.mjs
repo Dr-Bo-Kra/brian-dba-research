@@ -570,7 +570,7 @@ test('exports and deletions are session-gated and default disabled in UI', () =>
   assert.match(html, /DELETIONS_ENABLED/);
   assert.match(html, /Retention review/);
   assert.match(html, /id="retention-refresh"/);
-  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
+  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*true/);
 });
 
 test('current-study dashboard removes free-text UI while legacy qualitative API remains documented', () => {

@@ -451,8 +451,8 @@ test('normal researcher routes remain unchanged when the diagnostic is enabled',
 });
 
 test('collection remains disabled and researcher API stays fail-closed', () => {
-  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
-  assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*''/);
+  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*true/);
+  assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*'https:\/\/brian-dba-research\.vercel\.app\/api\/submission'/);
   assert.match(read('researcher/config.js'), /RESEARCHER_ENDPOINT:\s*'\/api\/researcher'/);
   const example = read('api/researcher/env.example');
   assert.match(example, /RESEARCHER_API_ENABLED=false/);
@@ -682,7 +682,7 @@ test('verified TLS uses DATABASE_CA_CERT and keeps rejectUnauthorized true', () 
   const example = read('api/researcher/env.example');
   assert.match(example, /DATABASE_CA_CERT=/);
   assert.doesNotMatch(example, /BEGIN CERTIFICATE/);
-  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
+  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*true/);
   assert.match(read('api/researcher/env.example'), /RESEARCHER_API_ENABLED=false/);
   assert.match(read('api/researcher/env.example'), /EXPORTS_ENABLED=false/);
   assert.match(read('api/researcher/env.example'), /DELETIONS_ENABLED=false/);

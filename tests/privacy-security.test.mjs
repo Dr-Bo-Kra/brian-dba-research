@@ -37,7 +37,7 @@ test('consent and privacy notice exist', () => {
   assert.match(indexHtml, /survey-consent-continue" disabled/);
   assert.match(indexHtml, /href="privacy\.html"/);
   assert.match(privacyHtml, /Privacy and participant information/);
-  assert.match(privacyHtml, /Protected research collection is currently disabled/);
+  assert.match(privacyHtml, /Protected research collection is enabled for the approved Production study path/);
   assert.match(privacyHtml, /Notice version:<\/strong>\s*9 September 2026/);
   assert.match(privacyHtml, /quantitative-only/i);
   assert.match(privacyHtml, /12 months after research completion/);
@@ -64,10 +64,10 @@ test('live survey is quantitative-only with no free-text stage', () => {
   assert.doesNotMatch(indexHtml, /ratings, and free-text reflections/);
 });
 
-test('collection defaults to disabled', () => {
-  assert.match(configJs, /COLLECTION_ENABLED:\s*false/);
+test('Production collection uses protected HTTPS dual kill-switch', () => {
+  assert.match(configJs, /COLLECTION_ENABLED:\s*true/);
   assert.match(configExample, /COLLECTION_ENABLED:\s*false/);
-  assert.match(configJs, /SUBMISSION_ENDPOINT:\s*''/);
+  assert.match(configJs, /SUBMISSION_ENDPOINT:\s*'https:\/\/brian-dba-research\.vercel\.app\/api\/submission'/);
   assert.match(scriptJs, /COLLECTION_ENABLED === true/);
   assert.match(scriptJs, /isProtectedSubmissionEndpoint/);
 });

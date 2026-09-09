@@ -412,8 +412,8 @@ test('researcher UI connects to the same-origin API without secrets or a passwor
   assert.doesNotMatch(js, /service_role/);
   assert.match(html, /no mock login/i);
   assert.doesNotMatch(html, /correct-horse-battery|default password/i);
-  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
-  assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*''/);
+  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*true/);
+  assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*'https:\/\/brian-dba-research\.vercel\.app\/api\/submission'/);
   assert.match(js, /exportsEnabled/);
   assert.match(js, /deletionsEnabled/);
   assert.match(js, /session\?\.exportsEnabled|session\.exportsEnabled/);

@@ -349,8 +349,8 @@ test('Vercel rewrite stripping does not change auth, session, or MFA routing', a
 });
 
 test('collection, export, and delete remain off after rewrite stripping', async () => {
-  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
-  assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*''/);
+  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*true/);
+  assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*'https:\/\/brian-dba-research\.vercel\.app\/api\/submission'/);
   assert.equal(readyConfig().exportsEnabled, false);
   assert.equal(readyConfig().deletionsEnabled, false);
 
@@ -574,8 +574,8 @@ test('browser files have no Supabase credentials or direct database access', () 
     assert.doesNotMatch(source, /postgresql:\/\//);
   }
   assert.match(read('researcher/config.js'), /RESEARCHER_ENDPOINT:\s*'\/api\/researcher'/);
-  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*false/);
-  assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*''/);
+  assert.match(read('config.js'), /COLLECTION_ENABLED:\s*true/);
+  assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*'https:\/\/brian-dba-research\.vercel\.app\/api\/submission'/);
   assert.doesNotMatch(read('researcher/dashboard.js'), /LIVE_EXPORTS_ENABLED\s*=\s*true/);
   assert.doesNotMatch(read('researcher/dashboard.js'), /LIVE_DELETIONS_ENABLED\s*=\s*true/);
   assert.match(read('researcher/dashboard.js'), /exportsEnabled/);

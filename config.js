@@ -1,11 +1,10 @@
 /**
  * Public browser configuration. This file must never contain credentials.
- * Research collection is deliberately disabled until a protected, rate-limited
- * submission endpoint and the institutional privacy details are approved.
+ * Collection uses the dual kill switch: this flag plus server SUBMISSION_API_ENABLED.
  */
 window.BRIAN_DBA_CONFIG = {
-  COLLECTION_ENABLED: false,
-  SUBMISSION_ENDPOINT: '',
+  COLLECTION_ENABLED: true,
+  SUBMISSION_ENDPOINT: 'https://brian-dba-research.vercel.app/api/submission',
   PRIVACY_NOTICE_VERSION: '2026-09-09',
   LINKEDIN_URL: 'https://www.linkedin.com/in/brianpereira/',
 };
