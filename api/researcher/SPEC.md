@@ -27,7 +27,13 @@ After authentication succeeds, the API:
 5. Creates a server-side session and sets `__Host-dba-researcher` (HttpOnly, Secure, SameSite=Strict, Path=/).
 6. Issues a CSRF token for subsequent mutations.
 
-Role comes from the directory table (`authorised_researcher` or `researcher_admin`), not from matching a person’s name or email in application code. AIM / Entra is not used.
+Role comes from the directory table (`researcher_admin` Study Owner or `researcher_support` Research Support), not from matching a person’s name or email in application code. AIM / Entra is not used.
+
+**Permissions (deny by default, server-side only):**
+- `researcher_admin`: `research:read`, `research:export`, `research:withdraw`, `research:admin`
+- `researcher_support`: `research:read`, `research:export` only
+
+Directory invariant: exactly one active `researcher_admin`. Zero or more `researcher_support` rows are allowed. Zero or multiple Study Owners fail closed for login and for owner/admin operations. Browser-provided role/permission headers never elevate access.
 
 ## Common headers
 

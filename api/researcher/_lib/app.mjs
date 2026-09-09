@@ -1,7 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import { authorize, sanitizeAuditDetail } from './authorize.mjs';
+import {
+  authorize,
+  displayRoleLabel,
+  hasPermission,
+  sanitizeAuditDetail,
+  studyOwnerInvariantOk,
+} from './authorize.mjs';
 import { loadConfig, retentionPolicy } from './config.mjs';
-import { ROLES } from './constants.mjs';
+import { RESEARCH_SUPPORT_ROLE, ROLES, STUDY_OWNER_ROLE } from './constants.mjs';
 import { resolveResearchStore } from './data.mjs';
 import { buildCsv, mapExportRow } from './csv.mjs';
 import { resolveAuditSink } from './audit.mjs';
@@ -151,6 +157,31 @@ export function createResearcherApp(overrides = {}) {
       return store.countActiveResearchers();
     }
     return 0;
+  }
+
+  async function countActiveStudyOwners() {
+    if (directory.size > 0) {
+      let n = 0;
+      for (const row of directory.values()) {
+        if (
+          !row?.revokedAt &&
+          !row?.disabledAt &&
+          row.role === STUDY_OWNER_ROLE
+        ) {
+          n += 1;
+        }
+      }
+      return n;
+    }
+    if (typeof store.countActiveStudyOwners === 'function') {
+      return store.countActiveStudyOwners();
+    }
+    return 0;
+  }
+
+  async function authorizeAction(identity, action) {
+    const studyOwnerCount = await countActiveStudyOwners();
+    return authorize(identity, action, { studyOwnerCount });
   }
 
   async function currentIdentity(request) {
@@ -308,14 +339,16 @@ export function createResearcherApp(overrides = {}) {
         response: await denyLogin('disabled', requestId, request, subject, researcher.role),
       };
     }
-    const activeCount = await countActiveResearchers();
-    if (activeCount !== 1) {
+    const activeStudyOwners = await countActiveStudyOwners();
+    if (!studyOwnerInvariantOk(activeStudyOwners)) {
       return {
         ok: false,
         response: await denyLogin('directory_invariant', requestId, request, subject, researcher.role),
       };
     }
-    if (!authorize({ ...researcher, mfaOk: true, authSubject: subject }, 'summary').ok) {
+    if (!authorize({ ...researcher, mfaOk: true, authSubject: subject }, 'summary', {
+      studyOwnerCount: activeStudyOwners,
+    }).ok) {
       return {
         ok: false,
         response: await denyLogin('role', requestId, request, subject, researcher.role),
@@ -349,25 +382,29 @@ export function createResearcherApp(overrides = {}) {
           authenticated: true,
           mfaRequired: false,
           role: researcher.role,
+          roleLabel: displayRoleLabel(researcher.role),
           expiresAt: established.expiresAt,
           csrfToken: established.csrf,
-          ...sessionCapabilityPayload(),
+          ...sessionCapabilityPayload(researcher),
         },
         established.headers
       ),
     };
   }
 
-  function sessionCapabilityPayload() {
+  function sessionCapabilityPayload(identity = null) {
     const policy = retentionPolicy(config);
+    const canExport = identity ? hasPermission({ ...identity, mfaOk: true }, 'research:export') : false;
+    const canWithdraw = identity ? hasPermission({ ...identity, mfaOk: true }, 'research:withdraw') : false;
     return {
-      exportsEnabled: config.exportsEnabled === true,
-      deletionsEnabled: config.deletionsEnabled === true,
+      exportsEnabled: config.exportsEnabled === true && canExport,
+      deletionsEnabled: config.deletionsEnabled === true && canWithdraw,
       retentionMonths: policy.retentionMonths,
       studyCompletionDate: policy.studyCompletionDate,
       retentionBasis: policy.basis,
       retentionReviewOpensAt: policy.reviewOpensAt,
       retentionAutoDelete: false,
+      roleLabel: identity?.role ? displayRoleLabel(identity.role) : null,
     };
   }
 
@@ -610,16 +647,17 @@ export function createResearcherApp(overrides = {}) {
 
     if (path === '/v1/session' && method === 'GET') {
       const identity = await currentIdentity(request);
-      if (!identity || !authorize(identity, 'summary').ok) {
+      if (!identity || !(await authorizeAction(identity, 'summary')).ok) {
         return respond(json(200, { authenticated: false }));
       }
       return respond(
         json(200, {
           authenticated: true,
           role: identity.role,
+          roleLabel: displayRoleLabel(identity.role),
           expiresAt: identity.expiresAt,
           csrfToken: csrfFromSession(identity.sessionId, config.sessionSecret),
-          ...sessionCapabilityPayload(),
+          ...sessionCapabilityPayload(identity),
         })
       );
     }
@@ -639,7 +677,7 @@ export function createResearcherApp(overrides = {}) {
     const identity = await currentIdentity(request);
     if (!config.dataReady) return respond(fail('unavailable'));
     if (!identity) return respond(fail('unauthorized'));
-    const authz = authorize(identity, 'summary');
+    const authz = await authorizeAction(identity, 'summary');
     if (!authz.ok) {
       await writeAudit(identity, 'authz_failure', { reason: authz.error }, requestId);
       return respond(fail(authz.error));
@@ -681,7 +719,7 @@ export function createResearcherApp(overrides = {}) {
     }
 
     if (path === '/v1/segments' && method === 'GET') {
-      const needed = authorize(identity, 'segments');
+      const needed = await authorizeAction(identity, 'segments');
       if (!needed.ok) {
         await writeAudit(identity, 'authz_failure', { reason: needed.error }, requestId);
         return respond(fail(needed.error));
@@ -705,7 +743,7 @@ export function createResearcherApp(overrides = {}) {
     }
 
     if (path === '/v1/retention-review' && method === 'GET') {
-      const needed = authorize(identity, 'retention_review');
+      const needed = await authorizeAction(identity, 'retention_review');
       if (!needed.ok) {
         await writeAudit(identity, 'authz_failure', { reason: needed.error }, requestId);
         return respond(fail(needed.error));
@@ -754,7 +792,7 @@ export function createResearcherApp(overrides = {}) {
       const qualitative = Boolean(recordMatch[2]);
       const category = qualitative ? RATE_CATEGORIES.qualitative : RATE_CATEGORIES.record;
       if (!(await limiter.allow(category, ipKey))) return respond(fail('rate_limited'));
-      const needed = authorize(identity, qualitative ? 'view_qualitative' : 'view_record');
+      const needed = await authorizeAction(identity, qualitative ? 'view_qualitative' : 'view_record');
       if (!needed.ok) {
         await writeAudit(identity, 'authz_failure', { reason: needed.error, participant_reference: reference }, requestId);
         return respond(fail(needed.error));
@@ -771,7 +809,7 @@ export function createResearcherApp(overrides = {}) {
     }
 
     if (path === '/v1/exports' && method === 'POST') {
-      const needed = authorize(identity, 'export');
+      const needed = await authorizeAction(identity, 'export');
       if (!needed.ok) {
         await writeAudit(identity, 'authz_failure', { reason: needed.error }, requestId);
         return respond(fail(needed.error));
@@ -805,7 +843,7 @@ export function createResearcherApp(overrides = {}) {
     }
 
     if (path === '/v1/deletions' && method === 'POST') {
-      const needed = authorize(identity, 'delete');
+      const needed = await authorizeAction(identity, 'delete');
       if (!needed.ok) {
         await writeAudit(identity, 'authz_failure', { reason: needed.error }, requestId);
         return respond(fail(needed.error));
@@ -836,7 +874,7 @@ export function createResearcherApp(overrides = {}) {
     auditLog,
     store,
     auth,
-    signInForTests: async (subject, { role = 'authorised_researcher', minutes, disabledAt = null, revokedAt = null } = {}) => {
+    signInForTests: async (subject, { role = RESEARCH_SUPPORT_ROLE, minutes, disabledAt = null, revokedAt = null } = {}) => {
       if (!isolated) {
         throw Object.assign(new Error('unavailable'), { code: 'unavailable' });
       }

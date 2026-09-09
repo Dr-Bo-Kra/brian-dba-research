@@ -299,7 +299,14 @@ import {
     sessionMeta.hidden = false;
     const label = document.createElement('span');
     label.className = 'workspace-session-label';
-    label.textContent = 'Signed in';
+    const roleLabel =
+      session.roleLabel ||
+      (session.role === 'researcher_admin'
+        ? 'Study Owner'
+        : session.role === 'researcher_support'
+          ? 'Research Support'
+          : null);
+    label.textContent = roleLabel ? `Signed in · ${roleLabel}` : 'Signed in';
     sessionMeta.replaceChildren(label);
     if (!expiresAt) return;
     const expiry = document.createElement('small');
@@ -1196,7 +1203,8 @@ import {
   function sessionFromPayload(payload) {
     if (payload?.authenticated !== true) return null;
     return {
-      role: payload.role || 'authorised_researcher',
+      role: payload.role || 'researcher_support',
+      roleLabel: payload.roleLabel || null,
       expiresAt: payload.expiresAt,
       csrfToken: payload.csrfToken,
       exportsEnabled: payload.exportsEnabled === true,
@@ -1212,16 +1220,25 @@ import {
   function applyAdminControls() {
     const exportsOn = Boolean(session?.exportsEnabled);
     const deletionsOn = Boolean(session?.deletionsEnabled);
+    const isSupport = session?.role === 'researcher_support';
     if (exportBtn) exportBtn.disabled = !(session && apiConfigured && exportsOn);
     if (exportPolicyNote) {
       exportPolicyNote.textContent = exportsOn
         ? 'Exports are enabled for this signed-in session. CSV uses the quantitative study schema only (coded profile, domain scores, Likert — no free-text, no auth/session metadata).'
         : 'CSV export is policy-gated until EXPORTS_ENABLED is set for this environment.';
     }
+    if (deleteForm) {
+      deleteForm.hidden = Boolean(isSupport);
+    }
     if (deletePolicyNote) {
-      deletePolicyNote.textContent = deletionsOn
-        ? 'Deletions are enabled for this signed-in session. Locate by participant reference, confirm deliberately, then submit. Actions are CSRF-protected and audited.'
-        : 'Deletion is policy-gated until DELETIONS_ENABLED is set. Participants contact Brian with their reference; you process deletion here when enabled.';
+      if (isSupport) {
+        deletePolicyNote.textContent =
+          'Participant withdrawal and deletion are Study Owner actions only. Research Support may read and export, but cannot withdraw or delete records.';
+      } else {
+        deletePolicyNote.textContent = deletionsOn
+          ? 'Deletions are enabled for this signed-in session. Locate by participant reference, confirm deliberately, then submit. Actions are CSRF-protected and audited.'
+          : 'Deletion is policy-gated until DELETIONS_ENABLED is set. Participants contact Brian with their reference; you process deletion here when enabled.';
+      }
     }
     if (retentionPolicyNote && session) {
       const months = session.retentionMonths || 12;

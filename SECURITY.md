@@ -40,7 +40,7 @@ Full trust-boundary notes: `docs/researcher-dashboard-architecture.md`. API cont
 | Control | Expectation |
 | --- | --- |
 | Interface | Authenticated Inquiry Archive at `/researcher/` via `/api/researcher` (Preview-proven; Production promote pending) |
-| Accounts | Role-based identities in `authorised_researchers`. Exactly one active row. Brian is the intended Production researcher. No shared login. |
+| Accounts | Role-based identities in `authorised_researchers`. Exactly one active `researcher_admin` (Study Owner); zero or more `researcher_support` (Research Support). Brian is the intended Study Owner; Kranthi is Research Support. No shared login. |
 | MFA | Required: Supabase Auth TOTP (`aal2`). AIM / Entra is not used |
 | Least privilege | `researcher_api` for reads/sessions/audit; deletion only via `delete_assessment_by_reference` (EXECUTE), not table DELETE |
 | Public reads | None. Do not add `anon` or `authenticated` SELECT policies |

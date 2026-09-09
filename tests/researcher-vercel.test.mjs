@@ -354,7 +354,13 @@ test('collection, export, and delete remain off after rewrite stripping', async 
   assert.equal(readyConfig().exportsEnabled, false);
   assert.equal(readyConfig().deletionsEnabled, false);
 
-  const { app, signed } = await authedRewriteApp();
+  resetResearcherAppForTests();
+  const app = createResearcherApp({
+    allowMemoryStores: true,
+    config: readyConfig(),
+    records: [sampleLedgerRecord()],
+  });
+  const signed = await app.signInForTests('subject-owner', { role: 'researcher_admin' });
   const exported = await handleVercelResearcherRequest(
     ...Object.values(
       vercelPair({
@@ -451,7 +457,7 @@ test('SQL session, rate-limit, and audit adapters use the production query abstr
             mfa_ok: true,
             expires_at: new Date(Date.now() + 60_000).toISOString(),
             revoked_at: null,
-            role: 'authorised_researcher',
+            role: 'researcher_support',
             mfa_required: true,
           },
         ],

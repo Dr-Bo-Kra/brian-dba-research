@@ -14,7 +14,15 @@ export const SQL = Object.freeze({
     text: `select count(*)::int as n
            from public.authorised_researchers
            where revoked_at is null
-             and disabled_at is null`,
+             and disabled_at is null
+             and role in ('researcher_admin', 'researcher_support')`,
+  },
+  countActiveStudyOwners: {
+    text: `select count(*)::int as n
+           from public.authorised_researchers
+           where revoked_at is null
+             and disabled_at is null
+             and role = 'researcher_admin'`,
   },
   insertSession: {
     text: `insert into public.researcher_sessions

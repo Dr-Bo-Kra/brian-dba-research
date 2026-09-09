@@ -113,7 +113,7 @@ async function researcherLogin(
     email = 'researcher@example.test',
     password = 'correct-horse-battery',
     sub = 'subject-1',
-    role = 'authorised_researcher',
+    role = 'researcher_support',
     totpCode = '123456',
     enrolled = true,
     aal = 'aal1',
@@ -125,6 +125,21 @@ async function researcherLogin(
   app.auth.harness.addUser({ email, password, sub, aal, totpCode, enrolled });
   if (directory) {
     app.directory.set(sub, { role, mfaRequired: true, revokedAt: null, disabledAt: null });
+    // Login requires exactly one active Study Owner. Seed one when the subject is Support.
+    if (role === 'researcher_support') {
+      let owners = 0;
+      for (const row of app.directory.values()) {
+        if (!row?.revokedAt && !row?.disabledAt && row.role === 'researcher_admin') owners += 1;
+      }
+      if (owners === 0) {
+        app.directory.set('study-owner-fixture', {
+          role: 'researcher_admin',
+          mfaRequired: true,
+          revokedAt: null,
+          disabledAt: null,
+        });
+      }
+    }
   }
   const login = await app.handle({
     method: 'POST',
@@ -203,7 +218,7 @@ test('missing, expired, revoked, disabled, unknown, and wrong-role sessions rece
 
   const disabled = await app.signInForTests('subject-disabled');
   app.directory.set('subject-disabled', {
-    role: 'authorised_researcher',
+    role: 'researcher_support',
     mfaRequired: true,
     revokedAt: null,
     disabledAt: new Date().toISOString(),
@@ -243,14 +258,14 @@ test('browser-provided role, subject, email, and MFA state are ignored', async (
   assert.equal(spoofed.status, 401);
   assert.doesNotMatch(spoofed.body, /resp_/);
 
-  const signed = await app.signInForTests('subject-1', { role: 'authorised_researcher' });
+  const signed = await app.signInForTests('subject-1', { role: 'researcher_support' });
   const stillResearcher = await app.handle({
     method: 'GET',
     url: '/v1/session',
     headers: { cookie: signed.cookie, 'x-role': 'researcher_admin' },
     ip: '3',
   });
-  assert.equal(JSON.parse(stillResearcher.body).role, 'authorised_researcher');
+  assert.equal(JSON.parse(stillResearcher.body).role, 'researcher_support');
 
   const { login, mfa } = await researcherLogin(app, {
     sub: 'subject-1',
@@ -266,7 +281,7 @@ test('browser-provided role, subject, email, and MFA state are ignored', async (
   assert.equal(JSON.parse(login.body).mfaRequired, true);
   assert.equal(cookieFrom(login.headers['Set-Cookie'], SESSION_COOKIE), '');
   assert.equal(mfa.status, 200);
-  assert.equal(JSON.parse(mfa.body).role, 'authorised_researcher');
+  assert.equal(JSON.parse(mfa.body).role, 'researcher_support');
 });
 
 test('password-only sessions cannot access data until TOTP MFA completes', async () => {
@@ -280,7 +295,7 @@ test('password-only sessions cannot access data until TOTP MFA completes', async
     enrolled: true,
   });
   app.directory.set('subject-1', {
-    role: 'authorised_researcher',
+    role: 'researcher_support',
     mfaRequired: true,
     revokedAt: null,
     disabledAt: null,
@@ -347,7 +362,7 @@ test('successful Supabase Auth + MFA login rotates the session and then serves a
   assert.equal(app.auditLog.some((row) => row.action === 'login'), true);
 });
 
-test('unknown, disabled, revoked, and extra active researchers cannot complete login', async () => {
+test('unknown, disabled, revoked, and multiple Study Owners cannot complete login', async () => {
   const app = testApp();
   const unknown = await researcherLogin(app, {
     sub: 'nobody',
@@ -359,7 +374,7 @@ test('unknown, disabled, revoked, and extra active researchers cannot complete l
 
   app.directory.clear();
   app.directory.set('disabled-user', {
-    role: 'authorised_researcher',
+    role: 'researcher_support',
     mfaRequired: true,
     revokedAt: null,
     disabledAt: new Date().toISOString(),
@@ -373,7 +388,7 @@ test('unknown, disabled, revoked, and extra active researchers cannot complete l
 
   app.directory.clear();
   app.directory.set('revoked-user', {
-    role: 'authorised_researcher',
+    role: 'researcher_support',
     mfaRequired: true,
     revokedAt: new Date().toISOString(),
     disabledAt: null,
@@ -385,26 +400,55 @@ test('unknown, disabled, revoked, and extra active researchers cannot complete l
   });
   assert.equal(cookieFrom(revoked.mfa.headers['Set-Cookie'], SESSION_COOKIE), '');
 
+  // Zero Study Owners → fail closed
   app.directory.clear();
-  app.directory.set('subject-1', {
-    role: 'authorised_researcher',
+  app.directory.set('support-only', {
+    role: 'researcher_support',
     mfaRequired: true,
     revokedAt: null,
     disabledAt: null,
   });
-  app.directory.set('subject-2', {
+  const zeroOwner = await researcherLogin(app, {
+    sub: 'support-only',
+    email: 'support-only@example.test',
+    directory: false,
+  });
+  assert.equal(cookieFrom(zeroOwner.mfa.headers['Set-Cookie'], SESSION_COOKIE), '');
+  assert.equal(zeroOwner.mfa.status, 403);
+
+  // Multiple Study Owners → fail closed
+  app.directory.clear();
+  app.directory.set('owner-a', {
+    role: 'researcher_admin',
+    mfaRequired: true,
+    revokedAt: null,
+    disabledAt: null,
+  });
+  app.directory.set('owner-b', {
     role: 'researcher_admin',
     mfaRequired: true,
     revokedAt: null,
     disabledAt: null,
   });
   const multi = await researcherLogin(app, {
-    sub: 'subject-1',
+    sub: 'owner-a',
     email: 'multi@example.test',
+    role: 'researcher_admin',
     directory: false,
   });
   assert.equal(cookieFrom(multi.mfa.headers['Set-Cookie'], SESSION_COOKIE), '');
   assert.equal(multi.mfa.status, 403);
+
+  // One Study Owner + Support → Support may login
+  app.directory.clear();
+  const supportOk = await researcherLogin(app, {
+    sub: 'support-ok',
+    email: 'support-ok@example.test',
+    role: 'researcher_support',
+  });
+  assert.equal(supportOk.mfa.status, 200);
+  assert.equal(JSON.parse(supportOk.mfa.body).role, 'researcher_support');
+  assert.equal(JSON.parse(supportOk.mfa.body).roleLabel, 'Research Support');
 });
 
 test('query safety rejects unknown filters, sort, oversized pages, and dump attempts', async () => {
@@ -703,7 +747,13 @@ test('MFA ticket cookie is required, one-time after success, and not a session',
     enrolled: true,
   });
   app.directory.set('subject-1', {
-    role: 'authorised_researcher',
+    role: 'researcher_support',
+    mfaRequired: true,
+    revokedAt: null,
+    disabledAt: null,
+  });
+  app.directory.set('study-owner-fixture', {
+    role: 'researcher_admin',
     mfaRequired: true,
     revokedAt: null,
     disabledAt: null,
@@ -950,4 +1000,115 @@ test('durable audit sink stores metadata only and IP stays off by default', asyn
     clientRateKey({ ip: '10.0.0.1', headers: { 'x-forwarded-for': '9.9.9.9' } }, { trustedProxy: false }),
     '10.0.0.1'
   );
+});
+
+test('RBAC: Study Owner can withdraw; Research Support cannot even when DELETIONS_ENABLED', async () => {
+  const app = testApp({
+    config: { exportsEnabled: true, deletionsEnabled: true },
+  });
+  const support = await app.signInForTests('support-1', { role: 'researcher_support' });
+  app.directory.set('study-owner', {
+    role: 'researcher_admin',
+    mfaRequired: true,
+    revokedAt: null,
+    disabledAt: null,
+  });
+  const denied = await app.handle({
+    method: 'POST',
+    url: '/v1/deletions',
+    headers: { cookie: support.cookie, 'x-csrf-token': support.csrf },
+    body: { reference: 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', confirm: true },
+    ip: '30',
+  });
+  assert.equal(denied.status, 403);
+  assert.equal(app.auditLog.some((row) => row.action === 'authz_failure'), true);
+
+  const owner = await app.signInForTests('study-owner', { role: 'researcher_admin' });
+  const allowed = await app.handle({
+    method: 'POST',
+    url: '/v1/deletions',
+    headers: { cookie: owner.cookie, 'x-csrf-token': owner.csrf },
+    body: { reference: 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', confirm: true },
+    ip: '30',
+  });
+  assert.equal(allowed.status, 200);
+  assert.equal(JSON.parse(allowed.body).ok, true);
+});
+
+test('RBAC: Research Support can export; role spoofing cannot elevate to withdraw or admin', async () => {
+  const app = testApp({
+    config: { exportsEnabled: true, deletionsEnabled: true },
+  });
+  const support = await app.signInForTests('support-export', { role: 'researcher_support' });
+  app.directory.set('study-owner', {
+    role: 'researcher_admin',
+    mfaRequired: true,
+    revokedAt: null,
+    disabledAt: null,
+  });
+  const exported = await app.handle({
+    method: 'POST',
+    url: '/v1/exports',
+    headers: { cookie: support.cookie, 'x-csrf-token': support.csrf },
+    body: { confirm: true },
+    ip: '31',
+  });
+  assert.equal(exported.status, 200);
+  assert.match(exported.headers['Content-Type'], /text\/csv/);
+
+  const spoofDelete = await app.handle({
+    method: 'POST',
+    url: '/v1/deletions',
+    headers: {
+      cookie: support.cookie,
+      'x-csrf-token': support.csrf,
+      'x-role': 'researcher_admin',
+      'x-permissions': 'research:withdraw,research:admin',
+    },
+    body: { reference: 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', confirm: true, role: 'researcher_admin' },
+    ip: '31',
+  });
+  assert.equal(spoofDelete.status, 403);
+
+  const session = await app.handle({
+    method: 'GET',
+    url: '/v1/session',
+    headers: { cookie: support.cookie, 'x-role': 'researcher_admin' },
+    ip: '31',
+  });
+  const payload = JSON.parse(session.body);
+  assert.equal(payload.role, 'researcher_support');
+  assert.equal(payload.roleLabel, 'Research Support');
+  assert.equal(payload.deletionsEnabled, false);
+  assert.equal(payload.exportsEnabled, true);
+});
+
+test('RBAC: multiple Study Owners fail closed for withdrawal even if session already exists', async () => {
+  const app = testApp({ config: { deletionsEnabled: true } });
+  const owner = await app.signInForTests('owner-a', { role: 'researcher_admin' });
+  app.directory.set('owner-b', {
+    role: 'researcher_admin',
+    mfaRequired: true,
+    revokedAt: null,
+    disabledAt: null,
+  });
+  const blocked = await app.handle({
+    method: 'POST',
+    url: '/v1/deletions',
+    headers: { cookie: owner.cookie, 'x-csrf-token': owner.csrf },
+    body: { reference: 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', confirm: true },
+    ip: '32',
+  });
+  assert.equal(blocked.status, 403);
+});
+
+test('RBAC: schema and dashboard expose Study Owner / Research Support model', () => {
+  const schema = readFileSync(join(root, 'supabase/schema.sql'), 'utf8');
+  assert.match(schema, /researcher_admin/);
+  assert.match(schema, /researcher_support/);
+  assert.match(schema, /exactly one active Study Owner/);
+  assert.doesNotMatch(schema, /check \(role in \('authorised_researcher'/);
+  assert.match(dashboardJs, /Study Owner/);
+  assert.match(dashboardJs, /Research Support/);
+  assert.match(dashboardJs, /roleLabel/);
 });

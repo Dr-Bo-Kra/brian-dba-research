@@ -112,10 +112,17 @@ test('researcher API is fail-closed by default', () => {
   assert.equal(jwtSecretNotRequired.supabaseJwtSecret, undefined);
 });
 
-test('authorisation denies by default and uses roles not a named person', () => {
+test('authorisation denies by default and uses explicit permissions not a named person', () => {
   assert.equal(isActiveResearcher(null), false);
-  assert.equal(isActiveResearcher({ role: 'authorised_researcher', mfaOk: false }), false);
-  assert.equal(authorize({ role: 'authorised_researcher', mfaOk: true }, 'summary').ok, true);
+  assert.equal(isActiveResearcher({ role: 'researcher_support', mfaOk: false }), false);
+  assert.equal(authorize({ role: 'researcher_support', mfaOk: true }, 'summary').ok, true);
+  assert.equal(authorize({ role: 'researcher_support', mfaOk: true }, 'export').ok, true);
+  assert.equal(authorize({ role: 'researcher_support', mfaOk: true }, 'delete').ok, false);
+  assert.equal(authorize({ role: 'researcher_support', mfaOk: true }, 'role_change').ok, false);
+  assert.equal(authorize({ role: 'researcher_admin', mfaOk: true }, 'delete').ok, true);
+  assert.equal(authorize({ role: 'researcher_admin', mfaOk: true }, 'role_change').ok, true);
+  assert.equal(authorize({ role: 'researcher_admin', mfaOk: true }, 'delete', { studyOwnerCount: 0 }).ok, false);
+  assert.equal(authorize({ role: 'researcher_admin', mfaOk: true }, 'delete', { studyOwnerCount: 2 }).ok, false);
   assert.equal(authorize({ role: 'viewer', mfaOk: true }, 'summary').ok, false);
   const sources = [
     read('api/researcher/_lib/authorize.mjs'),
@@ -207,7 +214,11 @@ test('authenticated reads return allowlisted ledger fields only', async () => {
 
 test('export and delete stay unavailable until policy flags are enabled', async () => {
   const app = testApp({ records: [sampleRecord()] });
-  const { headers } = await authed(app);
+  const signed = await app.signInForTests('subject-owner', { role: 'researcher_admin' });
+  const headers = {
+    cookie: signed.cookie,
+    'x-csrf-token': signed.csrf,
+  };
   const exported = await app.handle({
     method: 'POST',
     url: '/v1/exports',
@@ -233,7 +244,11 @@ test('enabled deletion is generic and respects legal hold', async () => {
     records: [sampleRecord(), held],
     config: { deletionsEnabled: true },
   });
-  const { headers } = await authed(app);
+  const signed = await app.signInForTests('subject-owner', { role: 'researcher_admin' });
+  const headers = {
+    cookie: signed.cookie,
+    'x-csrf-token': signed.csrf,
+  };
   const missing = await app.handle({
     method: 'POST',
     url: '/v1/deletions',

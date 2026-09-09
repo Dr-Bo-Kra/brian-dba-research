@@ -1,4 +1,21 @@
-import { ROLES, SENSITIVE_AUDIT_KEYS } from './constants.mjs';
+import {
+  ACTION_PERMISSIONS,
+  PERMISSIONS,
+  ROLE_DISPLAY,
+  ROLES,
+  SENSITIVE_AUDIT_KEYS,
+  STUDY_OWNER_ROLE,
+} from './constants.mjs';
+
+export function permissionsForRole(role) {
+  if (!ROLES.includes(role)) return Object.freeze([]);
+  return PERMISSIONS[role] || Object.freeze([]);
+}
+
+export function hasPermission(identity, permission) {
+  if (!identity || typeof identity !== 'object') return false;
+  return permissionsForRole(identity.role).includes(permission);
+}
 
 export function isActiveResearcher(identity) {
   if (!identity || typeof identity !== 'object') return false;
@@ -9,23 +26,41 @@ export function isActiveResearcher(identity) {
   return true;
 }
 
-export function authorize(identity, action) {
+export function isStudyOwner(identity) {
+  return Boolean(identity && identity.role === STUDY_OWNER_ROLE);
+}
+
+export function displayRoleLabel(role) {
+  return ROLE_DISPLAY[role] || null;
+}
+
+/**
+ * Directory health: exactly one active Study Owner (researcher_admin).
+ * Zero or more researcher_support rows are allowed.
+ * Zero or multiple Study Owners fail closed for owner/admin operations
+ * and for login completion.
+ */
+export function studyOwnerInvariantOk(activeStudyOwnerCount) {
+  return Number(activeStudyOwnerCount) === 1;
+}
+
+export function authorize(identity, action, { studyOwnerCount = 1 } = {}) {
   if (!isActiveResearcher(identity)) {
     return { ok: false, error: identity ? 'forbidden' : 'unauthorized' };
   }
-  const allowed = {
-    summary: true,
-    list: true,
-    view_record: true,
-    view_qualitative: true,
-    retention_review: true,
-    segments: true,
-    export: identity.role === 'authorised_researcher' || identity.role === 'researcher_admin',
-    delete: identity.role === 'authorised_researcher' || identity.role === 'researcher_admin',
-    role_change: identity.role === 'researcher_admin',
-  };
-  if (!allowed[action]) return { ok: false, error: 'forbidden' };
-  return { ok: true, role: identity.role };
+  const permission = ACTION_PERMISSIONS[action];
+  if (!permission) return { ok: false, error: 'forbidden' };
+  if (!hasPermission(identity, permission)) {
+    return { ok: false, error: 'forbidden' };
+  }
+  // Owner/admin operations fail closed unless exactly one Study Owner exists.
+  if (
+    (permission === 'research:withdraw' || permission === 'research:admin') &&
+    !studyOwnerInvariantOk(studyOwnerCount)
+  ) {
+    return { ok: false, error: 'forbidden' };
+  }
+  return { ok: true, role: identity.role, permission };
 }
 
 export function sanitizeAuditDetail(detail = {}) {

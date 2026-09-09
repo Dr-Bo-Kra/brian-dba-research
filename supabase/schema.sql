@@ -116,18 +116,33 @@ create table if not exists public.authorised_researchers (
   disabled_at timestamptz,
   created_at timestamptz not null default now(),
   constraint authorised_researchers_role_allowed
-    check (role in ('authorised_researcher', 'researcher_admin'))
+    check (role in ('researcher_admin', 'researcher_support'))
 );
 
 comment on table public.authorised_researchers is
-  'Server-side directory of authorised researcher identities. Lookup is by opaque IdP subject and role. Do not use a person name or email as an application access check. Deny by default when no active row exists.';
+  'Server-side directory of authorised researcher identities. Lookup is by opaque IdP subject and role. Roles: researcher_admin (exactly one active Study Owner) and researcher_support (zero or more Research Support). Do not use a person name or email as an application access check. Deny by default when no active row exists.';
 comment on column public.authorised_researchers.auth_subject is
   'Opaque identity-provider subject. Not a browser-side email allowlist.';
+comment on column public.authorised_researchers.role is
+  'researcher_admin = Study Owner (research:read|export|withdraw|admin). researcher_support = Research Support (research:read|export only).';
 
 alter table public.authorised_researchers enable row level security;
 alter table public.authorised_researchers force row level security;
 revoke all privileges on table public.authorised_researchers from anon;
 revoke all privileges on table public.authorised_researchers from authenticated;
+
+-- RBAC cutover: map legacy authorised_researcher → researcher_support, then
+-- enforce the Study Owner / Research Support role allowlist.
+update public.authorised_researchers
+   set role = 'researcher_support'
+ where role = 'authorised_researcher';
+
+alter table public.authorised_researchers
+  drop constraint if exists authorised_researchers_role_allowed;
+
+alter table public.authorised_researchers
+  add constraint authorised_researchers_role_allowed
+    check (role in ('researcher_admin', 'researcher_support'));
 
 create table if not exists public.researcher_sessions (
   id text primary key,

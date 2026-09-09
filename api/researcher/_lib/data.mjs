@@ -352,6 +352,9 @@ export function createFixtureResearchStore(records) {
     async countActiveResearchers() {
       return 0;
     },
+    async countActiveStudyOwners() {
+      return 0;
+    },
   };
 }
 
@@ -555,6 +558,10 @@ export function createDatabaseResearchStore(query) {
       const result = await query(SQL.countActiveResearchers, []);
       return Number(result?.rows?.[0]?.n) || 0;
     },
+    async countActiveStudyOwners() {
+      const result = await query(SQL.countActiveStudyOwners, []);
+      return Number(result?.rows?.[0]?.n) || 0;
+    },
   };
 }
 
@@ -592,6 +599,9 @@ export function createUnavailableResearchStore() {
       return null;
     },
     async countActiveResearchers() {
+      return 0;
+    },
+    async countActiveStudyOwners() {
       return 0;
     },
   };

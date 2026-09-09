@@ -26,7 +26,7 @@ This checklist is for a **privacy-hardened** quantitative research platform. Com
 | --- | --- |
 | 48 synthetic Preview responses | Identifiable by reserved `resp_00000000-0000-4000-8000-*` prefix; currently **48/48** rows are synthetic |
 | Preview Auth / MFA history | Already proven on this project; roles and FORCE RLS already applied |
-| Researcher authorization | Exactly **one** active `authorised_researchers` row (Kranthi test); one older row disabled |
+| Researcher authorization | Exactly **one** active `researcher_admin` Study Owner; zero or more `researcher_support`. Legacy sole-active-row model replaced. |
 | Least-privilege roles | `researcher_api` and `submission_inserter` verified live |
 | Operational complexity | Second project doubles Auth users, CA certs, role passwords, and grant drift risk |
 | Clean real-research data | Achieved by **purging synthetics before go-live**, not by splitting projects now |

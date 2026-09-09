@@ -2,7 +2,43 @@
 
 export const PARTICIPANT_REF = /^resp_[0-9a-f-]{32,36}$/i;
 
-export const ROLES = Object.freeze(['authorised_researcher', 'researcher_admin']);
+/** Application roles (server directory only — never trust browser claims). */
+export const ROLES = Object.freeze(['researcher_admin', 'researcher_support']);
+
+/** Sole Study Owner role. Exactly one active row with this role is required. */
+export const STUDY_OWNER_ROLE = 'researcher_admin';
+
+/** Research Support role. Zero or more active rows permitted. */
+export const RESEARCH_SUPPORT_ROLE = 'researcher_support';
+
+export const ROLE_DISPLAY = Object.freeze({
+  researcher_admin: 'Study Owner',
+  researcher_support: 'Research Support',
+});
+
+/** Explicit permissions. Deny by default when a role lacks the permission. */
+export const PERMISSIONS = Object.freeze({
+  researcher_admin: Object.freeze([
+    'research:read',
+    'research:export',
+    'research:withdraw',
+    'research:admin',
+  ]),
+  researcher_support: Object.freeze(['research:read', 'research:export']),
+});
+
+/** Map API actions to required permissions. */
+export const ACTION_PERMISSIONS = Object.freeze({
+  summary: 'research:read',
+  list: 'research:read',
+  view_record: 'research:read',
+  view_qualitative: 'research:read',
+  retention_review: 'research:read',
+  segments: 'research:read',
+  export: 'research:export',
+  delete: 'research:withdraw',
+  role_change: 'research:admin',
+});
 
 export const REGION_CODES = Object.freeze([
   'india',
