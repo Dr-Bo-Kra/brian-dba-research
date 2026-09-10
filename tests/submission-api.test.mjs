@@ -206,6 +206,13 @@ test('qualitative smuggling and free-text profile keys are rejected', async () =
   });
   assert.equal((await post(app, withRole)).status, 400);
 
+  const withDisclaimer = buildValidSubmissionPayload({
+    patch: (payload) => {
+      payload.responses.disclaimer = 'attacker free text channel';
+    },
+  });
+  assert.equal((await post(app, withDisclaimer)).status, 400);
+
   const ok = await post(
     app,
     buildValidSubmissionPayload({ client_record_id: 'resp_ffffffff-ffff-4fff-8fff-ffffffffffff' })

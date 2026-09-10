@@ -13,6 +13,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm install
+      - run: npm audit --omit=dev
       - run: node --check script.js
       - run: node --check researcher/dashboard.js
       - run: node --check api/researcher/_server.mjs

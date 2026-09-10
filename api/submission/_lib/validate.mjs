@@ -6,6 +6,7 @@
  * fields). Browser-supplied derived values are ignored after shape checks.
  */
 import {
+  ALLOWED_DISCLAIMER,
   ASSESSMENT_KEYS,
   DEFAULTS,
   DEMOGRAPHIC_KEYS,
@@ -209,7 +210,7 @@ export function validateSubmissionPayload(body) {
   if (!parseIsoTimestamp(responses.savedAt)) {
     return { ok: false, error: 'invalid_request' };
   }
-  if (!validateString(responses.disclaimer, { min: 1, max: DEFAULTS.maxDisclaimerLen })) {
+  if (responses.disclaimer !== ALLOWED_DISCLAIMER) {
     return { ok: false, error: 'invalid_request' };
   }
 

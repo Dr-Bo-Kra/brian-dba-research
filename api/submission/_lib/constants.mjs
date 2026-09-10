@@ -20,6 +20,10 @@ export {
 };
 
 export const INSTRUMENT_ID = 'brian-dba-inclusive-lending-desk-v3';
+
+/** Exact client disclaimer string — free-text substitution is rejected. */
+export const ALLOWED_DISCLAIMER =
+  'Research-oriented quantitative desk instrument / proposal demo. Not a clinical diagnosis, credit score, or institutional decision.';
 /** Live study contract: quantitative instrument only (legacy mixed-methods rows may still exist in DB). */
 export const INSTRUMENT_TYPE = 'quantitative-desk-assessment';
 

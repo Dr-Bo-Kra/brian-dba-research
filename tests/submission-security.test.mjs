@@ -78,13 +78,17 @@ test('no secrets in submission sources or tests', () => {
 });
 
 test('submission database URL rejects researcher_api and service-role', () => {
-  const forbiddenRoles = ['researcher_api', 'service' + '_role'];
+  const forbiddenRoles = ['researcher_api', 'service' + '_role', 'postgres', 'supabase_admin'];
   for (const role of forbiddenRoles) {
     assert.throws(() => assertSubmissionDatabaseUrl(`postgresql://${role}@127.0.0.1/db`));
   }
   assert.equal(
     assertSubmissionDatabaseUrl('postgresql://submission_inserter@127.0.0.1/db'),
     'postgresql://submission_inserter@127.0.0.1/db'
+  );
+  assert.equal(
+    assertSubmissionDatabaseUrl('postgresql://submission_inserter:x@127.0.0.1/db'),
+    'postgresql://submission_inserter:x@127.0.0.1/db'
   );
 });
 

@@ -72,6 +72,28 @@ test('Production collection uses protected HTTPS dual kill-switch', () => {
   assert.match(scriptJs, /isProtectedSubmissionEndpoint/);
 });
 
+test('researcher codebook CSV lists all Likert items from the live instrument', () => {
+  const codebook = read('researcher/codebook.csv');
+  assert.match(codebook, /^item_id,domain_id,domain_label,/);
+  for (const id of [
+    'B1',
+    'B5',
+    'C6',
+    'C10',
+    'D11',
+    'D15',
+    'E16',
+    'E20',
+    'F21',
+    'F25',
+  ]) {
+    assert.match(codebook, new RegExp(`^${id},`, 'm'));
+  }
+  assert.match(codebook, /Psychometric indicators/);
+  assert.match(codebook, /Inclusive decision-making/);
+  assert.match(codebook, /Incorporating alternative creditworthiness indicators/);
+});
+
 test('no Supabase anonymous key or direct REST table endpoint in browser code', () => {
   for (const source of allBrowser) {
     assert.doesNotMatch(source, /SUPABASE_ANON_KEY/);

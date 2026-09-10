@@ -71,6 +71,10 @@ export function assertSubmissionDatabaseUrl(url) {
   if (/researcher_api/i.test(value)) {
     throw unavailable('forbidden_database_role');
   }
+  // Require the dedicated insert-only role — denylist alone is not enough.
+  if (!/^postgres(ql)?:\/\/submission_inserter(?::|@)/i.test(value)) {
+    throw unavailable('forbidden_database_role');
+  }
   return value;
 }
 
