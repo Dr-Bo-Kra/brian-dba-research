@@ -1,0 +1,1801 @@
+import { applyAuthFieldMode, researcherAuthSubmitPath } from './auth-field-mode.mjs';
+import { rankItemHighlights, SMALL_N_THRESHOLD, statsFromCounts } from './item-analysis.mjs';
+import {
+  buildStudyInsights,
+  participationGlanceCopy,
+  relativeDomainLabel,
+} from './insights.mjs';
+import {
+  buildDomainDrilldown,
+  buildKpiDrilldown,
+  countByField,
+  formatPolarizationLabel,
+  formatResearchDate,
+  formatResearchDateTime,
+  normalizeTrend,
+  shortenParticipantRef,
+} from './drilldowns.mjs';
+
+(function initInquiryArchive() {
+  const gate = document.getElementById('auth-gate');
+  const workspace = document.getElementById('workspace');
+  if (!workspace) return;
+
+  const LEGACY_SESSION_KEY = 'brian-dba-researcher-session';
+  const cfg = window.BRIAN_DBA_RESEARCHER_CONFIG || {};
+  const endpoint = String(cfg.RESEARCHER_ENDPOINT || '').trim();
+
+  const statusEl = document.getElementById('workspace-status');
+  const statusCopy = document.getElementById('status-copy');
+  const sessionMeta = document.getElementById('session-meta');
+  const signOutBtn = document.getElementById('sign-out');
+  const authError = document.getElementById('auth-error');
+  const authHint = document.getElementById('auth-hint');
+  const authStart = document.getElementById('auth-start');
+  const authForm = document.getElementById('auth-form');
+  const authEmail = document.getElementById('auth-email');
+  const authPassword = document.getElementById('auth-password');
+  const authPasswordStep = document.getElementById('auth-password-step');
+  const authMfaStep = document.getElementById('auth-mfa-step');
+  const authMfaCode = document.getElementById('auth-mfa-code');
+  const authEnroll = document.getElementById('auth-enroll');
+  const authQr = document.getElementById('auth-qr');
+  applyAuthFieldMode(
+    { email: authEmail, password: authPassword, mfaCode: authMfaCode },
+    'password'
+  );
+  const filterForm = document.getElementById('filter-form');
+  const deleteForm = document.getElementById('delete-form');
+  const deleteConfirm = document.getElementById('delete-confirm');
+  const deleteSubmit = document.getElementById('delete-submit');
+  const deleteError = document.getElementById('delete-error');
+  const deleteReference = document.getElementById('delete-reference');
+  const exportBtn = document.getElementById('export-csv');
+  const exportReference = document.getElementById('export-reference');
+  const exportPolicyNote = document.getElementById('export-policy-note');
+  const deletePolicyNote = document.getElementById('delete-policy-note');
+  const retentionRefresh = document.getElementById('retention-refresh');
+  const retentionEmpty = document.getElementById('retention-empty');
+  const retentionTableWrap = document.getElementById('retention-table-wrap');
+  const retentionRows = document.getElementById('retention-rows');
+  const retentionPolicyNote = document.getElementById('retention-policy-note');
+  const PARTICIPANT_REF = /^resp_[0-9a-f-]{32,36}$/i;
+  const drillLayer = document.getElementById('drill-layer');
+  const drillDrawer = document.getElementById('drill-drawer');
+  const drillContent = document.getElementById('drill-content');
+  const drillClose = document.getElementById('drill-close');
+  const ledgerPrev = document.getElementById('ledger-prev');
+  const ledgerNext = document.getElementById('ledger-next');
+  const ledgerPager = document.getElementById('ledger-pager');
+  const ledgerPageLabel = document.getElementById('ledger-page-label');
+
+  const GEOGRAPHY = [
+    ['india', 'India'],
+    ['south-asia-other', 'South Asia (excluding India)'],
+    ['southeast-asia', 'Southeast Asia'],
+    ['east-asia', 'East Asia'],
+    ['middle-east', 'Middle East'],
+    ['africa', 'Africa'],
+    ['europe-uk', 'Europe or United Kingdom'],
+    ['north-america', 'North America'],
+    ['latin-america-caribbean', 'Latin America or Caribbean'],
+    ['oceania', 'Oceania'],
+    ['multi-region', 'Multi-region or global role'],
+    ['prefer-not', 'Prefer not to say'],
+  ];
+  const ROLES = [
+    ['credit-loan-officer', 'Credit or Loan Officer'],
+    ['credit-manager', 'Credit Manager'],
+    ['risk-manager', 'Risk Manager or Risk Analyst'],
+    ['underwriting', 'Underwriting Specialist'],
+    ['branch-manager', 'Branch Manager'],
+    ['product-development', 'Product Development Specialist'],
+    ['senior-management', 'Senior Management or Executive'],
+    ['other', 'Other'],
+  ];
+  const EXPERIENCE = [
+    ['lt2', 'Less than 2 years'],
+    ['2-5', '2-5 years'],
+    ['6-10', '6-10 years'],
+    ['11-15', '11-15 years'],
+    ['gt15', 'More than 15 years'],
+  ];
+  const PROFILE_DIM_LABELS = {
+    countryRegion: 'Geography',
+    position: 'Role',
+    yearsLending: 'Lending experience',
+    gender: 'Gender',
+    age: 'Age',
+    education: 'Education',
+    institutionType: 'Institution type',
+    yearsFinancialServices: 'Financial services experience',
+    areaOperation: 'Area of operation',
+    involvement: 'Involvement',
+    usesAltIndicators: 'Uses alternative indicators',
+  };
+  const PROFILE_PRIMARY_DIMS = [
+    'countryRegion',
+    'position',
+    'yearsLending',
+    'gender',
+    'age',
+    'institutionType',
+  ];
+  const PROFILE_SECONDARY_DIMS = Object.keys(PROFILE_DIM_LABELS).filter(
+    (dim) => !PROFILE_PRIMARY_DIMS.includes(dim)
+  );
+  const PROFILE_CODE_LABELS = {
+    countryRegion: Object.fromEntries(GEOGRAPHY),
+    position: Object.fromEntries(ROLES),
+    yearsLending: Object.fromEntries(EXPERIENCE),
+    gender: { male: 'Male', female: 'Female', 'prefer-not': 'Prefer not to say' },
+    age: {
+      '20-29': '20-29',
+      '30-39': '30-39',
+      '40-49': '40-49',
+      '50-59': '50-59',
+      '60plus': '60+',
+    },
+    education: {
+      diploma: 'Diploma',
+      bachelors: "Bachelor's",
+      masters: "Master's",
+      doctorate: 'Doctorate',
+      professional: 'Professional',
+      other: 'Other',
+    },
+    institutionType: {
+      'commercial-bank': 'Commercial bank',
+      mfi: 'MFI',
+      cooperative: 'Cooperative',
+      fintech: 'FinTech',
+      'digital-bank': 'Digital bank',
+      dfi: 'DFI',
+      other: 'Other',
+    },
+    yearsFinancialServices: Object.fromEntries(EXPERIENCE),
+    areaOperation: { urban: 'Urban', rural: 'Rural', both: 'Both' },
+    involvement: {
+      assess: 'Assess',
+      recommend: 'Recommend',
+      'approve-reject': 'Approve/reject',
+      supervise: 'Supervise',
+      policies: 'Policies',
+      support: 'Support',
+      other: 'Other',
+    },
+    usesAltIndicators: {
+      yes: 'Yes',
+      no: 'No',
+      implementing: 'Implementing',
+      'not-sure': 'Not sure',
+    },
+  };
+  const FILTER_FROM_PROFILE = {
+    countryRegion: 'region',
+    position: 'role',
+    yearsLending: 'experience',
+  };
+  const DOMAINS = [
+    { id: 'psychometric', label: 'Psychometric indicators' },
+    { id: 'social', label: 'Social capital' },
+    { id: 'behavioral', label: 'Behavioral economics' },
+    { id: 'readiness', label: 'Organizational readiness' },
+    { id: 'inclusiveDecision', label: 'Inclusive decision-making' },
+  ];
+  const ITEMS = [
+    ['B1', 'Financial discipline and loan recommendation'],
+    ['B2', 'Repayment commitment'],
+    ['B3', 'Responsible financial planning'],
+    ['B4', 'Confidence in financial responsibilities'],
+    ['B5', 'Psychological characteristics beyond records'],
+    ['C6', 'Community reputation'],
+    ['C7', 'Peer recommendations'],
+    ['C8', 'Community or business groups'],
+    ['C9', 'Community trust'],
+    ['C10', 'Social relationships beyond records'],
+    ['D11', 'Consistent financial decisions'],
+    ['D12', 'Avoiding impulsive decisions'],
+    ['D13', 'Responsible risk behaviour'],
+    ['D14', 'Behavioural information beyond records'],
+    ['D15', 'Behavioural characteristics and decision quality'],
+    ['E16', 'Leadership support for adoption'],
+    ['E17', 'Policies for alternative information'],
+    ['E18', 'Technological capability'],
+    ['E19', 'Staff training'],
+    ['E20', 'Prepared integration with ethics'],
+    ['F21', 'Thin-file creditworthy borrowers'],
+    ['F22', 'Balance risk and inclusion'],
+    ['F23', 'Fairness and ethical responsibility'],
+    ['F24', 'Alternative information without lower quality'],
+    ['F25', 'More responsible inclusive decisions'],
+  ];
+
+  const RESPONSE_FETCH_LIMIT = 50;
+  const RESPONSE_PAGE_LIMIT = 10;
+  let session = null;
+  let pendingTicket = '';
+  let records = [];
+  let summary = null;
+  let retentionReview = null;
+  let pollTimer = null;
+  let showAllItems = false;
+  let responsePage = 0;
+  let expandedRecordRef = null;
+  let expandedRecordDetail = null;
+  let segmentPayload = null;
+  let drillTrigger = null;
+  let previouslyFocused = null;
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function optionLabel(list, value) {
+    const hit = list.find((row) => row[0] === value);
+    return hit ? hit[1] : value || '—';
+  }
+
+  function fillSelect(select, pairs) {
+    if (!select) return;
+    pairs.forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.append(option);
+    });
+  }
+
+  function isProtectedResearcherEndpoint(url) {
+    if (!url) return false;
+    if (url.startsWith('//')) return false;
+    if (/^\/api\/researcher\/?$/.test(url)) return true;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') return false;
+      if (parsed.username || parsed.password) return false;
+      if (/\/rest\/v1\//i.test(`${parsed.pathname}${parsed.search}`)) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const apiConfigured = isProtectedResearcherEndpoint(endpoint);
+
+  function purgeClientSecrets() {
+    try {
+      sessionStorage.removeItem(LEGACY_SESSION_KEY);
+    } catch {
+      /* ignore */
+    }
+    try {
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith('brian-dba-'))
+        .forEach((key) => localStorage.removeItem(key));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function setStatus(state, message) {
+    if (!statusEl || !statusCopy) return;
+    statusEl.dataset.state = state;
+    statusCopy.textContent = message;
+  }
+
+  function setSessionMeta(expiresAt) {
+    if (!sessionMeta) return;
+    if (!session) {
+      sessionMeta.hidden = true;
+      sessionMeta.replaceChildren();
+      return;
+    }
+    sessionMeta.hidden = false;
+    const label = document.createElement('span');
+    label.className = 'workspace-session-label';
+    const roleLabel =
+      session.roleLabel ||
+      (session.role === 'researcher_admin'
+        ? 'Study Owner'
+        : session.role === 'researcher_support'
+          ? 'Research Support'
+          : null);
+    label.textContent = roleLabel ? `Signed in · ${roleLabel}` : 'Signed in';
+    sessionMeta.replaceChildren(label);
+    if (!expiresAt) return;
+    const expiry = document.createElement('small');
+    expiry.className = 'workspace-session-expiry';
+    expiry.textContent = `Ends ${formatWhen(expiresAt)}`;
+    sessionMeta.append(expiry);
+  }
+
+  function readFilters() {
+    const data = new FormData(filterForm);
+    return {
+      from: String(data.get('from') || ''),
+      to: String(data.get('to') || ''),
+      region: String(data.get('region') || ''),
+      role: String(data.get('role') || ''),
+      experience: String(data.get('experience') || ''),
+      q: String(data.get('q') || '').trim(),
+    };
+  }
+
+  function queryString(filters) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    const encoded = params.toString();
+    return encoded ? `?${encoded}` : '';
+  }
+
+  function formatWhen(value) {
+    return formatResearchDateTime(value);
+  }
+
+  function drillContext() {
+    return {
+      summary,
+      records,
+      geography: GEOGRAPHY,
+      roles: ROLES,
+      experience: EXPERIENCE,
+      itemLabels: Object.fromEntries(ITEMS),
+    };
+  }
+
+  function distBarHeight(count, max, ceiling) {
+    const safeCount = Number(count) || 0;
+    if (safeCount <= 0) return 0;
+    return Math.max(8, Math.round((safeCount / Math.max(max, 1)) * ceiling));
+  }
+
+  function miniDistHtml(counts, options = {}) {
+    const safe = Array.isArray(counts) ? counts : [0, 0, 0, 0, 0, 0, 0];
+    const max = Math.max(...safe, 1);
+    const ceiling = Number(options.ceiling) || 40;
+    const compact = Boolean(options.compact);
+    return `<div class="dist-scale ${compact ? 'dist-scale-spark' : 'dist-scale-mini'}" aria-hidden="true">
+      ${safe
+        .map((count, index) => {
+          const height = distBarHeight(count, max, ceiling);
+          const empty = height === 0 ? ' is-empty' : '';
+          return `<div class="dist-col${empty}"><i data-count="${count}" style="height:${height}px"></i>${
+            compact ? '' : `<span>${index + 1}</span>`
+          }</div>`;
+        })
+        .join('')}
+    </div>`;
+  }
+
+  function fullDistHtml(counts, itemId) {
+    const safe = Array.isArray(counts) ? counts : [0, 0, 0, 0, 0, 0, 0];
+    const max = Math.max(...safe, 1);
+    const total = safe.reduce((sum, value) => sum + value, 0) || 1;
+    return `<div class="dist-scale dist-scale-full" aria-label="${escapeHtml(itemId || '')} distribution">
+      ${safe
+        .map((count, index) => {
+          const height = distBarHeight(count, max, 72);
+          const share = Math.round((count / total) * 100);
+          const empty = height === 0 ? ' is-empty' : '';
+          return `<div class="dist-col${empty}" title="${count} · ${share}%">
+            <i data-count="${count}" style="height:${height}px"></i>
+            <span>${index + 1}</span>
+            <em>${count}</em>
+          </div>`;
+        })
+        .join('')}
+    </div>`;
+  }
+
+  function itemMetaLine(item) {
+    const parts = [
+      `mean ${item.mean == null ? '—' : Number(item.mean).toFixed(2)} / 7`,
+      `${item.n ?? 0} responses`,
+      `sample SD ${item.sd == null ? '—' : Number(item.sd).toFixed(2)}`,
+    ];
+    return parts.join(' · ');
+  }
+
+  function renderDrawerRows(rows) {
+    if (!rows?.length) return '<p class="empty-copy">No detail rows for this view.</p>';
+    return `<div class="drawer-rows">${rows
+      .map(
+        ([label, value]) =>
+          `<div><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`
+      )
+      .join('')}</div>`;
+  }
+
+  function renderDrawerBars(bars, valueSuffix = '') {
+    if (!bars?.length) return '<p class="empty-copy">No composition detail for this view.</p>';
+    return `<div class="drawer-bars">${bars
+      .map((bar) => {
+        const label = escapeHtml(bar.label || '');
+        const count = Number(bar.count) || 0;
+        const share = Math.max(0, Math.min(100, Number(bar.share) || 0));
+        const meta = bar.meta ? ` · ${escapeHtml(bar.meta)}` : '';
+        const display =
+          valueSuffix && Number.isFinite(Number(bar.count))
+            ? `${Number(bar.count).toFixed(2)}${escapeHtml(valueSuffix)}`
+            : String(count);
+        return `<div class="drawer-bar-row">
+          <div class="drawer-bar-label"><span>${label}</span><b>${display}${meta}</b></div>
+          <div class="drawer-bar-track" aria-hidden="true"><i style="width:${share}%"></i></div>
+        </div>`;
+      })
+      .join('')}</div>`;
+  }
+
+  function renderDrawerActivity(activity) {
+    if (!activity?.length) return '<p class="empty-copy">No recent activity in this view.</p>';
+    return `<ol class="drawer-activity">${activity
+      .map((row) => {
+        const score = row.score ? ` · ${escapeHtml(row.score)}` : '';
+        return `<li>
+          <strong>${escapeHtml(row.when || '—')}</strong>
+          <span>${escapeHtml(row.role || '—')} · ${escapeHtml(row.geography || '—')}${score}</span>
+          <small>${escapeHtml(row.reference || '—')}</small>
+        </li>`;
+      })
+      .join('')}</ol>`;
+  }
+
+  function renderDrawerItems(items) {
+    if (!items?.length) return '<p class="empty-copy">No items in the current filter.</p>';
+    return items
+      .map(
+        (item) => `<details class="drawer-item">
+          <summary>
+            <span class="drawer-item-label">${escapeHtml(item.label || item.id || '')}</span>
+            <span class="item-id item-id-secondary">${escapeHtml(item.id)}</span>
+            <span class="item-highlight-meta">${escapeHtml(itemMetaLine(item))}</span>
+            ${miniDistHtml(item.counts, { compact: true, ceiling: 28 })}
+          </summary>
+          ${fullDistHtml(item.counts, item.id)}
+        </details>`
+      )
+      .join('');
+  }
+
+  function renderDrawerDetails(section) {
+    const summaryLabel = escapeHtml(section.summaryLabel || 'Show more detail');
+    const distributionHtml = section.distributionItems?.length
+      ? section.distributionItems
+          .map(
+            (item) => `<div class="drawer-item is-static">
+                <p>${escapeHtml(item.label || '')} <span class="item-id item-id-secondary">${escapeHtml(
+              item.id
+            )}</span></p>
+                <p class="item-highlight-meta">${escapeHtml(itemMetaLine(item))}</p>
+                ${fullDistHtml(item.counts, item.id)}
+              </div>`
+          )
+          .join('')
+      : '';
+    const groups = section.groups || [];
+    let groupsHtml = '';
+    if (!groups.length && section.rows?.length) {
+      groupsHtml = renderDrawerRows(section.rows);
+    } else if (groups.length) {
+      groupsHtml = groups
+        .map(
+          (group) => `<section class="drawer-subsection">
+              <h4>${escapeHtml(group.title || '')}</h4>
+              ${renderDrawerRows(group.rows || [])}
+            </section>`
+        )
+        .join('');
+    }
+    return `<details class="drawer-progressive">
+      <summary>${summaryLabel}</summary>
+      <div class="drawer-progressive-body">
+        ${distributionHtml}
+        ${groupsHtml}
+      </div>
+    </details>`;
+  }
+
+  function renderDrilldown(detail) {
+    if (!drillContent || !detail) return;
+    const observations = detail.observations || detail.rows || [];
+    const primarySections = [];
+    const detailedSections = [];
+    (detail.sections || []).forEach((section) => {
+      if (section.kind === 'details' || section.kind === 'note') {
+        detailedSections.push(section);
+      } else {
+        primarySections.push(section);
+      }
+    });
+    const renderSection = (section) => {
+      if (section.kind === 'note') {
+        return `<div class="drawer-callout"><small>${escapeHtml(
+          section.title || 'Note'
+        )}</small><p>${escapeHtml(section.note || '')}</p></div>`;
+      }
+      if (section.kind === 'items') {
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+            <h3>${escapeHtml(section.title)}</h3>
+            ${renderDrawerItems(section.items || [])}
+          </section>`;
+      }
+      if (section.kind === 'distribution') {
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+            <h3>${escapeHtml(section.title)}</h3>
+            ${(section.items || [])
+              .map(
+                (item) => `<div class="drawer-item is-static">
+                  <p>${escapeHtml(item.label || '')} <span class="item-id item-id-secondary">${escapeHtml(
+                  item.id
+                )}</span></p>
+                  ${fullDistHtml(item.counts, item.id)}
+                </div>`
+              )
+              .join('')}
+          </section>`;
+      }
+      if (section.kind === 'bars') {
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+            <h3>${escapeHtml(section.title)}</h3>
+            ${renderDrawerBars(section.bars || [], section.valueSuffix || '')}
+          </section>`;
+      }
+      if (section.kind === 'activity') {
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+            <h3>${escapeHtml(section.title)}</h3>
+            ${renderDrawerActivity(section.activity || [])}
+          </section>`;
+      }
+      if (section.kind === 'details') {
+        return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+            <h3>${escapeHtml(section.title)}</h3>
+            ${renderDrawerDetails(section)}
+          </section>`;
+      }
+      return `<section class="drawer-section" aria-label="${escapeHtml(section.title)}">
+          <h3>${escapeHtml(section.title)}</h3>
+          ${renderDrawerRows(section.rows || [])}
+        </section>`;
+    };
+    drillContent.innerHTML = `
+      <div class="drawer-head">
+        <small>${escapeHtml(detail.eyebrow || '')}</small>
+        <h2 id="drawer-title">${escapeHtml(detail.title || 'Detail')}</h2>
+        <strong>${escapeHtml(detail.value || '—')}</strong>
+      </div>
+      <section class="drawer-section drawer-tell" aria-label="In plain English">
+        <h3>In plain English</h3>
+        <p>${escapeHtml(detail.summary || '')}</p>
+      </section>
+      <section class="drawer-section" aria-label="Key evidence">
+        <h3>Key evidence</h3>
+        ${renderDrawerRows(observations)}
+      </section>
+      <section class="drawer-evidence" aria-label="Supporting evidence">
+        <h3 class="drawer-evidence-title">Supporting evidence</h3>
+        ${primarySections.map(renderSection).join('')}
+      </section>
+      <section class="drawer-section drawer-detailed" aria-label="Detailed breakdown">
+        <h3>Detailed breakdown</h3>
+        ${
+          detailedSections.length
+            ? detailedSections.map(renderSection).join('')
+            : '<p class="empty-copy">Open theme or question rows above for distributions.</p>'
+        }
+      </section>
+      <details class="drawer-methodology">
+        <summary>Methodology</summary>
+        <div class="drawer-source"><strong>Methodological context</strong> ${escapeHtml(
+          detail.note || ''
+        )}</div>
+      </details>`;
+  }
+
+  function getFocusable(container) {
+    if (!container) return [];
+    return [...container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
+      (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true'
+    );
+  }
+
+  function closeDrilldown() {
+    if (!drillLayer || drillLayer.hidden) return;
+    drillLayer.hidden = true;
+    document.body.classList.remove('drawer-open');
+    if (drillContent) drillContent.innerHTML = '';
+    const restore = drillTrigger || previouslyFocused;
+    drillTrigger = null;
+    previouslyFocused = null;
+    if (restore && typeof restore.focus === 'function') restore.focus();
+  }
+
+  function openDrilldown(detail, trigger) {
+    if (!drillLayer || !drillDrawer || !detail) return;
+    previouslyFocused = document.activeElement;
+    drillTrigger = trigger || previouslyFocused;
+    renderDrilldown(detail);
+    drillLayer.hidden = false;
+    document.body.classList.add('drawer-open');
+    window.setTimeout(() => {
+      (drillClose || drillDrawer).focus();
+    }, 0);
+  }
+
+  function openDrillFromTarget(target) {
+    const trigger = target?.closest?.('[data-drill]');
+    if (!trigger) return;
+    const key = String(trigger.getAttribute('data-drill') || '');
+    const [kind, id] = key.split(':');
+    if (kind === 'kpi') {
+      openDrilldown(buildKpiDrilldown(id, drillContext()), trigger);
+      return;
+    }
+    if (kind === 'domain') {
+      openDrilldown(buildDomainDrilldown(id, drillContext()), trigger);
+    }
+  }
+
+  function resolveLast7d() {
+    if (summary?.last_7d != null && Number.isFinite(Number(summary.last_7d))) {
+      return Number(summary.last_7d);
+    }
+    const cutoff = new Date();
+    cutoff.setUTCHours(0, 0, 0, 0);
+    cutoff.setUTCDate(cutoff.getUTCDate() - 6);
+    const cutoffDay = cutoff.toISOString().slice(0, 10);
+    return normalizeTrend(summary?.trend || []).reduce((sum, row) => {
+      return row.day >= cutoffDay ? sum + (Number(row.count) || 0) : sum;
+    }, 0);
+  }
+
+  function smallNClass(n) {
+    return Number(n) > 0 && Number(n) < SMALL_N_THRESHOLD ? ' is-small-n' : '';
+  }
+
+  function formatKpiShortDate(value) {
+    const full = formatResearchDate(value);
+    if (!full || full === '—') return '—';
+    const parts = full.split(' ');
+    return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : full;
+  }
+
+  function smallNBadge(n) {
+    return Number(n) > 0 && Number(n) < SMALL_N_THRESHOLD
+      ? '<span class="small-n-flag" title="Small group — descriptive only">Small sample</span>'
+      : '';
+  }
+
+  function profileCodeLabel(dim, key) {
+    const map = PROFILE_CODE_LABELS[dim] || {};
+    return map[key] || key || '—';
+  }
+
+  function renderGlance() {
+    const total = summary?.total ?? 0;
+    document.getElementById('kpi-count').textContent = String(total);
+    document.getElementById('kpi-recent').textContent = String(summary?.last_24h ?? 0);
+    const weekEl = document.getElementById('kpi-week');
+    if (weekEl) weekEl.textContent = String(resolveLast7d());
+    document.getElementById('kpi-updated').textContent = summary?.last_intake
+      ? formatKpiShortDate(summary.last_intake)
+      : '—';
+    const orientationEl = document.getElementById('kpi-orientation');
+    if (orientationEl) {
+      orientationEl.textContent =
+        summary?.mean_orientation != null && Number.isFinite(Number(summary.mean_orientation))
+          ? `${Number(summary.mean_orientation).toFixed(2)}/7`
+          : '—';
+    }
+    const participationNote = document.getElementById('participation-note');
+    if (participationNote) {
+      if (total) {
+        participationNote.hidden = false;
+        participationNote.textContent = `${total} responses accepted in current filter`;
+      } else {
+        participationNote.hidden = true;
+        participationNote.textContent = '';
+      }
+    }
+  }
+
+  function renderTrendChart(trend) {
+    const host = document.getElementById('trend-chart');
+    const empty = document.getElementById('trend-empty');
+    if (!host) return;
+    const points = normalizeTrend(trend);
+    const hasData = points.some((row) => Number(row.count) > 0);
+    if (!hasData) {
+      host.innerHTML = '';
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    const width = 520;
+    const height = 112;
+    const padX = 12;
+    const padY = 14;
+    const max = Math.max(1, ...points.map((row) => Number(row.count) || 0));
+    const step = points.length > 1 ? (width - padX * 2) / (points.length - 1) : 0;
+    const coords = points.map((row, index) => {
+      const x = padX + index * step;
+      const y = height - padY - ((Number(row.count) || 0) / max) * (height - padY * 2);
+      return { x, y, label: formatResearchDate(row.day), count: Number(row.count) || 0 };
+    });
+    const line = coords.map((pt, index) => `${index === 0 ? 'M' : 'L'}${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
+    const area =
+      coords.length > 1
+        ? `${line} L${coords[coords.length - 1].x.toFixed(1)} ${height - padY} L${coords[0].x.toFixed(1)} ${
+            height - padY
+          } Z`
+        : '';
+    const dots = coords
+      .map(
+        (pt) =>
+          `<circle class="trend-point" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.5"><title>${escapeHtml(
+            pt.label
+          )}: ${pt.count}</title></circle>`
+      )
+      .join('');
+    const firstLabel = coords[0]?.label || '';
+    const lastLabel = coords[coords.length - 1]?.label || '';
+    host.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Responses over time">
+      <line class="trend-grid" x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}"></line>
+      ${area ? `<path class="trend-area" d="${area}"></path>` : ''}
+      <path class="trend-line" d="${line}"></path>
+      ${dots}
+      <text class="trend-label" x="${padX}" y="${height - 2}">${escapeHtml(firstLabel)}</text>
+      <text class="trend-label" x="${width - padX}" y="${height - 2}" text-anchor="end">${escapeHtml(lastLabel)}</text>
+    </svg>`;
+  }
+
+  function renderCompositionRank(title, rows) {
+    if (!rows.length) return '';
+    const top = rows.slice(0, 5);
+    const max = Math.max(1, ...top.map((row) => Number(row.count) || 0));
+    return `<div class="composition-rank">
+      <h4>${escapeHtml(title)}</h4>
+      <ul class="composition-rank-list">
+        ${top
+          .map((row) => {
+            const share = Math.round(((Number(row.count) || 0) / max) * 100);
+            return `<li>
+              <span class="composition-rank-label">${escapeHtml(row.label)}</span>
+              <span class="composition-rank-count">${row.count}</span>
+              <span class="composition-rank-bar" aria-hidden="true"><i style="width:${share}%"></i></span>
+            </li>`;
+          })
+          .join('')}
+      </ul>
+    </div>`;
+  }
+
+  function renderParticipation() {
+    renderTrendChart(summary?.trend || []);
+  }
+
+  function renderProfileDim(dim, profile) {
+    const rows = Array.isArray(profile[dim]) ? profile[dim].slice(0, 8) : [];
+    if (!rows.length) return '';
+    const filterName = FILTER_FROM_PROFILE[dim];
+    const max = Math.max(1, ...rows.map((row) => Number(row.n) || 0));
+    return `<div class="profile-dim">
+      <h3>${escapeHtml(PROFILE_DIM_LABELS[dim] || dim)}</h3>
+      <ul class="profile-dim-list">
+        ${rows
+          .map((row) => {
+            const label = profileCodeLabel(dim, row.key);
+            const n = Number(row.n) || 0;
+            const share = Math.round((n / max) * 100);
+            const filterAttr = filterName
+              ? ` data-filter-field="${escapeHtml(filterName)}" data-filter-value="${escapeHtml(row.key)}"`
+              : '';
+            const tag = filterName ? 'button' : 'span';
+            const typeAttr = filterName ? ' type="button"' : '';
+            return `<li class="profile-dim-row${smallNClass(n)}">
+              <${tag}${typeAttr} class="profile-dim-chip"${filterAttr}>
+                <span class="profile-dim-label">${escapeHtml(label)}</span>
+                <span class="profile-dim-count">${n} responses</span>
+                <span class="profile-dim-bar" aria-hidden="true"><i style="width:${share}%"></i></span>
+              </${tag}>
+            </li>`;
+          })
+          .join('')}
+      </ul>
+    </div>`;
+  }
+
+  function renderProfile() {
+    const host = document.getElementById('profile-composition');
+    const empty = document.getElementById('profile-empty');
+    if (!host) return;
+    host.innerHTML = '';
+    const profile = summary?.profile || {};
+    const dims = Object.keys(PROFILE_DIM_LABELS);
+    const hasAny = dims.some((dim) => Array.isArray(profile[dim]) && profile[dim].length);
+    if (empty) empty.hidden = hasAny;
+    if (!hasAny) return;
+
+    const primaryHost = document.createElement('div');
+    primaryHost.className = 'profile-dim-grid';
+    primaryHost.innerHTML = PROFILE_PRIMARY_DIMS.map((dim) => renderProfileDim(dim, profile)).join('');
+    host.append(primaryHost);
+
+    const secondaryHtml = PROFILE_SECONDARY_DIMS.map((dim) => renderProfileDim(dim, profile))
+      .filter(Boolean)
+      .join('');
+    if (secondaryHtml) {
+      const more = document.createElement('details');
+      more.className = 'profile-more';
+      more.innerHTML = `<summary>More profile dimensions</summary>
+        <div class="profile-dim-grid profile-dim-grid-secondary">${secondaryHtml}</div>`;
+      host.append(more);
+    }
+  }
+
+  function renderInsights() {
+    /* Insights folded into question highlights for density. */
+  }
+
+  function renderDomains() {
+    const host = document.getElementById('domain-scores');
+    const empty = document.getElementById('domain-empty');
+    host.innerHTML = '';
+    const stats = summary?.domains || [];
+    const any = stats.some((stat) => stat.score != null);
+    empty.hidden = any;
+    if (!any) return;
+    const byId = new Map(stats.map((stat) => [stat.id, stat]));
+    DOMAINS.forEach((domain) => {
+      const stat = byId.get(domain.id);
+      if (!stat || stat.score == null) return;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `domain-score drill${smallNClass(stat.n)}`;
+      button.setAttribute('data-drill', `domain:${domain.id}`);
+      button.setAttribute('aria-haspopup', 'dialog');
+      button.setAttribute('aria-controls', 'drill-drawer');
+      button.setAttribute('aria-label', `Explore details for ${stat.label || domain.label}`);
+      const percent = Math.round((Number(stat.score) / 7) * 100);
+      const relative = relativeDomainLabel(stat.score, stats);
+      const sd =
+        stat.sd == null || !Number.isFinite(Number(stat.sd)) ? '—' : Number(stat.sd).toFixed(2);
+      button.title = relative;
+      button.innerHTML = `
+        <span class="domain-score-name">${escapeHtml(stat.label || domain.label)}</span>
+        <span class="domain-score-mean">${Number(stat.score).toFixed(2)} / 7</span>
+        <span class="domain-bar domain-bar-muted" aria-hidden="true"><i style="width:${percent}%"></i></span>
+        <span class="domain-score-meta">${Number(stat.n) || 0} responses · SD ${sd}</span>
+        <i class="drill-mark" aria-hidden="true">+</i>`;
+      host.append(button);
+    });
+  }
+
+  function shortItemLabel(label) {
+    const text = String(label || '').trim();
+    if (text.length <= 56) return text;
+    return `${text.slice(0, 54)}…`;
+  }
+
+  function renderHighlightGroup(title, rows) {
+    if (!rows.length) return '';
+    return `<div class="item-highlight-group">
+      <h3>${escapeHtml(title)}</h3>
+      <ul class="item-highlight-list">
+        ${rows
+          .map((row) => {
+            const sd =
+              row.sd == null || !Number.isFinite(Number(row.sd))
+                ? '—'
+                : Number(row.sd).toFixed(2);
+            return `<li>
+              <details class="item-highlight">
+                <summary class="item-highlight-summary">
+                  <span class="item-highlight-copy">
+                    <span class="item-question">${escapeHtml(shortItemLabel(row.label || row.id))}</span>
+                    <span class="item-id item-id-secondary">${escapeHtml(row.id)}</span>
+                  </span>
+                  <span class="item-highlight-meta">
+                    <span>${Number(row.mean).toFixed(2)} / 7</span>
+                    <span class="item-sd">SD ${sd}</span>
+                  </span>
+                </summary>
+                <div class="item-highlight-expand">
+                  <p class="item-highlight-meta">${escapeHtml(itemMetaLine(row))}</p>
+                  ${fullDistHtml(row.counts, row.id)}
+                </div>
+              </details>
+            </li>`;
+          })
+          .join('')}
+      </ul>
+    </div>`;
+  }
+
+  function renderItemDistributionRow(item, labels) {
+    const counts = Array.isArray(item.counts) ? item.counts : [0, 0, 0, 0, 0, 0, 0];
+    const stats = statsFromCounts(counts);
+    const row = document.createElement('div');
+    row.className = `item-row${smallNClass(stats.n)}`;
+    row.innerHTML = `<div class="item-row-head">
+        <p class="item-question">${escapeHtml(labels[item.id] || '')}
+          <span class="item-id item-id-secondary">${escapeHtml(item.id)}</span>
+        </p>
+        <p class="item-highlight-meta">${escapeHtml(itemMetaLine(stats))}</p>
+      </div>
+      ${fullDistHtml(counts, item.id)}`;
+    return row;
+  }
+
+  function renderItems() {
+    const host = document.getElementById('item-highlights');
+    const empty = document.getElementById('items-empty');
+    const allHost = document.getElementById('item-distributions');
+    const details = document.getElementById('item-all-details');
+    if (host) host.innerHTML = '';
+    if (allHost) allHost.innerHTML = '';
+    const items = summary?.items || [];
+    if (empty) empty.hidden = items.length > 0;
+    if (!items.length) {
+      if (details) details.hidden = true;
+      return;
+    }
+    if (details) details.hidden = false;
+    const labels = Object.fromEntries(ITEMS);
+    const ranked = rankItemHighlights(items, { labels, highlightCount: 3 });
+    if (host) {
+      host.innerHTML =
+        renderHighlightGroup('Highest', ranked.highest) +
+        renderHighlightGroup('Lowest', ranked.lowest) +
+        renderHighlightGroup('Most divided (sample SD)', ranked.mostDivided);
+    }
+    if (allHost && (showAllItems || details?.open)) {
+      items.forEach((item) => {
+        allHost.append(renderItemDistributionRow(item, labels));
+      });
+    }
+  }
+
+  function fillSegmentMeasureOptions() {
+    const select = document.getElementById('segment-measure');
+    if (!select || select.options.length > 1) return;
+    DOMAINS.forEach((domain) => {
+      const option = document.createElement('option');
+      option.value = `domain:${domain.id}`;
+      option.textContent = `Domain · ${domain.label}`;
+      select.append(option);
+    });
+    ITEMS.forEach(([id, label]) => {
+      const option = document.createElement('option');
+      option.value = `item:${id}`;
+      option.textContent = `${id} · ${label}`;
+      select.append(option);
+    });
+  }
+
+  function renderSegments() {
+    const body = document.getElementById('segment-rows');
+    const table = document.getElementById('segment-table');
+    const empty = document.getElementById('segment-empty');
+    if (!body) return;
+    body.innerHTML = '';
+    const rows = Array.isArray(segmentPayload?.segments) ? segmentPayload.segments : [];
+    if (table) table.hidden = rows.length === 0;
+    if (empty) {
+      empty.hidden = rows.length > 0;
+      if (!rows.length) empty.textContent = 'Choose a measure and dimension, then compare.';
+    }
+    const dim = segmentPayload?.dimension || '';
+    const maxMean = Math.max(
+      0.01,
+      ...rows.map((row) => (row.mean == null ? 0 : Number(row.mean) || 0))
+    );
+    rows.forEach((row) => {
+      const tr = document.createElement('tr');
+      tr.className = smallNClass(row.n).trim();
+      const n = Number(row.n) || 0;
+      const mean = row.mean == null ? '—' : Number(row.mean).toFixed(2);
+      const sd = row.sd == null ? '—' : Number(row.sd).toFixed(2);
+      const barPct =
+        row.mean == null ? 0 : Math.round((Number(row.mean) / Math.max(maxMean, 7)) * 100);
+      tr.innerHTML = `
+        <td>
+          <span class="segment-label">${escapeHtml(profileCodeLabel(dim, row.key))}</span>
+          ${smallNBadge(n)}
+        </td>
+        <td>
+          <span class="segment-mean-wrap">
+            <span class="segment-mean">${mean}</span>
+            <span class="segment-compare-bar" aria-hidden="true"><i style="width:${barPct}%"></i></span>
+          </span>
+        </td>
+        <td>${n}</td>
+        <td>${sd}</td>`;
+      body.append(tr);
+    });
+  }
+
+  async function loadSegments() {
+    if (!session || !apiConfigured) return;
+    const measure = document.getElementById('segment-measure')?.value || 'overall';
+    const dimension = document.getElementById('segment-dimension')?.value || 'countryRegion';
+    const filters = readFilters();
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    params.set('dimension', dimension);
+    params.set('measure', measure);
+    try {
+      const response = await researcherFetch(`/v1/segments?${params.toString()}`);
+      if (!response.ok) {
+        segmentPayload = null;
+        renderSegments();
+        return;
+      }
+      segmentPayload = await response.json();
+      renderSegments();
+    } catch {
+      segmentPayload = null;
+      renderSegments();
+    }
+  }
+
+  function pageCount() {
+    return Math.max(1, Math.ceil(records.length / RESPONSE_PAGE_LIMIT) || 1);
+  }
+
+  function renderLedger() {
+    const body = document.getElementById('record-rows');
+    const empty = document.getElementById('ledger-empty');
+    const meta = document.getElementById('ledger-meta');
+    body.innerHTML = '';
+    empty.hidden = records.length > 0;
+    const total = summary?.total ?? records.length;
+    const pages = pageCount();
+    if (responsePage >= pages) responsePage = Math.max(0, pages - 1);
+    const start = responsePage * RESPONSE_PAGE_LIMIT;
+    const pageRows = records.slice(start, start + RESPONSE_PAGE_LIMIT);
+    if (meta) {
+      if (records.length || total) {
+        meta.hidden = false;
+        const shownStart = records.length ? start + 1 : 0;
+        const shownEnd = start + pageRows.length;
+        meta.textContent = `Showing ${shownStart}–${shownEnd} of ${records.length} in this view · ${total} accepted in filter`;
+      } else {
+        meta.hidden = true;
+        meta.textContent = '';
+      }
+    }
+    if (ledgerPager) {
+      ledgerPager.hidden = records.length <= RESPONSE_PAGE_LIMIT;
+      if (ledgerPageLabel) {
+        ledgerPageLabel.textContent = `Page ${responsePage + 1} of ${pages}`;
+      }
+      if (ledgerPrev) ledgerPrev.disabled = responsePage <= 0;
+      if (ledgerNext) ledgerNext.disabled = responsePage >= pages - 1;
+    }
+    pageRows.forEach((row) => {
+      const ref = row.participant_reference || '';
+      const tr = document.createElement('tr');
+      tr.className = 'record-row';
+      tr.tabIndex = 0;
+      tr.setAttribute('aria-expanded', expandedRecordRef === ref ? 'true' : 'false');
+      tr.dataset.reference = ref;
+      tr.innerHTML = `
+        <td><span class="ref-secondary" title="${escapeHtml(ref || '')}">${escapeHtml(
+        shortenParticipantRef(ref)
+      )}</span></td>
+        <td>${escapeHtml(formatWhen(row.accepted_at))}</td>
+        <td>${escapeHtml(optionLabel(GEOGRAPHY, row.region))}</td>
+        <td>${escapeHtml(optionLabel(ROLES, row.role))}</td>
+        <td>${escapeHtml(optionLabel(EXPERIENCE, row.experience))}</td>
+        <td>${escapeHtml(
+          row.orientation != null ? `${Number(row.orientation).toFixed(2)} / 7` : '—'
+        )}</td>`;
+      body.append(tr);
+      if (expandedRecordRef === ref) {
+        const detail = document.createElement('tr');
+        detail.className = 'record-detail-row';
+        const payload =
+          expandedRecordDetail && expandedRecordDetail.participant_reference === ref
+            ? expandedRecordDetail
+            : null;
+        const profile = payload?.profile || {};
+        const profileBits = Object.keys(PROFILE_DIM_LABELS)
+          .map((dim) => {
+            const value = profile[dim];
+            if (!value) return '';
+            return `${PROFILE_DIM_LABELS[dim]}: ${profileCodeLabel(dim, value)}`;
+          })
+          .filter(Boolean)
+          .join(' · ');
+        const domains = Array.isArray(payload?.domains) ? payload.domains : [];
+        const domainBits = domains
+          .map(
+            (domain) =>
+              `${domain.label || domain.id}: ${domain.score == null ? '—' : Number(domain.score).toFixed(2)}`
+          )
+          .join(' · ');
+        const likert = payload?.likert || {};
+        const likertBits = ITEMS.map(([id]) => (likert[id] == null ? '' : `${id}=${likert[id]}`))
+          .filter(Boolean)
+          .join(' · ');
+        detail.innerHTML = `<td colspan="6"><div class="record-detail">
+          <p><strong>Quantitative detail</strong> · ${escapeHtml(ref || '—')}</p>
+          ${
+            payload
+              ? `<p>${escapeHtml(profileBits || 'Coded profile loading complete')}</p>
+          <p><strong>Domain scores</strong> · ${escapeHtml(domainBits || '—')}</p>
+          <p><strong>Likert answers</strong> · ${escapeHtml(likertBits || '—')}</p>`
+              : `<p>Loading quantitative detail…</p>`
+          }
+          <p>Overall score ${escapeHtml(
+            row.orientation != null ? `${Number(row.orientation).toFixed(2)} / 7` : '—'
+          )} · The live study is quantitative-only. No free-text, no auth metadata.</p>
+        </div></td>`;
+        body.append(detail);
+      }
+    });
+  }
+
+  async function toggleRecordDetail(reference) {
+    if (!reference) return;
+    if (expandedRecordRef === reference) {
+      expandedRecordRef = null;
+      expandedRecordDetail = null;
+      renderLedger();
+      return;
+    }
+    expandedRecordRef = reference;
+    expandedRecordDetail = null;
+    renderLedger();
+    if (!session || !apiConfigured) return;
+    try {
+      const response = await researcherFetch(`/v1/responses/${encodeURIComponent(reference)}`);
+      if (!response.ok) return;
+      const payload = await response.json();
+      if (expandedRecordRef !== reference) return;
+      expandedRecordDetail = payload;
+      renderLedger();
+    } catch {
+      /* keep compact row if detail fetch fails */
+    }
+  }
+
+  function renderAll() {
+    renderGlance();
+    renderParticipation();
+    renderProfile();
+    renderDomains();
+    renderItems();
+    renderSegments();
+    renderLedger();
+    applyAdminControls();
+    renderRetention();
+  }
+
+  function clearWorkspaceData() {
+    session = null;
+    pendingTicket = '';
+    records = [];
+    summary = null;
+    retentionReview = null;
+    segmentPayload = null;
+    showAllItems = false;
+    responsePage = 0;
+    expandedRecordRef = null;
+    expandedRecordDetail = null;
+    closeDrilldown();
+    if (signOutBtn) signOutBtn.hidden = true;
+    setSessionMeta(null);
+    applyAdminControls();
+    renderRetention();
+  }
+
+  function sessionFromPayload(payload) {
+    if (payload?.authenticated !== true) return null;
+    return {
+      role: payload.role || 'researcher_support',
+      roleLabel: payload.roleLabel || null,
+      expiresAt: payload.expiresAt,
+      csrfToken: payload.csrfToken,
+      exportsEnabled: payload.exportsEnabled === true,
+      deletionsEnabled: payload.deletionsEnabled === true,
+      retentionMonths: Number(payload.retentionMonths) || 12,
+      studyCompletionDate: payload.studyCompletionDate || null,
+      retentionBasis: payload.retentionBasis || 'record_age',
+      retentionReviewOpensAt: payload.retentionReviewOpensAt || null,
+      retentionAutoDelete: false,
+    };
+  }
+
+  function applyAdminControls() {
+    const exportsOn = Boolean(session?.exportsEnabled);
+    const deletionsOn = Boolean(session?.deletionsEnabled);
+    const isSupport = session?.role === 'researcher_support';
+    if (exportBtn) exportBtn.disabled = !(session && apiConfigured && exportsOn);
+    if (exportPolicyNote) {
+      exportPolicyNote.textContent = exportsOn
+        ? 'Exports are enabled for this signed-in session. CSV uses the quantitative study schema only (coded profile, domain scores, Likert — no free-text, no auth/session metadata).'
+        : 'CSV export is policy-gated until EXPORTS_ENABLED is set for this environment.';
+    }
+    if (deleteForm) {
+      deleteForm.hidden = Boolean(isSupport);
+    }
+    if (deletePolicyNote) {
+      if (isSupport) {
+        deletePolicyNote.textContent =
+          'Participant withdrawal and deletion are Study Owner actions only. Research Support may read and export, but cannot withdraw or delete records.';
+      } else {
+        deletePolicyNote.textContent = deletionsOn
+          ? 'Deletions are enabled for this signed-in session. Locate by participant reference, confirm deliberately, then submit. Actions are CSRF-protected and audited.'
+          : 'Deletion is policy-gated until DELETIONS_ENABLED is set. Participants contact Brian with their reference; you process deletion here when enabled.';
+      }
+    }
+    if (retentionPolicyNote && session) {
+      const months = session.retentionMonths || 12;
+      const basis =
+        session.retentionBasis === 'study_completion' && session.studyCompletionDate
+          ? `study completion ${session.studyCompletionDate} + ${months} months`
+          : `record age (${months} months after acceptance; set STUDY_COMPLETION_DATE when research completes)`;
+      retentionPolicyNote.textContent = `Retention review uses ${basis}. Records are surfaced for authorised review; nothing is auto-deleted.`;
+    }
+    updateDeleteSubmitState();
+  }
+
+  function updateDeleteSubmitState() {
+    const deletionsOn = Boolean(session?.deletionsEnabled);
+    const reference = String(deleteReference?.value || '').trim();
+    const ok =
+      Boolean(session && apiConfigured && deletionsOn) &&
+      PARTICIPANT_REF.test(reference) &&
+      Boolean(deleteConfirm?.checked);
+    if (deleteSubmit) deleteSubmit.disabled = !ok;
+  }
+
+  function renderRetention() {
+    if (!retentionRows || !retentionEmpty || !retentionTableWrap) return;
+    retentionRows.innerHTML = '';
+    const rows = retentionReview?.records || [];
+    if (!session || !apiConfigured) {
+      retentionEmpty.hidden = false;
+      retentionEmpty.textContent = 'Sign in to review retention-due participant references.';
+      retentionTableWrap.hidden = true;
+      return;
+    }
+    if (!rows.length) {
+      retentionEmpty.hidden = false;
+      retentionEmpty.textContent =
+        retentionReview?.policy?.review_open === false
+          ? 'Retention review is not open yet (study completion + retention months still in the future).'
+          : 'No retention-due records in the current policy window.';
+      retentionTableWrap.hidden = true;
+      return;
+    }
+    retentionEmpty.hidden = true;
+    retentionTableWrap.hidden = false;
+    rows.forEach((row) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><code>${escapeHtml(row.participant_reference || '')}</code></td>
+        <td>${escapeHtml(formatWhen(row.accepted_at))}</td>
+        <td>${row.legal_hold ? 'yes' : 'no'}</td>`;
+      retentionRows.append(tr);
+    });
+  }
+
+  async function loadRetentionReview() {
+    if (!session || !apiConfigured) {
+      retentionReview = null;
+      renderRetention();
+      return;
+    }
+    try {
+      const response = await researcherFetch('/v1/retention-review');
+      retentionReview = await response.json();
+    } catch {
+      retentionReview = { records: [], policy: null };
+    }
+    renderRetention();
+  }
+
+  function apiUrl(path) {
+    return `${endpoint.replace(/\/$/, '')}${path}`;
+  }
+
+  async function researcherFetch(path, options = {}) {
+    if (!apiConfigured || !session) {
+      const error = new Error('disconnected');
+      error.code = 'disconnected';
+      throw error;
+    }
+    const headers = {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(session.csrfToken ? { 'X-CSRF-Token': session.csrfToken } : {}),
+      ...(options.headers || {}),
+    };
+    const response = await fetch(apiUrl(path), {
+      ...options,
+      headers,
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+    });
+    if (response.status === 401 || response.status === 403) {
+      clearWorkspaceData();
+      const error = new Error('session-expired');
+      error.code = 'session-expired';
+      throw error;
+    }
+    if (!response.ok) {
+      const error = new Error('http');
+      error.code = response.status === 503 ? 'unavailable' : 'http';
+      throw error;
+    }
+    return response;
+  }
+
+  function listQueryString(filters) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    params.set('limit', String(RESPONSE_FETCH_LIMIT));
+    return `?${params.toString()}`;
+  }
+
+  async function refreshWorkspace() {
+    if (!apiConfigured || !session) {
+      records = [];
+      summary = null;
+      renderAll();
+      return;
+    }
+    setStatus('loading', 'Updating…');
+    try {
+      const filters = readFilters();
+      const summaryQs = queryString(filters);
+      const listQs = listQueryString(filters);
+      const [summaryRes, listRes] = await Promise.all([
+        researcherFetch(`/v1/summary${summaryQs}`, { method: 'GET' }),
+        researcherFetch(`/v1/responses${listQs}`, { method: 'GET' }),
+      ]);
+      summary = await summaryRes.json();
+      const payload = await listRes.json();
+      records = Array.isArray(payload?.records) ? payload.records : [];
+      responsePage = 0;
+      expandedRecordRef = null;
+      expandedRecordDetail = null;
+      setStatus('live', 'Live');
+      setSessionMeta(session?.expiresAt);
+      await loadRetentionReview();
+      renderAll();
+      void loadSegments();
+    } catch (error) {
+      records = [];
+      summary = null;
+      retentionReview = null;
+      renderAll();
+      if (error.code === 'session-expired') {
+        showAuth('Your session ended. Sign in again.');
+        setStatus('error', 'Your session ended. Sign in again.');
+        return;
+      }
+      setStatus('error', 'Could not refresh the workspace.');
+    }
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function startPolling() {
+    stopPolling();
+    if (!apiConfigured || !session) return;
+    pollTimer = window.setInterval(() => {
+      if (document.hidden) return;
+      if (session.expiresAt && Date.parse(session.expiresAt) <= Date.now()) {
+        clearWorkspaceData();
+        showAuth('Your session ended. Sign in again.');
+        return;
+      }
+      void refreshWorkspace();
+    }, 30000);
+  }
+
+  function showPasswordStep() {
+    pendingTicket = '';
+    if (authPasswordStep) authPasswordStep.hidden = false;
+    if (authMfaStep) authMfaStep.hidden = true;
+    if (authEnroll) authEnroll.hidden = true;
+    if (authQr) {
+      authQr.hidden = true;
+      authQr.removeAttribute('src');
+    }
+    if (authMfaCode) authMfaCode.value = '';
+    if (authPassword) authPassword.value = '';
+    applyAuthFieldMode(
+      { email: authEmail, password: authPassword, mfaCode: authMfaCode },
+      'password'
+    );
+  }
+
+  function showMfaStep({ enrollmentRequired, qr }) {
+    if (authPasswordStep) authPasswordStep.hidden = true;
+    if (authMfaStep) authMfaStep.hidden = false;
+    if (authPassword) authPassword.value = '';
+    if (authMfaCode) authMfaCode.value = '';
+    applyAuthFieldMode(
+      { email: authEmail, password: authPassword, mfaCode: authMfaCode },
+      'mfa'
+    );
+    const canShowQr = Boolean(enrollmentRequired && qr && String(qr).startsWith('data:image/'));
+    if (authEnroll) authEnroll.hidden = !canShowQr;
+    if (authQr) {
+      if (canShowQr) {
+        authQr.src = qr;
+        authQr.hidden = false;
+      } else {
+        authQr.hidden = true;
+        authQr.removeAttribute('src');
+      }
+    }
+  }
+
+  function applySessionPayload(payload) {
+    if (payload?.authenticated !== true) return false;
+    if (payload?.mfaRequired) return false;
+    session = sessionFromPayload(payload);
+    if (!session) return false;
+    applyAdminControls();
+    showWorkspace();
+    startPolling();
+    void refreshWorkspace();
+    return true;
+  }
+
+  async function authPost(path, body) {
+    const response = await fetch(apiUrl(path), {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    return { response, payload };
+  }
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    if (!apiConfigured) return;
+    if (authError) {
+      authError.hidden = true;
+      authError.textContent = '';
+    }
+    try {
+      if (researcherAuthSubmitPath(authMfaStep?.hidden) === '/v1/session/mfa') {
+        const { response, payload } = await authPost('/v1/session/mfa', {
+          ticket: pendingTicket,
+          code: String(authMfaCode?.value || ''),
+        });
+        if (payload?.authenticated === true && !payload?.mfaRequired) {
+          pendingTicket = '';
+          applySessionPayload(payload);
+          return;
+        }
+        if (authError) {
+          authError.hidden = false;
+          authError.textContent =
+            response.status === 503
+              ? 'Sign-in is unavailable until authentication is configured.'
+              : 'That authenticator code could not be verified.';
+        }
+        return;
+      }
+      const { response, payload } = await authPost('/v1/session/login', {
+        email: String(authEmail?.value || '').trim(),
+        password: String(authPassword?.value || ''),
+      });
+      if (payload?.mfaRequired) {
+        pendingTicket = String(payload.ticket || '');
+        showMfaStep({ enrollmentRequired: payload.enrollmentRequired, qr: payload.qr });
+        return;
+      }
+      if (payload?.authenticated === true) {
+        applySessionPayload(payload);
+        return;
+      }
+      if (authError) {
+        authError.hidden = false;
+        authError.textContent =
+          response.status === 503
+            ? 'Sign-in is unavailable until authentication is configured.'
+            : 'Sign-in was refused.';
+      }
+    } catch {
+      if (authError) {
+        authError.hidden = false;
+        authError.textContent = 'Sign-in is unavailable.';
+      }
+    }
+  }
+
+  function showAuth(message) {
+    stopPolling();
+    workspace.hidden = true;
+    gate.hidden = false;
+    showPasswordStep();
+    if (authError) {
+      authError.hidden = !message;
+      authError.textContent = message || '';
+    }
+    if (authStart) authStart.disabled = !apiConfigured;
+    if (authHint) authHint.textContent = 'There is no mock login.';
+  }
+
+  function showWorkspace() {
+    gate.hidden = true;
+    workspace.hidden = false;
+    if (signOutBtn) signOutBtn.hidden = !session;
+    setSessionMeta(session?.expiresAt);
+    renderAll();
+  }
+
+  function showDisconnectedWorkspace() {
+    clearWorkspaceData();
+    gate.hidden = true;
+    workspace.hidden = false;
+    setStatus('disconnected', 'This workspace is unavailable.');
+    renderAll();
+  }
+
+  async function restoreSession() {
+    if (!apiConfigured) return null;
+    try {
+      const response = await fetch(apiUrl('/v1/session'), {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        referrerPolicy: 'no-referrer',
+      });
+      if (!response.ok) return null;
+      const payload = await response.json();
+      return sessionFromPayload(payload);
+    } catch {
+      return null;
+    }
+  }
+
+  async function handleSignOut() {
+    stopPolling();
+    try {
+      if (apiConfigured && session) {
+        await fetch(apiUrl('/v1/session/logout'), {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+          referrerPolicy: 'no-referrer',
+          headers: session.csrfToken ? { 'X-CSRF-Token': session.csrfToken } : {},
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+    clearWorkspaceData();
+    if (apiConfigured) showAuth('You signed out of the inquiry archive.');
+    else showDisconnectedWorkspace();
+  }
+
+  async function handleDelete(event) {
+    event.preventDefault();
+    if (deleteError) {
+      deleteError.hidden = true;
+      deleteError.textContent = '';
+    }
+    if (!session?.deletionsEnabled || !session || !apiConfigured) {
+      if (deleteError) {
+        deleteError.hidden = false;
+        deleteError.textContent = 'Deletion is unavailable until it is enabled for this study.';
+      }
+      return;
+    }
+    const reference = String(deleteReference?.value || '').trim();
+    if (!PARTICIPANT_REF.test(reference) || !deleteConfirm?.checked) {
+      if (deleteError) {
+        deleteError.hidden = false;
+        deleteError.textContent = 'Enter a valid participant reference and confirm the deletion.';
+      }
+      return;
+    }
+    try {
+      await researcherFetch('/v1/deletions', {
+        method: 'POST',
+        body: JSON.stringify({ reference, confirm: true }),
+      });
+      if (deleteReference) deleteReference.value = '';
+      if (deleteConfirm) deleteConfirm.checked = false;
+      updateDeleteSubmitState();
+      await refreshWorkspace();
+      setStatus('live', 'Deletion request submitted.');
+    } catch {
+      if (deleteError) {
+        deleteError.hidden = false;
+        deleteError.textContent = 'Deletion could not be completed. Try again or check study policy flags.';
+      }
+    }
+  }
+
+  async function handleExport() {
+    if (!session?.exportsEnabled || !session || !apiConfigured) {
+      setStatus('error', 'CSV export is unavailable until it is enabled for this study.');
+      return;
+    }
+    try {
+      const reference = String(exportReference?.value || '').trim();
+      const body = { ...readFilters(), confirm: true };
+      if (reference) {
+        if (!PARTICIPANT_REF.test(reference)) {
+          setStatus('error', 'Enter a valid participant reference for single-record export, or leave it blank.');
+          return;
+        }
+        body.reference = reference;
+        delete body.q;
+      }
+      const response = await researcherFetch('/v1/exports', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = reference
+        ? 'inquiry-archive-participant-export.csv'
+        : 'inquiry-archive-export.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+      setStatus('live', 'Export downloaded.');
+    } catch {
+      setStatus('error', 'CSV export could not be completed. Try again or check study policy flags.');
+    }
+  }
+
+  fillSelect(document.getElementById('filter-region'), GEOGRAPHY);
+  fillSelect(document.getElementById('filter-role'), ROLES);
+  fillSelect(document.getElementById('filter-experience'), EXPERIENCE);
+  fillSegmentMeasureOptions();
+  purgeClientSecrets();
+
+  // Keep descriptive insight helpers available for progressive disclosure / tests.
+  void buildStudyInsights;
+  void participationGlanceCopy;
+  const _insightBudget = { maxInsights: 3 };
+
+  authForm?.addEventListener('submit', (event) => void handleAuthSubmit(event));
+  filterForm?.addEventListener('submit', (event) => event.preventDefault());
+  filterForm?.addEventListener('change', () => {
+    if (session && apiConfigured) void refreshWorkspace();
+    else renderAll();
+  });
+  document.getElementById('filter-clear')?.addEventListener('click', () => {
+    if (!filterForm) return;
+    filterForm.reset();
+    responsePage = 0;
+    expandedRecordRef = null;
+    expandedRecordDetail = null;
+    if (session && apiConfigured) void refreshWorkspace();
+    else renderAll();
+  });
+  document.getElementById('segment-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void loadSegments();
+  });
+  document.getElementById('profile-composition')?.addEventListener('click', (event) => {
+    const chip = event.target.closest('[data-filter-field][data-filter-value]');
+    if (!chip || !filterForm) return;
+    const field = chip.getAttribute('data-filter-field');
+    const value = chip.getAttribute('data-filter-value');
+    const select = filterForm.elements.namedItem(field);
+    if (!select) return;
+    select.value = value || '';
+    responsePage = 0;
+    if (session && apiConfigured) void refreshWorkspace();
+    else renderAll();
+  });
+  deleteForm?.addEventListener('submit', handleDelete);
+  deleteConfirm?.addEventListener('change', () => updateDeleteSubmitState());
+  deleteReference?.addEventListener('input', () => updateDeleteSubmitState());
+  exportBtn?.addEventListener('click', () => void handleExport());
+  retentionRefresh?.addEventListener('click', () => void loadRetentionReview());
+  signOutBtn?.addEventListener('click', () => void handleSignOut());
+  document.getElementById('item-all-details')?.addEventListener('toggle', (event) => {
+    showAllItems = Boolean(event.target.open);
+    renderItems();
+  });
+  ledgerPrev?.addEventListener('click', () => {
+    if (responsePage <= 0) return;
+    responsePage -= 1;
+    expandedRecordRef = null;
+    expandedRecordDetail = null;
+    renderLedger();
+  });
+  ledgerNext?.addEventListener('click', () => {
+    if (responsePage >= pageCount() - 1) return;
+    responsePage += 1;
+    expandedRecordRef = null;
+    expandedRecordDetail = null;
+    renderLedger();
+  });
+  document.getElementById('record-rows')?.addEventListener('click', (event) => {
+    const row = event.target.closest('tr.record-row');
+    if (!row) return;
+    void toggleRecordDetail(row.dataset.reference || '');
+  });
+  document.getElementById('record-rows')?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target.closest('tr.record-row');
+    if (!row) return;
+    event.preventDefault();
+    void toggleRecordDetail(row.dataset.reference || '');
+  });
+  workspace.addEventListener('click', (event) => {
+    openDrillFromTarget(event.target);
+  });
+  drillClose?.addEventListener('click', () => closeDrilldown());
+  drillLayer?.addEventListener('mousedown', (event) => {
+    if (event.target === drillLayer) closeDrilldown();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && drillLayer && !drillLayer.hidden) {
+      event.preventDefault();
+      closeDrilldown();
+      return;
+    }
+    if (event.key !== 'Tab' || !drillLayer || drillLayer.hidden || !drillDrawer) return;
+    const focusable = getFocusable(drillDrawer);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
+  if (!apiConfigured) {
+    showDisconnectedWorkspace();
+    return;
+  }
+
+  void restoreSession().then((restored) => {
+    if (restored) {
+      session = restored;
+      applyAdminControls();
+      showWorkspace();
+      startPolling();
+      void refreshWorkspace();
+    } else {
+      showAuth('');
+    }
+  });
+})();

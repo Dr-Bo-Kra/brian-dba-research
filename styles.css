@@ -384,3 +384,26 @@
 .survey-resume-banner{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;justify-content:space-between;margin:0 0 18px;padding:14px 16px;border:1px solid #c8d1ce;background:#fff}
 .survey-resume-banner p{margin:0;font-size:13px;color:var(--muted);max-width:42ch}
 .survey-resume-actions{display:flex;flex-wrap:wrap;gap:10px}
+
+/* Privacy-first participant flow and legal pages */
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+h1,h2,h3,h4,strong,.brand,.button,.field>label{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.participant-gate{max-width:860px;background:#fff;border:1px solid #c8d1ce;padding:clamp(28px,4vw,48px)}
+.participant-gate h3{font-size:clamp(28px,3vw,38px);line-height:1.15;margin:12px 0 18px}
+.participant-gate>p,.participant-gate li{color:var(--muted)}
+.participant-gate ul{padding-left:1.25rem;margin:20px 0}
+.participant-gate li{margin-bottom:10px}
+.consent-checks{display:grid;gap:12px;margin:28px 0 20px;padding:20px;background:var(--paper);border:1px solid #d5ddd9}
+.consent-checks label{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;font-weight:650}
+.consent-checks input{width:20px;height:20px;margin:2px 0 0;accent-color:var(--teal)}
+.button:disabled{cursor:not-allowed;opacity:.5}
+[hidden]{display:none!important}
+.legal-page{width:min(100% - 40px,860px);margin:0 auto;padding:64px 0 100px}
+.legal-page h1{font-size:clamp(38px,6vw,64px);line-height:1.05;margin:18px 0}
+.legal-page h2{margin:44px 0 12px;font-size:26px}
+.legal-page h3{margin:28px 0 8px;font-size:19px}
+.legal-page p,.legal-page li{max-width:74ch}
+.legal-page li{margin-bottom:8px}
+.legal-banner{padding:18px 20px;border-left:4px solid var(--gold);background:#fff4dc;margin:28px 0}
+.legal-meta{color:var(--muted);font-size:14px}
+.legal-back{display:inline-block;margin-top:40px;font-weight:700;color:#16776e}
