@@ -1397,8 +1397,16 @@ function selectTab(selected) {
     });
 
   if (footnote) {
-    footnote.textContent =
-      'A completed result is kept only in this browser tab. If protected collection is enabled, this page will clearly show whether submission to the research archive succeeded.';
+    footnote.textContent = archiveConfigured
+      ? 'When you finish, this page submits your response to the protected research archive and shows whether that submission succeeded.'
+      : 'A completed result is kept only in this browser tab. If protected collection is enabled, this page will clearly show whether submission to the research archive succeeded.';
+  }
+
+  const collectionStatusHint = document.getElementById('collection-status-hint');
+  if (collectionStatusHint) {
+    collectionStatusHint.textContent = archiveConfigured
+      ? 'Protected research collection is enabled. Completed responses are submitted to the private research archive. Collection is separate from researcher export and deletion controls.'
+      : 'Server-side collection remains disabled until the researcher enables the protected endpoint. Collection is separate from researcher export and deletion controls.';
   }
 
   function hasValidConsent() {

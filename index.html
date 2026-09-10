@@ -278,7 +278,7 @@
           <div class="ethics-icon" aria-hidden="true">
             <svg viewBox="0 0 48 48" width="40" height="40" focusable="false"><path d="M24 8l14 6v10c0 9-6 16-14 18-8-2-14-9-14-18V14l14-6z" fill="none" stroke="#b9acff" stroke-width="1.75"/><path d="M18 24h12M24 18v12" stroke="#b9acff" stroke-width="1.75"/></svg>
           </div>
-          <span>04</span><h3>Data protection</h3><p>Treat data protection as a design requirement. Live collection stays off until the institution approves the notice, lawful basis, and controls.</p>
+          <span>04</span><h3>Data protection</h3><p>Treat data protection as a design requirement. After consent, completed responses are submitted to a protected research archive with dual kill switches and least-privilege controls.</p>
         </article>
       </div>
     </section>
@@ -334,8 +334,8 @@
         <p>This voluntary DBA research activity asks lending professionals about alternative creditworthiness models. It takes approximately 6–8 minutes. Your responses are not used to make a credit, employment, or clinical decision about you.</p>
         <ul>
           <li>The form collects broad professional demographics, a regional category, and rating-scale responses, plus a random participant reference, notice version, and consent time. It does not collect free-text reflections.</li>
-          <li>A completed result is kept only in this browser tab unless protected research collection has been explicitly enabled.</li>
-          <li>If collection is enabled, your response and consent record are sent to a private research archive hosted in Singapore. Your browser type, IP address, and page URL are not included in the research payload. Records are kept for 12 months after research completion unless AIM requires otherwise, then reviewed by an authorised researcher—not auto-deleted.</li>
+          <li>When you complete the activity, your response and consent record are submitted to a private research archive hosted in Singapore. Your browser type, IP address, and page URL are not included in the research payload. Records are kept for 12 months after research completion unless AIM requires otherwise, then reviewed by an authorised researcher—not auto-deleted.</li>
+          <li>A local copy may remain in this browser tab until submission succeeds or you delete local data.</li>
           <li>You may stop before submitting. After submission, contact Brian via LinkedIn with your participant reference to request withdrawal; an authorised researcher processes deletion.</li>
           <li>This activity does not claim GDPR or ISO certification, complete anonymity, or guaranteed security.</li>
         </ul>
@@ -345,7 +345,7 @@
           <label><input type="checkbox" id="consent-confirm"> I have read the notice and voluntarily agree to participate and to the processing described there.</label>
         </div>
         <button type="button" class="button primary" id="survey-consent-continue" disabled>Continue to the research activity</button>
-        <p class="survey-hint">Server-side collection remains disabled until the researcher enables the protected endpoint. Collection is separate from researcher export and deletion controls.</p>
+        <p class="survey-hint" id="collection-status-hint">Protected research collection is enabled. Completed responses are submitted to the private research archive. Collection is separate from researcher export and deletion controls.</p>
       </section>
 
       <div class="survey-shell" id="survey-shell" hidden>
@@ -373,7 +373,7 @@
           </div>
         </div>
 
-        <p class="survey-footnote" id="survey-footnote">A completed result is kept only in this browser tab. If protected collection is enabled, the page will clearly show whether submission to the research archive succeeded.</p>
+        <p class="survey-footnote" id="survey-footnote">When you finish, this page submits your response to the protected research archive and shows whether that submission succeeded.</p>
 
         <div class="survey-results" id="survey-results" hidden tabindex="-1" aria-labelledby="results-title">
           <p class="kicker">You unlocked it</p>
@@ -446,7 +446,7 @@
     <a href="#top">Back to top ↑</a>
     <p>Research evolves. This page will evolve with it.</p>
   </footer>
-  <script src="config.js?v=14"></script>
-  <script src="script.js?v=14"></script>
+  <script src="config.js?v=15"></script>
+  <script src="script.js?v=15"></script>
 </body>
 </html>
