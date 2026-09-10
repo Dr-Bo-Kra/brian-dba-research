@@ -90,6 +90,19 @@ test('submission database URL rejects researcher_api and service-role', () => {
     assertSubmissionDatabaseUrl('postgresql://submission_inserter:x@127.0.0.1/db'),
     'postgresql://submission_inserter:x@127.0.0.1/db'
   );
+  const pooler =
+    'postgresql://submission_inserter.exampleproj:x@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
+  assert.equal(assertSubmissionDatabaseUrl(pooler), pooler);
+  assert.throws(() =>
+    assertSubmissionDatabaseUrl(
+      'postgresql://researcher_api.exampleproj:x@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres'
+    )
+  );
+  assert.throws(() =>
+    assertSubmissionDatabaseUrl(
+      'postgresql://postgres.exampleproj:x@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres'
+    )
+  );
 });
 
 test('rate-limit bucket hashes connection identity', () => {

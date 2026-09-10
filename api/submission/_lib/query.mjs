@@ -72,7 +72,12 @@ export function assertSubmissionDatabaseUrl(url) {
     throw unavailable('forbidden_database_role');
   }
   // Require the dedicated insert-only role — denylist alone is not enough.
-  if (!/^postgres(ql)?:\/\/submission_inserter(?::|@)/i.test(value)) {
+  // Allow Supabase pooler usernames: submission_inserter.<project_ref>
+  if (
+    !/^postgres(ql)?:\/\/submission_inserter(?:\.[A-Za-z0-9_-]+)?(?::|@)/i.test(
+      value
+    )
+  ) {
     throw unavailable('forbidden_database_role');
   }
   return value;
