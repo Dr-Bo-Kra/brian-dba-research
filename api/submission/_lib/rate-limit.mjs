@@ -83,10 +83,18 @@ export function createDatabaseRateLimiter({ query, windowMs, limits }) {
   return {
     backend: 'database',
     async allow(category, key) {
-      const max = limits[category] || limits.submit;
-      const bucketKey = hashedRateBucket(category, key);
-      const result = await query(SQL.hitRateLimit, [bucketKey, windowMs, max]);
-      return result?.rows?.[0]?.allowed === true;
+      try {
+        const max = limits[category] || limits.submit;
+        const bucketKey = hashedRateBucket(category, key);
+        const result = await query(SQL.hitRateLimit, [bucketKey, windowMs, max]);
+        return result?.rows?.[0]?.allowed === true;
+      } catch (err) {
+        throw Object.assign(new Error('unavailable'), {
+          code: 'unavailable',
+          reason: 'rate_limit_store',
+          category: err?.category || 'query_failed',
+        });
+      }
     },
   };
 }

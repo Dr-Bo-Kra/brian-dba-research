@@ -6,7 +6,7 @@
 import { createSubmissionApp } from './_lib/app.mjs';
 import { loadConfig } from './_lib/config.mjs';
 import { createProductionQueryAdapter } from './_lib/query.mjs';
-import { stripWildcardCors } from './_lib/http.mjs';
+import { fail, stripWildcardCors } from './_lib/http.mjs';
 
 let cachedApp;
 
@@ -77,23 +77,32 @@ export function resolveSubmissionRequestUrl(req, headers = {}) {
 }
 
 export async function handleVercelSubmissionRequest(req, res, overrides = {}) {
-  const headers = normalizeHeaders(req.headers);
-  const config = overrides.config || loadConfig();
-  const maxBytes = config.maxBodyBytes || 48_000;
-  const parsedBody = await readNodeBody(req, maxBytes);
-  const url = resolveSubmissionRequestUrl(req, headers);
-  const app = getSubmissionApp(overrides);
-  const result = await app.handle({
-    method: req.method,
-    url,
-    headers,
-    body: parsedBody.oversized ? Buffer.alloc(maxBytes + 1) : parsedBody.body,
-    ip: req.socket?.remoteAddress || '',
-  });
-  const responseHeaders = stripWildcardCors({ ...result.headers });
-  if (typeof res.writeHead === 'function') {
-    res.writeHead(result.status, responseHeaders);
-    res.end(result.body);
+  try {
+    const headers = normalizeHeaders(req.headers);
+    const config = overrides.config || loadConfig();
+    const maxBytes = config.maxBodyBytes || 48_000;
+    const parsedBody = await readNodeBody(req, maxBytes);
+    const url = resolveSubmissionRequestUrl(req, headers);
+    const app = getSubmissionApp(overrides);
+    const result = await app.handle({
+      method: req.method,
+      url,
+      headers,
+      body: parsedBody.oversized ? Buffer.alloc(maxBytes + 1) : parsedBody.body,
+      ip: req.socket?.remoteAddress || '',
+    });
+    const responseHeaders = stripWildcardCors({ ...result.headers });
+    if (typeof res.writeHead === 'function') {
+      res.writeHead(result.status, responseHeaders);
+      res.end(result.body);
+    }
+    return result;
+  } catch {
+    const result = fail('unavailable');
+    if (typeof res.writeHead === 'function') {
+      res.writeHead(result.status, result.headers);
+      res.end(result.body);
+    }
+    return result;
   }
-  return result;
 }

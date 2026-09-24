@@ -154,7 +154,13 @@ export function createSubmissionApp(overrides = {}) {
     }
 
     const ipKey = clientRateKey(request, config);
-    if (!(await limiter.allow(RATE_CATEGORIES.submit, ipKey))) {
+    let submitAllowed;
+    try {
+      submitAllowed = await limiter.allow(RATE_CATEGORIES.submit, ipKey);
+    } catch {
+      return respond(fail('unavailable'), { reason: 'rate_limiter' });
+    }
+    if (!submitAllowed) {
       return respond(fail('rate_limited'), { reason: 'rate_limited' });
     }
 

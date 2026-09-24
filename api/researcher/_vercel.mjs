@@ -6,6 +6,7 @@
  */
 import { createResearcherApp } from './_lib/app.mjs';
 import { loadConfig } from './_lib/config.mjs';
+import { fail } from './_lib/http.mjs';
 import { createProductionQueryAdapter } from './_lib/query.mjs';
 
 let cachedApp;
@@ -97,23 +98,33 @@ function stripVercelRewritePathParam(url) {
 }
 
 export async function handleVercelResearcherRequest(req, res, overrides = {}) {
-  const headers = normalizeHeaders(req.headers);
-  const url = resolveResearcherRequestUrl(req, headers);
-  const app = getResearcherApp(overrides);
-  const result = await app.handle({
-    method: req.method,
-    url,
-    headers,
-    body: await readNodeBody(req),
-    ip: req.socket?.remoteAddress || '',
-  });
-  const cookies = result.headers['Set-Cookie'];
-  const responseHeaders = stripWildcardCors({ ...result.headers });
-  delete responseHeaders['Set-Cookie'];
-  if (cookies) responseHeaders['Set-Cookie'] = cookies;
-  if (typeof res.writeHead === 'function') {
-    res.writeHead(result.status, responseHeaders);
-    res.end(result.body);
+  try {
+    const headers = normalizeHeaders(req.headers);
+    const url = resolveResearcherRequestUrl(req, headers);
+    const app = getResearcherApp(overrides);
+    const result = await app.handle({
+      method: req.method,
+      url,
+      headers,
+      body: await readNodeBody(req),
+      ip: req.socket?.remoteAddress || '',
+    });
+    const cookies = result.headers['Set-Cookie'];
+    const responseHeaders = stripWildcardCors({ ...result.headers });
+    delete responseHeaders['Set-Cookie'];
+    if (cookies) responseHeaders['Set-Cookie'] = cookies;
+    if (typeof res.writeHead === 'function') {
+      res.writeHead(result.status, responseHeaders);
+      res.end(result.body);
+    }
+    return result;
+  } catch {
+    // Last-resort fail-closed: never surface an uncaught platform 500.
+    const result = fail('unavailable');
+    if (typeof res.writeHead === 'function') {
+      res.writeHead(result.status, result.headers);
+      res.end(result.body);
+    }
+    return result;
   }
-  return result;
 }

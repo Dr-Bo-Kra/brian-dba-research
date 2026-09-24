@@ -269,6 +269,14 @@ export function createResearcherApp(overrides = {}) {
     );
   }
 
+  async function allowRate(category, key) {
+    try {
+      return await limiter.allow(category, key);
+    } catch {
+      return null;
+    }
+  }
+
   function loginUnavailableClass() {
     return classifyLoginUnavailable({
       config,
@@ -499,7 +507,12 @@ export function createResearcherApp(overrides = {}) {
     }
 
     if (path === '/v1/session/login' && method === 'POST') {
-      if (!(await limiter.allow(RATE_CATEGORIES.login, ipKey))) return respond(fail('rate_limited'));
+      const loginAllowed = await allowRate(RATE_CATEGORIES.login, ipKey);
+      if (loginAllowed == null) {
+        logLoginUnavailable({ stage: 'runtime_stores', category: 'rate_limit_unavailable' });
+        return respond(fail('unavailable'));
+      }
+      if (!loginAllowed) return respond(fail('rate_limited'));
       if (!authUsable()) {
         logLoginUnavailable(loginUnavailableClass());
         await writeAudit(null, 'login_failure', { reason: 'idp_not_configured' }, requestId);
@@ -600,7 +613,12 @@ export function createResearcherApp(overrides = {}) {
     }
 
     if (path === '/v1/session/mfa' && method === 'POST') {
-      if (!(await limiter.allow(RATE_CATEGORIES.login, ipKey))) return respond(fail('rate_limited'));
+      const mfaAllowed = await allowRate(RATE_CATEGORIES.login, ipKey);
+      if (mfaAllowed == null) {
+        logLoginUnavailable({ stage: 'runtime_stores', category: 'rate_limit_unavailable' });
+        return respond(fail('unavailable'));
+      }
+      if (!mfaAllowed) return respond(fail('rate_limited'));
       if (!authUsable()) {
         logLoginUnavailable(loginUnavailableClass());
         return respond(fail('unavailable'));
@@ -687,7 +705,9 @@ export function createResearcherApp(overrides = {}) {
       return respond(fail('forbidden'));
     }
 
-    if (!(await limiter.allow(RATE_CATEGORIES.api, ipKey))) return respond(fail('rate_limited'));
+    const apiAllowed = await allowRate(RATE_CATEGORIES.api, ipKey);
+    if (apiAllowed == null) return respond(fail('unavailable'));
+    if (!apiAllowed) return respond(fail('rate_limited'));
 
     if (path === '/v1/summary' && method === 'GET') {
       const parsed = parseFilters(queryOf(request));
@@ -791,7 +811,9 @@ export function createResearcherApp(overrides = {}) {
       if (!reference) return respond(fail('invalid_request'));
       const qualitative = Boolean(recordMatch[2]);
       const category = qualitative ? RATE_CATEGORIES.qualitative : RATE_CATEGORIES.record;
-      if (!(await limiter.allow(category, ipKey))) return respond(fail('rate_limited'));
+      const recordAllowed = await allowRate(category, ipKey);
+      if (recordAllowed == null) return respond(fail('unavailable'));
+      if (!recordAllowed) return respond(fail('rate_limited'));
       const needed = await authorizeAction(identity, qualitative ? 'view_qualitative' : 'view_record');
       if (!needed.ok) {
         await writeAudit(identity, 'authz_failure', { reason: needed.error, participant_reference: reference }, requestId);

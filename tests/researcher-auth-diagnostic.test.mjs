@@ -278,7 +278,45 @@ test('login diagnostic is unavailable by default', async () => {
   assert.equal(JSON.parse(res.body).error, 'unavailable');
 });
 
-test('stores-unready login 503 is classified without calling Supabase', async () => {
+test('login returns 503 app JSON when rate-limit store throws (not platform 500)', async () => {
+  const { result: login, lines } = await captureErrors(() => {
+    const app = createResearcherApp({
+      config: productionishConfig({ authReady: true }),
+      query: async () => ({ rows: [] }),
+      limiter: {
+        backend: 'database',
+        allow: async () => {
+          throw Object.assign(new Error('unavailable'), {
+            code: 'unavailable',
+            reason: 'rate_limit_store',
+            category: 'query_failed',
+          });
+        },
+      },
+      sessions: { backend: 'database', get: async () => null },
+      authStates: { backend: 'database', peek: async () => null },
+    });
+    return app.handle({
+      method: 'POST',
+      url: '/v1/session/login',
+      headers: {},
+      body: { email: 'researcher@example.test', password: 'correct-horse-battery' },
+      ip: '1',
+    });
+  });
+  assert.equal(login.status, 503);
+  assert.equal(JSON.parse(login.body).error, 'unavailable');
+  assert.equal(JSON.parse(login.body).stage, undefined);
+  assert.equal(lines.length, 1);
+  const logged = JSON.parse(lines[0]);
+  assert.equal(logged.diagnostic, 'login');
+  assert.equal(logged.stage, 'runtime_stores');
+  assert.equal(logged.category, 'rate_limit_unavailable');
+  assertNoSecrets(login.body);
+  assertNoSecrets(lines[0]);
+});
+
+test('authReady login fails closed when durable stores are not injected (not platform 500)', async () => {
   const { result: login, lines } = await captureErrors(() => {
     const app = createResearcherApp({
       config: productionishConfig({ authReady: true }),
