@@ -70,18 +70,40 @@ function selectTab(selected) {
   const playStyleBlurb = document.getElementById('play-style-blurb');
   const playBadgeMark = document.getElementById('play-badge-mark');
   const archiveStatusEl = document.getElementById('archive-status');
+  const participantGate = document.getElementById('participant-gate');
+  const surveyShell = document.getElementById('survey-shell');
+  const eligibilityConfirm = document.getElementById('eligibility-confirm');
+  const consentConfirm = document.getElementById('consent-confirm');
+  const consentContinue = document.getElementById('survey-consent-continue');
 
   const LATEST_KEY = 'brian-dba-survey-latest';
-  const ARCHIVE_KEY = 'brian-dba-survey-responses';
+  const LEGACY_ARCHIVE_KEY = 'brian-dba-survey-responses';
   const INSTRUMENT = 'brian-dba-inclusive-lending-desk-v3';
-  const INSTRUMENT_TYPE = 'mixed-methods-desk-assessment';
-  const MIN_OPEN_LEN = 10;
+  const INSTRUMENT_TYPE = 'quantitative-desk-assessment';
   const LIKERT_MAX = 7;
 
   const cfg = window.BRIAN_DBA_CONFIG || {};
-  const SUPABASE_URL = String(cfg.SUPABASE_URL || '').trim().replace(/\/$/, '');
-  const SUPABASE_ANON_KEY = String(cfg.SUPABASE_ANON_KEY || '').trim();
-  const archiveConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+  const SUBMISSION_ENDPOINT = String(cfg.SUBMISSION_ENDPOINT || '').trim();
+  const PRIVACY_NOTICE_VERSION = String(cfg.PRIVACY_NOTICE_VERSION || '2026-09-09').trim();
+
+  function isProtectedSubmissionEndpoint(url) {
+    if (!url) return false;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') return false;
+      if (parsed.username || parsed.password) return false;
+      const path = `${parsed.pathname}${parsed.search}`;
+      if (/\/rest\/v1\//i.test(path)) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const archiveConfigured = Boolean(
+    cfg.COLLECTION_ENABLED === true && isProtectedSubmissionEndpoint(SUBMISSION_ENDPOINT)
+  );
+  let participationConsent = null;
   const reduceMotion = (function () {
     try {
       return Boolean(
@@ -101,6 +123,21 @@ function selectTab(selected) {
     { value: 5, label: 'Somewhat Agree' },
     { value: 6, label: 'Agree' },
     { value: 7, label: 'Strongly Agree' },
+  ];
+
+  const GEOGRAPHY_OPTIONS = [
+    { value: 'india', label: 'India' },
+    { value: 'south-asia-other', label: 'South Asia (excluding India)' },
+    { value: 'southeast-asia', label: 'Southeast Asia' },
+    { value: 'east-asia', label: 'East Asia' },
+    { value: 'middle-east', label: 'Middle East' },
+    { value: 'africa', label: 'Africa' },
+    { value: 'europe-uk', label: 'Europe or United Kingdom' },
+    { value: 'north-america', label: 'North America' },
+    { value: 'latin-america-caribbean', label: 'Latin America or Caribbean' },
+    { value: 'oceania', label: 'Oceania' },
+    { value: 'multi-region', label: 'Multi-region or global role' },
+    { value: 'prefer-not', label: 'Prefer not to say' },
   ];
 
   const PROFILE_FIELDS = [
@@ -190,7 +227,7 @@ function selectTab(selected) {
       name: 'yearsFinancialServices',
       label: 'Total years of professional experience in the financial services sector',
       required: true,
-      bucket: 'qualitative',
+      bucket: 'quantitative',
       options: [
         { value: 'lt2', label: 'Less than 2 years' },
         { value: '2-5', label: '2-5 years' },
@@ -407,49 +444,6 @@ function selectTab(selected) {
     },
   ];
 
-  const QUAL_QUESTIONS = {
-    adoption: [
-      {
-        id: 'Q1',
-        text: 'What is your understanding of alternative creditworthiness indicators, such as psychometric characteristics, social capital, and behavioural financial information, in the context of lending decisions?',
-      },
-      {
-        id: 'Q2',
-        text: 'How do you think psychometric indicators (e.g., financial discipline, repayment commitment, and financial responsibility) can contribute to improving lending decisions?',
-      },
-      {
-        id: 'Q3',
-        text: 'In your opinion, what role do social capital indicators (e.g., community reputation, peer recommendations, and social networks) play in evaluating borrowers who have limited traditional credit histories?',
-      },
-      {
-        id: 'Q4',
-        text: 'How useful do you believe behavioural economic indicators (e.g., spending behaviour, financial decision-making patterns, and risk-taking behaviour) are in supporting responsible lending decisions?',
-      },
-      {
-        id: 'Q5',
-        text: 'What benefits and opportunities do you believe the adoption of alternative creditworthiness models can bring to your organization and to financially underserved borrowers?',
-      },
-    ],
-    governance: [
-      {
-        id: 'Q6',
-        text: 'What operational challenges do you anticipate your organization may face when implementing alternative creditworthiness assessment models?',
-      },
-      {
-        id: 'Q7',
-        text: 'What ethical concerns, if any, do you associate with using alternative borrower information in lending decisions?',
-      },
-      {
-        id: 'Q8',
-        text: 'What organizational capabilities, governance mechanisms, or regulatory support do you believe are necessary for the successful implementation of alternative creditworthiness models?',
-      },
-      {
-        id: 'Q9',
-        text: 'Based on your experience, what recommendations would you make to financial institutions and policymakers for promoting responsible and inclusive adoption of alternative creditworthiness models?',
-      },
-    ],
-  };
-
   const DOMAINS_META = LIKERT_SECTIONS.map((s) => ({
     id: s.id,
     label: s.domainLabel,
@@ -465,11 +459,9 @@ function selectTab(selected) {
     ...LIKERT_SECTIONS.map((s, i) => ({
       key: s.stageKey,
       label: s.title,
-      pct: 24 + i * 10,
+      pct: 24 + i * 12,
       section: s,
     })),
-    { key: 'qual-adoption', label: 'Your take · adoption', pct: 78 },
-    { key: 'qual-governance', label: 'Your take · governance', pct: 90 },
     { key: 'results', label: 'Your results', pct: 100 },
   ];
 
@@ -483,12 +475,6 @@ function selectTab(selected) {
       vignetteAcknowledged: false,
       vignetteAcknowledgedAt: null,
       likert: {},
-    },
-    qualitative: {
-      yearsFinancialServices: '',
-      roleDescription: '',
-      altIndicatorsExplain: '',
-      openResponses: {},
     },
   };
 
@@ -626,10 +612,7 @@ function selectTab(selected) {
 
   function renderProfileStage() {
     const selects = PROFILE_FIELDS.map((field) => {
-      const current =
-        field.bucket === 'qualitative'
-          ? state.qualitative[field.name] || ''
-          : state.quantitative.demographics[field.name] || state.profile[field.name] || '';
+      const current = state.quantitative.demographics[field.name] || state.profile[field.name] || '';
       const opts = field.options
         .map(
           (o) =>
@@ -649,8 +632,10 @@ function selectTab(selected) {
     }).join('');
 
     const country = state.quantitative.demographics.countryRegion || '';
-    const roleDesc = state.qualitative.roleDescription || '';
-    const altExplain = state.qualitative.altIndicatorsExplain || '';
+    const geographyOptions = GEOGRAPHY_OPTIONS.map(
+      (option) =>
+        `<option value="${escapeHtml(option.value)}" ${country === option.value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`
+    ).join('');
 
     const bodyHtml = `
       <h3 class="phase-title" id="desk-stage-title">Your profile</h3>
@@ -658,18 +643,12 @@ function selectTab(selected) {
       <form id="profile-form" class="survey-form" novalidate>
         ${selects}
         <div class="field" data-field="countryRegion">
-          <label for="field-countryRegion">Country or region of operation <span aria-hidden="true">*</span></label>
-          <input type="text" id="field-countryRegion" name="countryRegion" required maxlength="120" value="${escapeHtml(country)}" placeholder="e.g. India · Southeast Asia" autocomplete="country-name">
-          <p class="field-error" data-field-error hidden>Please enter your country or region.</p>
-        </div>
-        <div class="field" data-field="roleDescription">
-          <label for="field-roleDescription">Briefly describe your current roles and responsibilities related to lending or credit assessment <span aria-hidden="true">*</span></label>
-          <textarea id="field-roleDescription" name="roleDescription" rows="3" maxlength="1200" required minlength="${MIN_OPEN_LEN}" placeholder="Your day-to-day credit or lending responsibilities…">${escapeHtml(roleDesc)}</textarea>
-          <p class="field-error" data-field-error hidden>Please write at least ${MIN_OPEN_LEN} characters.</p>
-        </div>
-        <div class="field" data-field="altIndicatorsExplain">
-          <label for="field-altIndicatorsExplain">If relevant, briefly explain how your organization uses (or does not use) alternative creditworthiness indicators <span class="optional-tag">(optional)</span></label>
-          <textarea id="field-altIndicatorsExplain" name="altIndicatorsExplain" rows="3" maxlength="1200" placeholder="Optional detail…">${escapeHtml(altExplain)}</textarea>
+          <label for="field-countryRegion">Broad region of operation <span aria-hidden="true">*</span></label>
+          <select id="field-countryRegion" name="countryRegion" required>
+            <option value="">Select one…</option>
+            ${geographyOptions}
+          </select>
+          <p class="field-error" data-field-error hidden>Please select a broad region.</p>
         </div>
       </form>
     `;
@@ -711,44 +690,19 @@ function selectTab(selected) {
       if (err) err.hidden = false;
     }
 
-    const roleEl = form.querySelector('[name="roleDescription"]');
-    const roleWrap = form.querySelector('[data-field="roleDescription"]');
-    const roleVal = String(roleEl?.value || '').trim();
-    if (roleVal.length < MIN_OPEN_LEN) {
-      valid = false;
-      roleWrap?.classList.add('invalid');
-      const err = roleWrap?.querySelector('[data-field-error]');
-      if (err) err.hidden = false;
-    }
-
     if (!valid) {
       showStageError('Please complete the required clearance fields before continuing.');
-      form.querySelector('.field.invalid select, .field.invalid input, .field.invalid textarea')?.focus();
+      form.querySelector('.field.invalid select, .field.invalid input')?.focus();
       return false;
     }
 
     const demographics = {};
     PROFILE_FIELDS.forEach((field) => {
-      const val = String(form.querySelector(`[name="${field.name}"]`)?.value || '').trim();
-      if (field.bucket === 'qualitative') {
-        state.qualitative[field.name] = val;
-      } else {
-        demographics[field.name] = val;
-      }
+      demographics[field.name] = String(form.querySelector(`[name="${field.name}"]`)?.value || '').trim();
     });
     demographics.countryRegion = String(countryEl?.value || '').trim();
     state.quantitative.demographics = demographics;
-    state.qualitative.roleDescription = roleVal;
-    state.qualitative.altIndicatorsExplain = String(
-      form.querySelector('[name="altIndicatorsExplain"]')?.value || ''
-    ).trim();
-
-    state.profile = {
-      ...demographics,
-      yearsFinancialServices: state.qualitative.yearsFinancialServices,
-      roleDescription: state.qualitative.roleDescription,
-      altIndicatorsExplain: state.qualitative.altIndicatorsExplain || undefined,
-    };
+    state.profile = { ...demographics };
     return true;
   }
 
@@ -850,7 +804,7 @@ function selectTab(selected) {
 
     flow.innerHTML = stageShell(bodyHtml, {
       showBack: true,
-      nextLabel: sectionIndex === LIKERT_SECTIONS.length - 1 ? 'Share your take' : 'Next round',
+      nextLabel: sectionIndex === LIKERT_SECTIONS.length - 1 ? 'See my results' : 'Next round',
     });
 
     wireNav(
@@ -858,6 +812,10 @@ function selectTab(selected) {
       () => goToStage(absIndex - 1),
       () => {
         if (!validateAndCollectLikert(section)) return;
+        if (sectionIndex === LIKERT_SECTIONS.length - 1) {
+          finishAssessment();
+          return;
+        }
         goToStage(absIndex + 1);
       }
     );
@@ -881,76 +839,6 @@ function selectTab(selected) {
     if (!valid) {
       showStageError('Please rate every statement before continuing.');
       flow.querySelector('.field.invalid input')?.focus();
-      return false;
-    }
-    return true;
-  }
-
-  function renderQualStage(kind) {
-    const questions = QUAL_QUESTIONS[kind];
-    const isAdoption = kind === 'adoption';
-    const title = isAdoption ? 'Your take · adoption' : 'Your take · governance';
-    const hint = isAdoption
-      ? 'In your own words: how alternative indicators could improve lending decisions and what opportunities you see.'
-      : 'In your own words: operational friction, ethics, governance needs, and what you would recommend.';
-
-    const fields = questions
-      .map((q) => {
-        const val = state.qualitative.openResponses[q.id] || '';
-        return `
-          <div class="field" data-field="${escapeHtml(q.id)}">
-            <label for="field-${escapeHtml(q.id)}"><span class="item-id">${escapeHtml(q.id)}</span> ${escapeHtml(q.text)} <span aria-hidden="true">*</span></label>
-            <textarea id="field-${escapeHtml(q.id)}" name="${escapeHtml(q.id)}" rows="4" maxlength="2000" required minlength="${MIN_OPEN_LEN}">${escapeHtml(val)}</textarea>
-            <p class="field-error" data-field-error hidden>Please write at least ${MIN_OPEN_LEN} characters.</p>
-          </div>
-        `;
-      })
-      .join('');
-
-    const bodyHtml = `
-      <h3 class="phase-title" id="desk-stage-title">${escapeHtml(title)}</h3>
-      <p class="survey-hint">${escapeHtml(hint)}</p>
-      <form id="qual-form" class="survey-form" novalidate>
-        ${fields}
-      </form>
-    `;
-
-    const absIndex = isAdoption ? 7 : 8;
-    flow.innerHTML = stageShell(bodyHtml, {
-      showBack: true,
-      nextLabel: isAdoption ? 'Continue' : 'Unlock my profile',
-    });
-
-    wireNav(
-      true,
-      () => goToStage(absIndex - 1),
-      () => {
-        if (!validateAndCollectQual(questions)) return;
-        if (isAdoption) goToStage(8);
-        else finishAssessment();
-      }
-    );
-  }
-
-  function validateAndCollectQual(questions) {
-    clearStageError();
-    let valid = true;
-    questions.forEach((q) => {
-      const el = flow.querySelector(`[name="${q.id}"]`);
-      const wrap = flow.querySelector(`[data-field="${q.id}"]`);
-      const err = wrap?.querySelector('[data-field-error]');
-      const val = String(el?.value || '').trim();
-      if (val.length < MIN_OPEN_LEN) {
-        valid = false;
-        wrap?.classList.add('invalid');
-        if (err) err.hidden = false;
-      } else {
-        state.qualitative.openResponses[q.id] = val;
-      }
-    });
-    if (!valid) {
-      showStageError(`Please complete each reflection with at least ${MIN_OPEN_LEN} characters.`);
-      flow.querySelector('.field.invalid textarea')?.focus();
       return false;
     }
     return true;
@@ -1090,43 +978,74 @@ function selectTab(selected) {
       vignetteAcknowledgedAt: state.quantitative.vignetteAcknowledgedAt,
       likert: { ...state.quantitative.likert },
     };
-    const qualitative = {
-      yearsFinancialServices: state.qualitative.yearsFinancialServices,
-      roleDescription: state.qualitative.roleDescription,
-      altIndicatorsExplain: state.qualitative.altIndicatorsExplain || undefined,
-      openResponses: { ...state.qualitative.openResponses },
-    };
 
     return {
-      id: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `resp_${createRandomId()}`,
       instrument: INSTRUMENT,
       instrumentType: INSTRUMENT_TYPE,
       disclaimer:
-        'Research-oriented mixed-methods desk instrument / proposal demo. Not a clinical diagnosis, credit score, or institutional decision.',
+        'Research-oriented quantitative desk instrument / proposal demo. Not a clinical diagnosis, credit score, or institutional decision.',
       savedAt: new Date().toISOString(),
       sessionStartedAt: startedAt,
+      consent: { ...participationConsent },
       profile: { ...state.profile },
       responses: {
         quantitative,
-        qualitative,
       },
       quantitative,
-      qualitative,
       assessment,
     };
+  }
+
+  function createRandomId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+  }
+
+  function purgeStorageByPrefix(storage, prefixes) {
+    if (!storage) return;
+    const doomed = [];
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (key && prefixes.some((prefix) => key.startsWith(prefix))) doomed.push(key);
+    }
+    doomed.forEach((key) => storage.removeItem(key));
+  }
+
+  function purgeLegacyLocalData() {
+    const prefixes = ['brian-dba-'];
+    try {
+      localStorage.removeItem(LATEST_KEY);
+      localStorage.removeItem(LEGACY_ARCHIVE_KEY);
+      purgeStorageByPrefix(localStorage, prefixes);
+    } catch {
+      /* storage can be unavailable */
+    }
+  }
+
+  function purgeAllLocalSurveyData() {
+    try {
+      sessionStorage.removeItem(LATEST_KEY);
+      sessionStorage.removeItem(LEGACY_ARCHIVE_KEY);
+      purgeStorageByPrefix(sessionStorage, ['brian-dba-']);
+    } catch {
+      /* storage can be unavailable */
+    }
+    purgeLegacyLocalData();
   }
 
   function saveRecord(record) {
     latestRecord = record;
     try {
-      localStorage.setItem(LATEST_KEY, JSON.stringify(record));
-      const archive = JSON.parse(localStorage.getItem(ARCHIVE_KEY) || '[]');
-      const list = Array.isArray(archive) ? archive : [];
-      list.push(record);
-      localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list.slice(-50)));
+      sessionStorage.setItem(LATEST_KEY, JSON.stringify(record));
     } catch {
       /* private mode / quota */
     }
+    purgeLegacyLocalData();
   }
 
   function setArchiveStatus(status, message) {
@@ -1143,15 +1062,14 @@ function selectTab(selected) {
       profile: record.profile || {},
       responses: {
         quantitative: record.responses?.quantitative || record.quantitative || {},
-        qualitative: record.responses?.qualitative || record.qualitative || {},
         instrumentType: record.instrumentType,
         sessionStartedAt: record.sessionStartedAt,
         savedAt: record.savedAt,
         disclaimer: record.disclaimer,
       },
       assessment: record.assessment || {},
-      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-      page_url: typeof location !== 'undefined' ? location.href : null,
+      privacy_notice_version: record.consent?.privacyNoticeVersion,
+      consented_at: record.consent?.consentedAt,
     };
   }
 
@@ -1164,15 +1082,14 @@ function selectTab(selected) {
     setArchiveStatus('pending', 'Saving to research archive…');
 
     try {
-      const endpoint = `${SUPABASE_URL}/rest/v1/assessment_responses`;
-      const res = await fetch(endpoint, {
+      const res = await fetch(SUBMISSION_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          Prefer: 'return=minimal',
         },
+        credentials: 'omit',
+        cache: 'no-store',
+        referrerPolicy: 'no-referrer',
         body: JSON.stringify(buildArchivePayload(record)),
       });
 
@@ -1182,6 +1099,7 @@ function selectTab(selected) {
       }
 
       setArchiveStatus('archived', 'Saved to research archive');
+      purgeAllLocalSurveyData();
       return { ok: true };
     } catch {
       setArchiveStatus('local', 'Saved locally only (offline / not configured)');
@@ -1251,8 +1169,7 @@ function selectTab(selected) {
   function renderRecordSummary(record) {
     if (!summary) return;
     summary.innerHTML = '';
-    const dem = record.responses?.quantitative?.demographics || {};
-    const qual = record.responses?.qualitative || {};
+    const dem = record.responses?.quantitative?.demographics || record.profile || {};
     const rows = [
       { title: 'Gender', value: optionLabel('gender', dem.gender) },
       { title: 'Age', value: optionLabel('age', dem.age) },
@@ -1262,7 +1179,7 @@ function selectTab(selected) {
       { title: 'Years in lending', value: optionLabel('yearsLending', dem.yearsLending) },
       {
         title: 'Years in financial services',
-        value: optionLabel('yearsFinancialServices', qual.yearsFinancialServices),
+        value: optionLabel('yearsFinancialServices', dem.yearsFinancialServices),
       },
       { title: 'Area of operation', value: optionLabel('areaOperation', dem.areaOperation) },
       { title: 'Involvement', value: optionLabel('involvement', dem.involvement) },
@@ -1270,23 +1187,15 @@ function selectTab(selected) {
         title: 'Uses alternative indicators',
         value: optionLabel('usesAltIndicators', dem.usesAltIndicators),
       },
-      { title: 'Country / region', value: dem.countryRegion || '—' },
+      {
+        title: 'Broad region of operation',
+        value: GEOGRAPHY_OPTIONS.find((option) => option.value === dem.countryRegion)?.label || '—',
+      },
     ];
 
     if (record.assessment?.playStyle) {
       rows.push({ title: 'Desk style', value: record.assessment.playStyle.title });
     }
-
-    if (qual.roleDescription) {
-      rows.push({ title: 'Role description', value: qual.roleDescription });
-    }
-    if (qual.altIndicatorsExplain) {
-      rows.push({ title: 'Alt. indicators note', value: qual.altIndicatorsExplain });
-    }
-
-    Object.entries(qual.openResponses || {}).forEach(([id, text]) => {
-      rows.push({ title: id, value: text });
-    });
 
     rows.forEach(({ title, value }) => {
       const row = document.createElement('div');
@@ -1325,7 +1234,7 @@ function selectTab(selected) {
             <strong>${escapeHtml(domain.label)}</strong>
             <span>${domain.score.toFixed(2)} / ${domain.max}</span>
           </div>
-          <div class="domain-bar" aria-hidden="true"><i style="width:0%"></i></div>
+          <div class="domain-bar" aria-hidden="true"><i></i></div>
           <span class="domain-level">${escapeHtml(domain.levelLabel)}</span>
           <p>${escapeHtml(domain.interpretation)}</p>
         `;
@@ -1393,8 +1302,6 @@ function selectTab(selected) {
     if (stage.key === 'profile') renderProfileStage();
     else if (stage.key === 'case') renderCaseStage();
     else if (stage.section) renderLikertStage(stage.section);
-    else if (stage.key === 'qual-adoption') renderQualStage('adoption');
-    else if (stage.key === 'qual-governance') renderQualStage('governance');
     else if (stage.key === 'results' && latestRecord) {
       showResults(latestRecord, { submitArchive: false });
       return;
@@ -1415,18 +1322,12 @@ function selectTab(selected) {
         vignetteAcknowledgedAt: null,
         likert: {},
       },
-      qualitative: {
-        yearsFinancialServices: '',
-        roleDescription: '',
-        altIndicatorsExplain: '',
-        openResponses: {},
-      },
     };
   }
 
   function readSavedLatest() {
     try {
-      const saved = localStorage.getItem(LATEST_KEY);
+      const saved = sessionStorage.getItem(LATEST_KEY);
       if (!saved) return null;
       const record = JSON.parse(saved);
       if (
@@ -1453,7 +1354,7 @@ function selectTab(selected) {
     banner.className = 'survey-resume-banner';
     banner.setAttribute('role', 'status');
     banner.innerHTML = `
-      <p>A previous result is saved in this browser.</p>
+      <p>A previous result is saved in this browser tab.</p>
       <div class="survey-resume-actions">
         <button type="button" class="button ghost" id="survey-view-saved">View last result</button>
         <button type="button" class="button ghost" id="survey-dismiss-saved">Play a new round</button>
@@ -1485,32 +1386,58 @@ function selectTab(selected) {
 
   resetBtn &&
     resetBtn.addEventListener('click', () => {
-      try {
-        localStorage.removeItem(LATEST_KEY);
-      } catch (e) {
-        /* ignore */
-      }
+      purgeAllLocalSurveyData();
       if (archiveStatusEl) {
         archiveStatusEl.hidden = true;
         archiveStatusEl.textContent = '';
         delete archiveStatusEl.dataset.state;
       }
-      if (results) results.hidden = true;
-      flow.hidden = false;
-      if (footnote) footnote.hidden = false;
-      const resume = document.getElementById('survey-resume-banner');
-      if (resume) resume.remove();
       resetState();
-      goToStage(0);
+      returnToConsentGate();
     });
 
   if (footnote) {
-    footnote.textContent =
-      'Your answers are saved privately in this browser so you can finish the desk and download a copy of your record. Nothing is published on this page.';
+    footnote.textContent = archiveConfigured
+      ? 'When you finish, this page submits your response to the protected research archive and shows whether that submission succeeded.'
+      : 'A completed result is kept only in this browser tab. If protected collection is enabled, this page will clearly show whether submission to the research archive succeeded.';
+  }
+
+  const collectionStatusHint = document.getElementById('collection-status-hint');
+  if (collectionStatusHint) {
+    collectionStatusHint.textContent = archiveConfigured
+      ? 'Protected research collection is enabled. Completed responses are submitted to the private research archive. Collection is separate from researcher export and deletion controls.'
+      : 'Server-side collection remains disabled until the researcher enables the protected endpoint. Collection is separate from researcher export and deletion controls.';
+  }
+
+  function hasValidConsent() {
+    return Boolean(
+      participationConsent?.privacyNoticeVersion &&
+        participationConsent?.consentedAt &&
+        participationConsent?.adultEligibilityConfirmed &&
+        participationConsent?.voluntaryParticipationConfirmed
+    );
+  }
+
+  function returnToConsentGate() {
+    participationConsent = null;
+    if (eligibilityConfirm) eligibilityConfirm.checked = false;
+    if (consentConfirm) consentConfirm.checked = false;
+    updateConsentButton();
+    if (results) results.hidden = true;
+    flow.hidden = false;
+    if (footnote) footnote.hidden = false;
+    if (surveyShell) surveyShell.hidden = true;
+    if (participantGate) {
+      participantGate.hidden = false;
+      scrollElementIntoView(participantGate);
+    }
+    const resume = document.getElementById('survey-resume-banner');
+    if (resume) resume.remove();
   }
 
   function startDeskAssessment(event) {
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    if (!hasValidConsent()) return;
     try {
       if (results) results.hidden = true;
       flow.hidden = false;
@@ -1528,16 +1455,38 @@ function selectTab(selected) {
     }
   }
 
-  window.startDeskAssessment = startDeskAssessment;
-
   const startFallback = document.getElementById('survey-start-fallback');
   if (startFallback) {
     startFallback.addEventListener('click', startDeskAssessment);
   }
 
-  try {
-    goToStage(0, { focus: false, scroll: false });
+  flow.addEventListener('submit', (event) => event.preventDefault());
+
+  function updateConsentButton() {
+    if (!consentContinue) return;
+    consentContinue.disabled = !(eligibilityConfirm?.checked && consentConfirm?.checked);
+  }
+
+  eligibilityConfirm?.addEventListener('change', updateConsentButton);
+  consentConfirm?.addEventListener('change', updateConsentButton);
+  consentContinue?.addEventListener('click', () => {
+    if (!(eligibilityConfirm?.checked && consentConfirm?.checked)) return;
+    participationConsent = {
+      privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
+      consentedAt: new Date().toISOString(),
+      adultEligibilityConfirmed: true,
+      voluntaryParticipationConfirmed: true,
+    };
+    if (participantGate) participantGate.hidden = true;
+    if (surveyShell) surveyShell.hidden = false;
+    startDeskAssessment();
     offerResumeIfSaved();
+  });
+
+  try {
+    purgeLegacyLocalData();
+    resetState();
+    updateConsentButton();
   } catch (err) {
     if (typeof console !== 'undefined' && console.error) console.error(err);
     const note = document.querySelector('.survey-fallback-note');
