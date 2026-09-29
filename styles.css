@@ -285,7 +285,9 @@
 .archive-status{margin:0 0 18px;padding:12px 14px;font-size:13px;font-weight:600;font-family:"Manrope",sans-serif;border:1px solid #c8d1ce;background:var(--paper);max-width:54ch}
 .archive-status[data-state="archived"]{border-color:#27b5a566;background:#e8f7f4;color:#0d5c54}
 .archive-status[data-state="local"]{border-color:#d5ddd9;color:#687d84}
+.archive-status[data-state="failed"]{border-color:#b42318;background:#fdecea;color:#7a1b14}
 .archive-status[data-state="pending"]{border-color:#f3b64b66;background:#fff8eb;color:#7a5a14}
+#archive-retry{margin:0 0 18px}
 
 /* —— Research gaps, aim, framework diagram, paper RQs, connect CTA —— */
 .gaps-heading{font-size:22px;letter-spacing:-.02em;margin:0 0 18px;color:var(--ink)}

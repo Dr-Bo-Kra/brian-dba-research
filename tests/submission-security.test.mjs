@@ -62,6 +62,22 @@ test('browser collection path stays fail-closed', () => {
   assert.match(scriptJs, /async function submitToResearchArchive/);
 });
 
+test('collection-on archive failure is explicit and retryable', () => {
+  const scriptJs = read('script.js');
+  const indexHtml = read('index.html');
+  const css = read('styles.css');
+  assert.match(scriptJs, /Not saved to the research archive/);
+  assert.match(scriptJs, /id="archive-retry"|getElementById\('archive-retry'\)/);
+  assert.match(scriptJs, /setArchiveStatus\('failed'/);
+  assert.equal(
+    (scriptJs.match(/Saved locally only \(offline \/ not configured\)/g) || []).length,
+    1
+  );
+  assert.match(indexHtml, /id="archive-retry"/);
+  assert.doesNotMatch(indexHtml, /onclick=/);
+  assert.match(css, /archive-status\[data-state="failed"\]/);
+});
+
 test('no secrets in submission sources or tests', () => {
   const sources = [
     read('api/submission/_lib/app.mjs'),

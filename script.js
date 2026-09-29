@@ -1048,11 +1048,56 @@ function selectTab(selected) {
     purgeLegacyLocalData();
   }
 
+  const ARCHIVE_NOT_SAVED =
+    'Not saved to the research archive. This result is only in this browser tab until a retry succeeds.';
+  let archiveAttempt = 0;
+  let archiveTimer = 0;
+  let archiveInFlight = false;
+
   function setArchiveStatus(status, message) {
     if (!archiveStatusEl) return;
     archiveStatusEl.hidden = false;
     archiveStatusEl.dataset.state = status;
     archiveStatusEl.textContent = message;
+  }
+
+  function showArchiveRetry(show) {
+    const button = document.getElementById('archive-retry');
+    if (button) button.hidden = !show;
+  }
+
+  function clearArchiveTimer() {
+    if (!archiveTimer) return;
+    clearTimeout(archiveTimer);
+    archiveTimer = 0;
+  }
+
+  function clearArchiveStatus() {
+    clearArchiveTimer();
+    archiveAttempt = 0;
+    showArchiveRetry(false);
+    if (!archiveStatusEl) return;
+    archiveStatusEl.hidden = true;
+    archiveStatusEl.textContent = '';
+    delete archiveStatusEl.dataset.state;
+  }
+
+  function markArchiveFailed(record, status) {
+    const retryable = status === 0 || status === 429 || status === 503 || status >= 500;
+    archiveAttempt += 1;
+    if (retryable && archiveAttempt < 3) {
+      setArchiveStatus('failed', 'The research archive did not accept this response. Retrying…');
+      showArchiveRetry(false);
+      const waitMs = 800 * archiveAttempt;
+      archiveTimer = setTimeout(() => {
+        archiveTimer = 0;
+        void submitToResearchArchive(record);
+      }, waitMs);
+      return { ok: false, reason: 'retrying', status };
+    }
+    setArchiveStatus('failed', ARCHIVE_NOT_SAVED);
+    showArchiveRetry(true);
+    return { ok: false, reason: status ? 'http' : 'network', status };
   }
 
   function buildArchivePayload(record) {
@@ -1073,13 +1118,23 @@ function selectTab(selected) {
     };
   }
 
-  async function submitToResearchArchive(record) {
+  async function submitToResearchArchive(record, options) {
+    const manual = Boolean(options && options.manual);
     if (!archiveConfigured) {
+      clearArchiveTimer();
+      showArchiveRetry(false);
       setArchiveStatus('local', 'Saved locally only (offline / not configured)');
       return { ok: false, reason: 'not-configured' };
     }
+    if (archiveInFlight) return { ok: false, reason: 'in-flight' };
+    if (manual) {
+      clearArchiveTimer();
+      archiveAttempt = 0;
+    }
 
+    archiveInFlight = true;
     setArchiveStatus('pending', 'Saving to research archive…');
+    showArchiveRetry(false);
 
     try {
       const res = await fetch(SUBMISSION_ENDPOINT, {
@@ -1094,16 +1149,19 @@ function selectTab(selected) {
       });
 
       if (!res.ok) {
-        setArchiveStatus('local', 'Saved locally only (offline / not configured)');
-        return { ok: false, reason: 'http', status: res.status };
+        return markArchiveFailed(record, res.status);
       }
 
+      archiveAttempt = 0;
+      clearArchiveTimer();
       setArchiveStatus('archived', 'Saved to research archive');
+      showArchiveRetry(false);
       purgeAllLocalSurveyData();
       return { ok: true };
     } catch {
-      setArchiveStatus('local', 'Saved locally only (offline / not configured)');
-      return { ok: false, reason: 'network' };
+      return markArchiveFailed(record, 0);
+    } finally {
+      archiveInFlight = false;
     }
   }
 
@@ -1270,9 +1328,15 @@ function selectTab(selected) {
     if (submitArchive) {
       void submitToResearchArchive(record);
     } else if (archiveStatusEl) {
-      archiveStatusEl.hidden = true;
-      archiveStatusEl.textContent = '';
-      delete archiveStatusEl.dataset.state;
+      const state = archiveStatusEl.dataset.state;
+      if (state === 'pending' || state === 'failed' || state === 'archived' || state === 'local') {
+        archiveStatusEl.hidden = false;
+      } else if (archiveConfigured) {
+        setArchiveStatus('failed', ARCHIVE_NOT_SAVED);
+        showArchiveRetry(true);
+      } else {
+        clearArchiveStatus();
+      }
     }
 
     try {
@@ -1364,7 +1428,7 @@ function selectTab(selected) {
 
     document.getElementById('survey-view-saved')?.addEventListener('click', () => {
       banner.remove();
-      showResults(record, { submitArchive: false });
+      showResults(record, { submitArchive: archiveConfigured });
     });
     document.getElementById('survey-dismiss-saved')?.addEventListener('click', () => {
       banner.remove();
@@ -1384,14 +1448,15 @@ function selectTab(selected) {
 
   downloadBtn && downloadBtn.addEventListener('click', downloadRecord);
 
+  document.getElementById('archive-retry')?.addEventListener('click', () => {
+    if (!latestRecord || !archiveConfigured) return;
+    void submitToResearchArchive(latestRecord, { manual: true });
+  });
+
   resetBtn &&
     resetBtn.addEventListener('click', () => {
       purgeAllLocalSurveyData();
-      if (archiveStatusEl) {
-        archiveStatusEl.hidden = true;
-        archiveStatusEl.textContent = '';
-        delete archiveStatusEl.dataset.state;
-      }
+      clearArchiveStatus();
       resetState();
       returnToConsentGate();
     });
