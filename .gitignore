@@ -5,7 +5,13 @@ Thumbs.db
 .env.*
 node_modules/
 
-# Optional: uncomment to keep a filled local config.js out of git.
-# The committed config.js ships with empty placeholders so GitHub Pages
-# never 404s; only paste the public anon key (never service_role).
-# config.js
+# The committed config.js must keep COLLECTION_ENABLED false and
+# SUBMISSION_ENDPOINT empty. Never commit a Supabase anon key,
+# service-role key, API token, or other credential.
+
+.serena/
+.vercel
+.env*
+
+# Operator-only SQL and rotation artifacts (never commit secrets)
+.operator/
