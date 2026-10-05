@@ -120,10 +120,15 @@ export const DOMAIN_EXPORT_KEYS = Object.freeze(
   DOMAIN_ORDER.map((id) => `domain_${id}`)
 );
 
+/** Current study instrument. Export SQL is limited to this id. */
+export const CURRENT_STUDY_INSTRUMENT_ID = 'brian-dba-inclusive-lending-desk-v3';
+
 /** Quantitative study CSV columns (coded profile + domain scores + Likert). No free-text. */
 export const QUANTITATIVE_EXPORT_COLUMNS = Object.freeze([
   'participant_reference',
   'accepted_at',
+  'privacy_notice_version',
+  'consented_at',
   'region',
   'role',
   'experience',

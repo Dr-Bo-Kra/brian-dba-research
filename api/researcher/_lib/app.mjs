@@ -845,14 +845,20 @@ export function createResearcherApp(overrides = {}) {
       if (!exported.ok) return respond(fail(exported.error));
       await writeAudit(identity, 'export', {
         count: exported.rows.length,
-        scope: parsed.participantLevel ? 'participant_export_schema' : 'approved_export_schema',
+        scope: parsed.allStudy
+          ? 'full_study_export'
+          : parsed.participantLevel
+            ? 'participant_export_schema'
+            : 'approved_export_schema',
         ...(parsed.participantLevel
           ? { participant_reference: parsed.filters.reference }
           : {}),
       }, requestId);
-      const filename = parsed.participantLevel
-        ? 'inquiry-archive-participant-export.csv'
-        : 'inquiry-archive-export.csv';
+      const filename = parsed.allStudy
+        ? 'inquiry-archive-all-responses.csv'
+        : parsed.participantLevel
+          ? 'inquiry-archive-participant-export.csv'
+          : 'inquiry-archive-export.csv';
       return respond({
         status: 200,
         headers: {

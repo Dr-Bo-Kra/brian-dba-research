@@ -7,6 +7,7 @@ import { createResearcherApp } from '../api/researcher/_lib/app.mjs';
 import { loadConfig } from '../api/researcher/_lib/config.mjs';
 import { authorize, isActiveResearcher, sanitizeAuditDetail } from '../api/researcher/_lib/authorize.mjs';
 import { buildCsv, escapeCsvCell } from '../api/researcher/_lib/csv.mjs';
+import { ITEM_ORDER, CURRENT_STUDY_INSTRUMENT_ID } from '../api/researcher/_lib/constants.mjs';
 import { SQL, assertBoundQuery } from '../api/researcher/_lib/db.mjs';
 import { parseFilters, parseDeletionBody, parseExportBody, parseParticipantRef } from '../api/researcher/_lib/validate.mjs';
 import { SESSION_COOKIE } from '../api/researcher/_lib/http.mjs';
@@ -146,6 +147,20 @@ test('filters reject unknown fields, sort, and malformed references', () => {
   assert.equal(parseDeletionBody({ reference: 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', confirm: true }).ok, true);
   assert.equal(parseDeletionBody({ reference: 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }).ok, false);
   assert.equal(parseExportBody({ confirm: true, sql: 'select 1' }, 10).ok, false);
+  const fullStudy = parseExportBody(
+    {
+      confirm: true,
+      scope: 'all',
+      region: 'india',
+      reference: 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    },
+    10
+  );
+  assert.equal(fullStudy.ok, true);
+  assert.equal(fullStudy.allStudy, true);
+  assert.equal(fullStudy.filters.region, null);
+  assert.equal(fullStudy.filters.reference, null);
+  assert.equal(parseExportBody({ confirm: true, scope: 'page' }, 10).ok, false);
 });
 
 test('CSV export escapes spreadsheet formula injection', () => {
@@ -163,6 +178,9 @@ test('SQL templates are parameterised and do not concatenate user input', () => 
   assert.match(SQL.listResponses.text, /\$1/);
   assert.match(SQL.deleteByReference.text, /\$1/);
   assert.doesNotMatch(SQL.listResponses.text, /\$\{/);
+  assert.match(SQL.exportQuantitativeRows.text, /privacy_notice_version/);
+  assert.match(SQL.exportQuantitativeRows.text, /consented_at/);
+  assert.match(SQL.exportQuantitativeRows.text, new RegExp(CURRENT_STUDY_INSTRUMENT_ID));
 });
 
 test('audit sanitiser strips survey answers', () => {
@@ -588,4 +606,94 @@ test('record detail returns quantitative fields only and export uses study colum
   assert.match(exported.body, /domain_psychometric/);
   assert.match(exported.body, /,B1,/);
   assert.doesNotMatch(exported.body, /not for logs|openResponses|password|csrf/i);
+});
+
+test('full study export includes every stored row and every quantitative item', async () => {
+  const refs = Array.from({ length: 12 }, (_, index) => `resp_${String(index + 1).padStart(32, '0')}`);
+  const records = refs.map((ref, index) =>
+    quantitativeRecord(ref, {
+      profile: { countryRegion: index % 2 === 0 ? 'india' : 'europe-uk' },
+      likertFill: (index % 7) + 1,
+      created_at: `2026-08-${String((index % 27) + 1).padStart(2, '0')}T12:00:00.000Z`,
+      rest: {
+        privacy_notice_version: '2026-09-09',
+        consented_at: '2026-08-01T11:55:00.000Z',
+        instrument_id: CURRENT_STUDY_INSTRUMENT_ID,
+      },
+    })
+  );
+  records.push(
+    quantitativeRecord('resp_ffffffffffffffffffffffffffffffff', {
+      rest: { anonymised_at: '2026-09-01T00:00:00.000Z' },
+    })
+  );
+  const app = testApp({
+    records,
+    config: { exportsEnabled: true, deletionsEnabled: true },
+  });
+
+  const anon = await app.handle({
+    method: 'POST',
+    url: '/v1/exports',
+    headers: {},
+    body: { confirm: true, scope: 'all' },
+    ip: 'bulk-anon',
+  });
+  assert.equal(anon.status, 401);
+  assert.doesNotMatch(anon.body, /resp_|privacy_notice_version|,B1,/);
+
+  const support = await app.signInForTests('support-bulk', { role: 'researcher_support' });
+  const headers = { cookie: support.cookie, 'x-csrf-token': support.csrf };
+  const exported = await app.handle({
+    method: 'POST',
+    url: '/v1/exports',
+    headers,
+    body: {
+      confirm: true,
+      scope: 'all',
+      region: 'india',
+      reference: refs[0],
+      q: 'page',
+    },
+    ip: 'bulk',
+  });
+  assert.equal(exported.status, 200);
+  assert.match(exported.headers['Content-Type'], /text\/csv/);
+  assert.match(exported.headers['Content-Disposition'], /inquiry-archive-all-responses\.csv/);
+  assert.equal(exported.body.charCodeAt(0), 0xfeff);
+  const lines = exported.body.replace(/^\uFEFF/, '').trim().split('\n');
+  assert.equal(lines.length, refs.length + 1);
+  const header = lines[0].split(',');
+  for (const item of ITEM_ORDER) assert.ok(header.includes(item), item);
+  for (const column of [
+    'participant_reference',
+    'privacy_notice_version',
+    'consented_at',
+    'gender',
+    'orientation',
+    'domain_psychometric',
+  ]) {
+    assert.ok(header.includes(column), column);
+  }
+  for (const ref of refs) {
+    assert.equal(lines.filter((line) => line.includes(ref)).length, 1);
+  }
+  assert.equal(lines.filter((line) => line.includes(',1,')).length >= 1, true);
+  assert.equal(lines.some((line) => line.includes(',7,')), true);
+  assert.doesNotMatch(exported.body, /resp_ffffffffffffffffffffffffffffffff/);
+  assert.doesNotMatch(exported.body, /openResponses|password|csrf|session/i);
+  assert.equal(
+    app.auditLog.some((row) => row.action === 'export' && row.detail?.scope === 'full_study_export' && row.detail?.count === refs.length),
+    true
+  );
+
+  const withdrawn = await app.handle({
+    method: 'POST',
+    url: '/v1/deletions',
+    headers,
+    body: { reference: refs[0], confirm: true },
+    ip: 'bulk',
+  });
+  assert.equal(withdrawn.status, 403);
+  assert.equal(app.records.some((row) => row.client_record_id === refs[0]), true);
 });

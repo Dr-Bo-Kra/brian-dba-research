@@ -565,6 +565,11 @@ test('exports and deletions are session-gated and default disabled in UI', () =>
   assert.doesNotMatch(js, /LIVE_EXPORTS_ENABLED\s*=\s*true/);
   assert.doesNotMatch(js, /LIVE_DELETIONS_ENABLED\s*=\s*true/);
   assert.match(html, /id="export-csv"[^>]*disabled/);
+  assert.match(html, /id="export-all-csv"[^>]*disabled/);
+  assert.match(html, /Export all responses \(CSV\)/);
+  assert.match(js, /scope:\s*'all'/);
+  assert.match(js, /inquiry-archive-all-responses\.csv/);
+  assert.match(js, /export-all-csv/);
   assert.match(html, /id="delete-submit"[^>]*disabled/);
   assert.match(html, /EXPORTS_ENABLED/);
   assert.match(html, /DELETIONS_ENABLED/);

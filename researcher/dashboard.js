@@ -51,6 +51,8 @@ import {
   const deleteError = document.getElementById('delete-error');
   const deleteReference = document.getElementById('delete-reference');
   const exportBtn = document.getElementById('export-csv');
+  const exportAllBtn = document.getElementById('export-all-csv');
+  const exportAllNote = document.getElementById('export-all-note');
   const exportReference = document.getElementById('export-reference');
   const exportPolicyNote = document.getElementById('export-policy-note');
   const deletePolicyNote = document.getElementById('delete-policy-note');
@@ -1221,10 +1223,17 @@ import {
     const exportsOn = Boolean(session?.exportsEnabled);
     const deletionsOn = Boolean(session?.deletionsEnabled);
     const isSupport = session?.role === 'researcher_support';
-    if (exportBtn) exportBtn.disabled = !(session && apiConfigured && exportsOn);
+    const exportReady = Boolean(session && apiConfigured && exportsOn);
+    if (exportBtn) exportBtn.disabled = !exportReady;
+    if (exportAllBtn) exportAllBtn.disabled = !exportReady;
+    if (exportAllNote) {
+      exportAllNote.textContent = exportsOn
+        ? 'Downloads every accepted response in this study as a CSV file Excel can open. Item ratings, profile codes, participant reference, consent metadata, and derived scores are separate columns. Not limited to this page.'
+        : 'Excel opens this CSV. It stays off until EXPORTS_ENABLED is set, then Study Owner and Research Support can download every accepted response after sign-in.';
+    }
     if (exportPolicyNote) {
       exportPolicyNote.textContent = exportsOn
-        ? 'Exports are enabled for this signed-in session. CSV uses the quantitative study schema only (coded profile, domain scores, Likert — no free-text, no auth/session metadata).'
+        ? 'Exports are enabled for this signed-in session. Use Export all responses (CSV) on the response ledger for the full study file. The optional reference below is a single-record export. CSV uses the quantitative study schema only (coded profile, consent metadata, domain scores, Likert — no free-text, no auth/session metadata).'
         : 'CSV export is policy-gated until EXPORTS_ENABLED is set for this environment.';
     }
     if (deleteForm) {
@@ -1642,6 +1651,33 @@ import {
     }
   }
 
+  async function downloadCsv(response, filename) {
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleExportAll() {
+    if (!session?.exportsEnabled || !session || !apiConfigured) {
+      setStatus('error', 'CSV export is unavailable until it is enabled for this study.');
+      return;
+    }
+    try {
+      const response = await researcherFetch('/v1/exports', {
+        method: 'POST',
+        body: JSON.stringify({ confirm: true, scope: 'all' }),
+      });
+      await downloadCsv(response, 'inquiry-archive-all-responses.csv');
+      setStatus('live', 'Full study CSV downloaded. Open it in Excel.');
+    } catch {
+      setStatus('error', 'CSV export could not be completed. Try again or check study policy flags.');
+    }
+  }
+
   async function handleExport() {
     if (!session?.exportsEnabled || !session || !apiConfigured) {
       setStatus('error', 'CSV export is unavailable until it is enabled for this study.');
@@ -1662,15 +1698,10 @@ import {
         method: 'POST',
         body: JSON.stringify(body),
       });
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = reference
-        ? 'inquiry-archive-participant-export.csv'
-        : 'inquiry-archive-export.csv';
-      link.click();
-      URL.revokeObjectURL(url);
+      await downloadCsv(
+        response,
+        reference ? 'inquiry-archive-participant-export.csv' : 'inquiry-archive-export.csv'
+      );
       setStatus('live', 'Export downloaded.');
     } catch {
       setStatus('error', 'CSV export could not be completed. Try again or check study policy flags.');
@@ -1723,6 +1754,7 @@ import {
   deleteConfirm?.addEventListener('change', () => updateDeleteSubmitState());
   deleteReference?.addEventListener('input', () => updateDeleteSubmitState());
   exportBtn?.addEventListener('click', () => void handleExport());
+  exportAllBtn?.addEventListener('click', () => void handleExportAll());
   retentionRefresh?.addEventListener('click', () => void loadRetentionReview());
   signOutBtn?.addEventListener('click', () => void handleSignOut());
   document.getElementById('item-all-details')?.addEventListener('toggle', (event) => {

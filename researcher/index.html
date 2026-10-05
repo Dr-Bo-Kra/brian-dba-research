@@ -248,7 +248,11 @@
           </div>
           <p class="ledger-meta" id="ledger-meta" hidden></p>
         </div>
-        <p class="section-lede compact">Ten records per page. Expand a row for detail.</p>
+        <p class="section-lede compact">Ten records per page. Expand a row for detail. The download below includes every accepted response, not only this page.</p>
+        <div class="survey-actions admin-actions">
+          <button type="button" class="button ghost" id="export-all-csv" disabled>Export all responses (CSV)</button>
+        </div>
+        <p class="survey-footnote admin-footnote" id="export-all-note">Excel opens this CSV. It stays off until <code>EXPORTS_ENABLED</code> is set, then Study Owner and Research Support can download every accepted response after sign-in.</p>
         <div class="table-wrap">
           <table class="record-table">
             <thead>

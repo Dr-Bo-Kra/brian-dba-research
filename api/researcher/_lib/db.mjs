@@ -171,6 +171,8 @@ export const SQL = Object.freeze({
   exportQuantitativeRows: {
     text: `select client_record_id as participant_reference,
                   created_at as accepted_at,
+                  privacy_notice_version,
+                  consented_at,
                   profile ->> 'countryRegion' as region,
                   profile ->> 'position' as role,
                   profile ->> 'yearsLending' as experience,
@@ -180,6 +182,7 @@ export const SQL = Object.freeze({
                   coalesce(responses -> 'quantitative' -> 'likert', '{}'::jsonb) as likert
            from public.assessment_responses
            where anonymised_at is null
+             and instrument_id = 'brian-dba-inclusive-lending-desk-v3'
              and ($1::date is null or created_at::date >= $1)
              and ($2::date is null or created_at::date <= $2)
              and ($3::text is null or profile ->> 'countryRegion' = $3)

@@ -149,10 +149,30 @@ export function parseExportBody(body, maxRows) {
     return { ok: false, error: 'invalid_request' };
   }
   const extra = Object.keys(body).filter(
-    (key) => !['from', 'to', 'region', 'role', 'experience', 'q', 'reference', 'confirm'].includes(key)
+    (key) => !['from', 'to', 'region', 'role', 'experience', 'q', 'reference', 'confirm', 'scope'].includes(key)
   );
   if (extra.length) return { ok: false, error: 'invalid_request' };
   if (body.confirm !== true) return { ok: false, error: 'invalid_request' };
+  if (body.scope != null && body.scope !== 'all') return { ok: false, error: 'invalid_request' };
+  if (body.scope === 'all') {
+    return {
+      ok: true,
+      filters: {
+        from: null,
+        to: null,
+        region: null,
+        role: null,
+        experience: null,
+        q: '',
+        reference: null,
+        limit: 1,
+        allStudy: true,
+      },
+      maxRows,
+      participantLevel: false,
+      allStudy: true,
+    };
+  }
   const reference =
     body.reference == null || body.reference === ''
       ? null

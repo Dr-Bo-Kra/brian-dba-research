@@ -19,7 +19,8 @@ export function buildCsv(rows, columns = QUANTITATIVE_EXPORT_COLUMNS) {
   for (const row of rows) {
     lines.push(columns.map((column) => escapeCsvCell(row[column])).join(','));
   }
-  return `${lines.join('\n')}\n`;
+  // UTF-8 BOM so Excel opens the CSV as Unicode rather than misreading the first header.
+  return `\uFEFF${lines.join('\n')}\n`;
 }
 
 export function mapExportRow(record) {

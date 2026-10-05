@@ -157,6 +157,14 @@ function quantitativeDetailDto(record) {
   };
 }
 
+function exportTimestamp(value) {
+  if (value == null || value === '') return '';
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? '' : value.toISOString();
+  }
+  return String(value);
+}
+
 function quantitativeExportDto(record) {
   const detail = quantitativeDetailDto(record);
   if (!detail) return null;
@@ -175,6 +183,8 @@ function quantitativeExportDto(record) {
     involvement: detail.profile?.involvement || null,
     usesAltIndicators: detail.profile?.usesAltIndicators || null,
     orientation: detail.orientation,
+    privacy_notice_version: record.privacy_notice_version || '',
+    consented_at: exportTimestamp(record.consented_at),
   };
   for (const id of DOMAIN_ORDER) {
     const domain = detail.domains.find((entry) => entry.id === id);
@@ -329,7 +339,9 @@ export function createFixtureResearchStore(records) {
       return aggregateSegments(rows, dimension, measure);
     },
     async exportRows(filters, maxRows) {
-      const rows = records.filter((row) => matchesFilters(row, filters));
+      const rows = filters?.allStudy
+        ? records.filter((row) => !row.anonymised_at && pickLedger(row))
+        : records.filter((row) => matchesFilters(row, filters));
       if (rows.length > maxRows) return { ok: false, error: 'invalid_request' };
       return { ok: true, rows: rows.map((row) => quantitativeExportDto(row)).filter(Boolean) };
     },
@@ -490,9 +502,20 @@ export function createDatabaseResearchStore(query) {
       };
     },
     async exportRows(filters, maxRows) {
+      const scoped = filters?.allStudy
+        ? {
+            from: null,
+            to: null,
+            region: null,
+            role: null,
+            experience: null,
+            q: '',
+            reference: null,
+          }
+        : filters;
       const result = await query(SQL.exportQuantitativeRows, [
-        ...filterParams(filters),
-        filters.reference || null,
+        ...filterParams(scoped),
+        scoped.reference || null,
         maxRows + 1,
       ]);
       const rows = result?.rows || [];
@@ -507,6 +530,8 @@ export function createDatabaseResearchStore(query) {
             role: row.role,
             experience: row.experience,
             orientation: row.orientation,
+            privacy_notice_version: row.privacy_notice_version || '',
+            consented_at: row.consented_at || null,
             profile: row.profile || {},
             assessment: {
               domains: Array.isArray(row.domains) ? row.domains : [],
