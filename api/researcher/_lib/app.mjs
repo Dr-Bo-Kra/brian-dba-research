@@ -455,7 +455,7 @@ export function createResearcherApp(overrides = {}) {
     const respond = (response) => withRequestId(response, requestId);
 
     if (path === '/health' && method === 'GET') {
-      return respond(json(200, { ok: true }));
+      return respond(json(200, { ok: true, exportPolicy: config.exportsEnabled === true }));
     }
 
     if (path === '/diagnostics/db' && method === 'GET') {

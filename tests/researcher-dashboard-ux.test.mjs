@@ -570,6 +570,9 @@ test('exports and deletions are session-gated and default disabled in UI', () =>
   assert.match(js, /scope:\s*'all'/);
   assert.match(js, /inquiry-archive-all-responses\.csv/);
   assert.match(js, /export-all-csv/);
+  assert.match(js, /exportAllBtn\.disabled = !exportReady/);
+  assert.match(js, /classList\.toggle\('primary', exportReady\)/);
+  assert.match(read('researcher/dashboard.css'), /#export-all-csv:not\(:disabled\)/);
   assert.match(html, /id="delete-submit"[^>]*disabled/);
   assert.match(html, /EXPORTS_ENABLED/);
   assert.match(html, /DELETIONS_ENABLED/);

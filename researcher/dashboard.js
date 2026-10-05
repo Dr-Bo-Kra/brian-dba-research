@@ -1225,7 +1225,11 @@ import {
     const isSupport = session?.role === 'researcher_support';
     const exportReady = Boolean(session && apiConfigured && exportsOn);
     if (exportBtn) exportBtn.disabled = !exportReady;
-    if (exportAllBtn) exportAllBtn.disabled = !exportReady;
+    if (exportAllBtn) {
+      exportAllBtn.disabled = !exportReady;
+      exportAllBtn.classList.toggle('primary', exportReady);
+      exportAllBtn.classList.toggle('ghost', !exportReady);
+    }
     if (exportAllNote) {
       exportAllNote.textContent = exportsOn
         ? 'Downloads every accepted response in this study as a CSV file Excel can open. Item ratings, profile codes, participant reference, consent metadata, and derived scores are separate columns. Not limited to this page.'

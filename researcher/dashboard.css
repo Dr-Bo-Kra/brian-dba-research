@@ -964,6 +964,26 @@
   min-height: 34px;
 }
 
+#export-all-csv:not(:disabled) {
+  background: var(--deep);
+  color: #fff;
+  border: 1px solid var(--deep);
+  opacity: 1;
+}
+
+#export-all-csv:not(:disabled):hover,
+#export-all-csv:not(:disabled):focus-visible {
+  background: #0d3148;
+  border-color: #0d3148;
+  color: #fff;
+}
+
+#export-all-note {
+  color: var(--ink);
+  opacity: 1;
+  max-width: 72ch;
+}
+
 .ledger-page-label {
   margin: 0;
   font-size: 12px;

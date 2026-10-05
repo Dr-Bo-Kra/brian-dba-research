@@ -92,7 +92,7 @@ export function loadConfig(env = process.env) {
 
   return {
     enabled,
-    exportsEnabled: env.EXPORTS_ENABLED === 'true',
+    exportsEnabled: String(env.EXPORTS_ENABLED ?? '').trim() === 'true',
     deletionsEnabled: env.DELETIONS_ENABLED === 'true',
     studyCompletionDate: envIsoDate('STUDY_COMPLETION_DATE'),
     retentionMonths: envInt('RETENTION_MONTHS', 12),
