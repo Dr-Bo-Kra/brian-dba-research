@@ -348,7 +348,7 @@ test('Vercel rewrite stripping does not change auth, session, or MFA routing', a
   assert.equal(JSON.parse(session.body).authenticated, false);
 });
 
-test('collection, export, and delete remain off after rewrite stripping', async () => {
+test('delete stays flag-gated after rewrite stripping; export follows research:export', async () => {
   assert.match(read('config.js'), /COLLECTION_ENABLED:\s*true/);
   assert.match(read('config.js'), /SUBMISSION_ENDPOINT:\s*'https:\/\/brian-dba-research\.vercel\.app\/api\/submission'/);
   assert.equal(readyConfig().exportsEnabled, false);
@@ -377,7 +377,8 @@ test('collection, export, and delete remain off after rewrite stripping', async 
     ),
     { app }
   );
-  assert.equal(exported.status, 503);
+  assert.equal(exported.status, 200);
+  assert.match(exported.headers['Content-Type'], /csv/);
 
   const deleted = await handleVercelResearcherRequest(
     ...Object.values(

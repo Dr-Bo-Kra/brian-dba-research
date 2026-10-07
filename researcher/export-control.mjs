@@ -1,17 +1,14 @@
 /**
- * Whether the signed-in ledger may offer the full-study CSV control.
- * Study Owner and Research Support are the only roles that can read the
- * ledger, and both include research:export. A signed-in exporter must not
- * be sent back to the logged-out "stays off until EXPORTS_ENABLED" caption.
+ * Ledger CSV control for a signed-in Study Owner or Research Support session.
+ * Both roles include research:export. The control does not depend on
+ * EXPORTS_ENABLED. Logged-out callers are rejected by the API.
  */
 
-export const EXPORT_READY_NOTE =
-  'Ready. Downloads every accepted response in this study as a CSV file Excel can open. Item ratings, profile codes, participant reference, consent metadata, and derived scores are separate columns. Not limited to this page.';
-
-export const EXPORT_OFF_NOTE =
-  'Excel opens this CSV. It stays off until EXPORTS_ENABLED is set, then Study Owner and Research Support can download every accepted response after sign-in.';
+export const EXPORT_ALL_NOTE =
+  'The download includes every accepted response in this study, not only this page.';
 
 export function roleCanExport(payload, role = payload?.role) {
+  if (payload?.canExport === true) return true;
   if (role === 'researcher_admin' || role === 'researcher_support') return true;
   if (payload?.roleLabel === 'Study Owner' || payload?.roleLabel === 'Research Support') return true;
   return Array.isArray(payload?.permissions) && payload.permissions.includes('research:export');
@@ -28,6 +25,6 @@ export function exportControlForPayload(payload) {
   return {
     enabled,
     disabled: !enabled,
-    note: enabled ? EXPORT_READY_NOTE : EXPORT_OFF_NOTE,
+    note: EXPORT_ALL_NOTE,
   };
 }

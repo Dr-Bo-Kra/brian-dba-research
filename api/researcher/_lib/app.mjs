@@ -846,7 +846,6 @@ export function createResearcherApp(overrides = {}) {
         await writeAudit(identity, 'authz_failure', { reason: needed.error }, requestId);
         return respond(fail(needed.error));
       }
-      if (!config.exportsEnabled) return respond(fail('unavailable'));
       const body = readBody(request);
       if (body === Symbol.for('invalid_json')) return respond(fail('invalid_request'));
       const parsed = parseExportBody(body, config.maxExportRows);

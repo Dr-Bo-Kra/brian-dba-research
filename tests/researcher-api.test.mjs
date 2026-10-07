@@ -235,7 +235,7 @@ test('authenticated reads return allowlisted ledger fields only', async () => {
   assert.equal(payload.records[0].id, undefined);
 });
 
-test('export and delete stay unavailable until policy flags are enabled', async () => {
+test('signed-in export ignores EXPORTS_ENABLED; deletion stays flag-gated', async () => {
   const app = testApp({ records: [sampleRecord()] });
   const signed = await app.signInForTests('subject-owner', { role: 'researcher_admin' });
   const headers = {
@@ -246,10 +246,46 @@ test('export and delete stay unavailable until policy flags are enabled', async 
     method: 'POST',
     url: '/v1/exports',
     headers,
-    body: { confirm: true },
+    body: { confirm: true, scope: 'all' },
     ip: '4',
   });
-  assert.equal(exported.status, 503);
+  assert.equal(exported.status, 200);
+  assert.match(exported.headers['Content-Type'], /csv/);
+  assert.match(exported.headers['Content-Disposition'], /inquiry-archive-all-responses\.csv/);
+  assert.match(exported.body, /resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
+
+  const support = await app.signInForTests('support-export-off-flag', { role: 'researcher_support' });
+  const supportExport = await app.handle({
+    method: 'POST',
+    url: '/v1/exports',
+    headers: { cookie: support.cookie, 'x-csrf-token': support.csrf },
+    body: { confirm: true, scope: 'all' },
+    ip: '4-support',
+  });
+  assert.equal(supportExport.status, 200);
+  assert.match(supportExport.headers['Content-Disposition'], /inquiry-archive-all-responses\.csv/);
+
+  const anon = await app.handle({
+    method: 'POST',
+    url: '/v1/exports',
+    headers: {},
+    body: { confirm: true, scope: 'all' },
+    ip: '4-anon',
+  });
+  assert.equal(anon.status, 401);
+  assert.doesNotMatch(anon.body, /resp_|participant_reference/);
+
+  const outsider = await app.signInForTests('outsider', { role: 'viewer' });
+  const denied = await app.handle({
+    method: 'POST',
+    url: '/v1/exports',
+    headers: { cookie: outsider.cookie, 'x-csrf-token': outsider.csrf },
+    body: { confirm: true, scope: 'all' },
+    ip: '4-outsider',
+  });
+  assert.equal(denied.status, 403);
+  assert.doesNotMatch(denied.body, /resp_|participant_reference/);
+
   const deleted = await app.handle({
     method: 'POST',
     url: '/v1/deletions',
@@ -258,6 +294,10 @@ test('export and delete stay unavailable until policy flags are enabled', async 
     ip: '4',
   });
   assert.equal(deleted.status, 503);
+  assert.equal(
+    app.records.some((row) => row.client_record_id === 'resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+    true
+  );
 });
 
 test('enabled deletion is generic and respects legal hold', async () => {
@@ -454,7 +494,7 @@ test('signed-in Study Owner and Research Support see export on when the policy i
   assert.equal(ready.enabled, true);
   assert.equal(ready.disabled, false);
   assert.doesNotMatch(ready.note, /stays off until/);
-  assert.match(ready.note, /Ready\./);
+  assert.match(ready.note, /every accepted response/);
 
   const ledgerReader = {
     authenticated: true,
@@ -495,7 +535,7 @@ test('signed-in support session keeps export enabled when the config flag is tru
   const copy = exportControlForPayload(payload);
   assert.equal(copy.enabled, true);
   assert.doesNotMatch(copy.note, /stays off until EXPORTS_ENABLED/);
-  assert.match(copy.note, /Ready\./);
+  assert.match(copy.note, /every accepted response/);
 
   const anon = await app.handle({
     method: 'POST',

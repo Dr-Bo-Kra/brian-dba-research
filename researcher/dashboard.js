@@ -16,11 +16,10 @@ import {
   shortenParticipantRef,
 } from './drilldowns.mjs';
 import {
-  EXPORT_OFF_NOTE,
-  EXPORT_READY_NOTE,
+  EXPORT_ALL_NOTE,
   exportAllowedForSession,
   roleCanExport,
-} from './export-control.mjs?v=17';
+} from './export-control.mjs?v=18';
 
 (function initInquiryArchive() {
   const gate = document.getElementById('auth-gate');
@@ -1209,18 +1208,28 @@ import {
   }
 
   function sessionExportsEnabled(payload, role) {
-    return exportAllowedForSession({ ...payload, role: role || payload?.role, authenticated: true });
+    const permissions = Array.isArray(payload?.permissions) ? payload.permissions : [];
+    return exportAllowedForSession({
+      ...payload,
+      authenticated: true,
+      role: role || payload?.role,
+      permissions,
+      canExport: payload?.canExport === true || permissions.includes('research:export'),
+    });
   }
 
   function sessionFromPayload(payload) {
     if (payload?.authenticated !== true) return null;
     const role = payload.role || 'researcher_support';
-    return {
+    const permissions = Array.isArray(payload.permissions) ? [...payload.permissions] : [];
+    const next = {
+      authenticated: true,
       role,
       roleLabel: payload.roleLabel || null,
+      permissions,
+      canExport: payload.canExport === true || permissions.includes('research:export') || roleCanExport(payload, role),
       expiresAt: payload.expiresAt,
       csrfToken: payload.csrfToken,
-      exportsEnabled: sessionExportsEnabled(payload, role),
       deletionsEnabled: payload.deletionsEnabled === true,
       retentionMonths: Number(payload.retentionMonths) || 12,
       studyCompletionDate: payload.studyCompletionDate || null,
@@ -1228,14 +1237,25 @@ import {
       retentionReviewOpensAt: payload.retentionReviewOpensAt || null,
       retentionAutoDelete: false,
     };
+    next.exportsEnabled = sessionExportsEnabled(next, role);
+    return next;
   }
 
   function applyAdminControls() {
-    const signedInExporter = Boolean(session && roleCanExport(session, session.role));
+    const signedInExporter = Boolean(
+      session &&
+        exportAllowedForSession({
+          authenticated: true,
+          role: session.role,
+          roleLabel: session.roleLabel,
+          permissions: session.permissions,
+          canExport: session.canExport === true,
+        })
+    );
     const exportsOn = signedInExporter || Boolean(session?.exportsEnabled);
     const deletionsOn = Boolean(session?.deletionsEnabled);
     const isSupport = session?.role === 'researcher_support';
-    const exportReady = Boolean(session && apiConfigured && exportsOn);
+    const exportReady = Boolean(session && apiConfigured);
     if (exportBtn) exportBtn.disabled = !exportReady;
     if (exportAllBtn) {
       exportAllBtn.disabled = !exportReady;
@@ -1243,7 +1263,7 @@ import {
       exportAllBtn.classList.toggle('ghost', !exportReady);
     }
     if (exportAllNote) {
-      exportAllNote.textContent = signedInExporter ? EXPORT_READY_NOTE : EXPORT_OFF_NOTE;
+      exportAllNote.textContent = EXPORT_ALL_NOTE;
     }
     if (exportPolicyNote) {
       exportPolicyNote.textContent = exportsOn
@@ -1676,8 +1696,8 @@ import {
   }
 
   async function handleExportAll() {
-    if (!session?.exportsEnabled || !session || !apiConfigured) {
-      setStatus('error', 'CSV export is unavailable until it is enabled for this study.');
+    if (!session || !apiConfigured) {
+      setStatus('error', 'Sign in as Study Owner or Research Support to download every accepted response.');
       return;
     }
     try {
@@ -1693,8 +1713,14 @@ import {
   }
 
   async function handleExport() {
-    if (!session?.exportsEnabled || !session || !apiConfigured) {
-      setStatus('error', 'CSV export is unavailable until it is enabled for this study.');
+    if (!session || !apiConfigured || !exportAllowedForSession({
+      authenticated: true,
+      role: session.role,
+      roleLabel: session.roleLabel,
+      permissions: session.permissions,
+      canExport: session.canExport === true,
+    })) {
+      setStatus('error', 'Sign in as Study Owner or Research Support to download accepted responses.');
       return;
     }
     try {

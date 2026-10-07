@@ -18,7 +18,7 @@ import {
   relativeDomainLabel,
   SIMILARITY_THRESHOLD,
 } from '../researcher/insights.mjs';
-import { exportAllowedForSession, EXPORT_OFF_NOTE, EXPORT_READY_NOTE } from '../researcher/export-control.mjs';
+import { exportAllowedForSession, EXPORT_ALL_NOTE } from '../researcher/export-control.mjs';
 import {
   buildDomainDrilldown,
   buildKpiDrilldown,
@@ -574,14 +574,20 @@ test('exports and deletions are session-gated and default disabled in UI', () =>
     }),
     true
   );
-  assert.match(EXPORT_READY_NOTE, /Ready\./);
-  assert.match(EXPORT_OFF_NOTE, /EXPORTS_ENABLED/);
-  assert.match(html, /dashboard\.js\?v=17/);
-  assert.match(js, /export-control\.mjs\?v=17/);
-  assert.match(js, /signedInExporter \? EXPORT_READY_NOTE : EXPORT_OFF_NOTE/);
-  assert.doesNotMatch(js, /exportsOn \? EXPORT_READY_NOTE : EXPORT_OFF_NOTE/);
+  assert.match(EXPORT_ALL_NOTE, /every accepted response/);
+  assert.doesNotMatch(EXPORT_ALL_NOTE, /stays off until EXPORTS_ENABLED/);
+  assert.match(html, /dashboard\.js\?v=18/);
+  assert.match(html, /dashboard\.css\?v=18/);
+  assert.match(html, /config\.js\?v=18/);
+  assert.match(html, /styles\.css\?v=18/);
+  assert.match(js, /export-control\.mjs\?v=18/);
+  assert.match(js, /exportAllNote\.textContent = EXPORT_ALL_NOTE/);
+  assert.doesNotMatch(js, /EXPORT_OFF_NOTE/);
+  assert.doesNotMatch(js, /stays off until EXPORTS_ENABLED/);
+  assert.doesNotMatch(read('researcher/export-control.mjs'), /stays off until EXPORTS_ENABLED/);
   const ledgerNote = html.match(/id="export-all-note">([\s\S]*?)<\/p>/);
   assert.ok(ledgerNote);
+  assert.match(ledgerNote[1], /every accepted response/);
   assert.doesNotMatch(ledgerNote[1], /stays off until EXPORTS_ENABLED/);
   const allowedDespiteFalseFlag = exportAllowedForSession({
     authenticated: true,
@@ -596,7 +602,7 @@ test('exports and deletions are session-gated and default disabled in UI', () =>
   assert.doesNotMatch(js, /LIVE_EXPORTS_ENABLED\s*=\s*true/);
   assert.doesNotMatch(js, /LIVE_DELETIONS_ENABLED\s*=\s*true/);
   assert.match(html, /id="export-csv"[^>]*disabled/);
-  assert.match(html, /id="export-all-csv"[^>]*disabled/);
+  assert.doesNotMatch(html, /id="export-all-csv"[^>]*disabled/);
   assert.match(html, /Export all responses \(CSV\)/);
   assert.match(js, /scope:\s*'all'/);
   assert.match(js, /inquiry-archive-all-responses\.csv/);
