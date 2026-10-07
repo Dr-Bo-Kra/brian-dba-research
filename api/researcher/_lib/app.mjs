@@ -402,10 +402,12 @@ export function createResearcherApp(overrides = {}) {
 
   function sessionCapabilityPayload(identity = null) {
     const policy = retentionPolicy(config);
+    const exportPolicy = config.exportsEnabled === true;
     const canExport = identity ? hasPermission({ ...identity, mfaOk: true }, 'research:export') : false;
     const canWithdraw = identity ? hasPermission({ ...identity, mfaOk: true }, 'research:withdraw') : false;
     return {
-      exportsEnabled: config.exportsEnabled === true && canExport,
+      exportPolicy,
+      exportsEnabled: exportPolicy && canExport,
       deletionsEnabled: config.deletionsEnabled === true && canWithdraw,
       retentionMonths: policy.retentionMonths,
       studyCompletionDate: policy.studyCompletionDate,

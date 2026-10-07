@@ -1202,14 +1202,21 @@ import {
     renderRetention();
   }
 
+  function sessionExportsEnabled(payload, role) {
+    const roleCanExport = role === 'researcher_admin' || role === 'researcher_support';
+    if (!roleCanExport) return false;
+    return payload?.exportsEnabled === true || payload?.exportPolicy === true;
+  }
+
   function sessionFromPayload(payload) {
     if (payload?.authenticated !== true) return null;
+    const role = payload.role || 'researcher_support';
     return {
-      role: payload.role || 'researcher_support',
+      role,
       roleLabel: payload.roleLabel || null,
       expiresAt: payload.expiresAt,
       csrfToken: payload.csrfToken,
-      exportsEnabled: payload.exportsEnabled === true,
+      exportsEnabled: sessionExportsEnabled(payload, role),
       deletionsEnabled: payload.deletionsEnabled === true,
       retentionMonths: Number(payload.retentionMonths) || 12,
       studyCompletionDate: payload.studyCompletionDate || null,

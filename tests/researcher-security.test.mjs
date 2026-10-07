@@ -1080,6 +1080,7 @@ test('RBAC: Research Support can export; role spoofing cannot elevate to withdra
   assert.equal(payload.role, 'researcher_support');
   assert.equal(payload.roleLabel, 'Research Support');
   assert.equal(payload.deletionsEnabled, false);
+  assert.equal(payload.exportPolicy, true);
   assert.equal(payload.exportsEnabled, true);
 });
 

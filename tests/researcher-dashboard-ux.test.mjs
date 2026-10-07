@@ -559,6 +559,8 @@ test('exports and deletions are session-gated and default disabled in UI', () =>
   const js = read('researcher/dashboard.js');
   const html = read('researcher/index.html');
   assert.match(js, /exportsEnabled/);
+  assert.match(js, /exportPolicy/);
+  assert.match(js, /payload\?\.exportPolicy === true/);
   assert.match(js, /deletionsEnabled/);
   assert.match(js, /session\?\.exportsEnabled|session\.exportsEnabled/);
   assert.match(js, /session\?\.deletionsEnabled|session\.deletionsEnabled/);

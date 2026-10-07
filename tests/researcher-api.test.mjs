@@ -401,10 +401,51 @@ test('session advertises export and deletion capability flags without enabling t
   assert.equal(session.status, 200);
   const payload = JSON.parse(session.body);
   assert.equal(payload.authenticated, true);
+  assert.equal(payload.exportPolicy, false);
   assert.equal(payload.exportsEnabled, false);
   assert.equal(payload.deletionsEnabled, false);
   assert.equal(payload.retentionAutoDelete, false);
   assert.equal(payload.retentionMonths, 12);
+});
+
+test('signed-in Study Owner and Research Support see export on when the policy is on', async () => {
+  const app = testApp({ config: { exportsEnabled: true, deletionsEnabled: false } });
+  app.directory.set('study-owner', {
+    role: 'researcher_admin',
+    mfaRequired: true,
+    revokedAt: null,
+    disabledAt: null,
+  });
+  const owner = await app.signInForTests('study-owner', { role: 'researcher_admin' });
+  const ownerSession = await app.handle({
+    method: 'GET',
+    url: '/v1/session',
+    headers: { cookie: owner.cookie },
+    ip: 'export-owner',
+  });
+  const ownerPayload = JSON.parse(ownerSession.body);
+  assert.equal(ownerPayload.authenticated, true);
+  assert.equal(ownerPayload.exportPolicy, true);
+  assert.equal(ownerPayload.exportsEnabled, true);
+  assert.equal(ownerPayload.deletionsEnabled, false);
+
+  const support = await app.signInForTests('support-export-flag', { role: 'researcher_support' });
+  const supportSession = await app.handle({
+    method: 'GET',
+    url: '/v1/session',
+    headers: { cookie: support.cookie },
+    ip: 'export-support',
+  });
+  const supportPayload = JSON.parse(supportSession.body);
+  assert.equal(supportPayload.authenticated, true);
+  assert.equal(supportPayload.role, 'researcher_support');
+  assert.equal(supportPayload.exportPolicy, true);
+  assert.equal(supportPayload.exportsEnabled, true);
+  assert.equal(supportPayload.deletionsEnabled, false);
+
+  const anon = await app.handle({ method: 'POST', url: '/v1/exports', headers: {}, body: { confirm: true, scope: 'all' }, ip: 'export-anon' });
+  assert.equal(anon.status, 401);
+  assert.doesNotMatch(anon.body, /resp_|participant_reference/);
 });
 
 test('researcher UI connects to the same-origin API without secrets or a password-only workspace', () => {
