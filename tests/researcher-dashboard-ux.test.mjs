@@ -18,6 +18,7 @@ import {
   relativeDomainLabel,
   SIMILARITY_THRESHOLD,
 } from '../researcher/insights.mjs';
+import { exportAllowedForSession, EXPORT_OFF_NOTE, EXPORT_READY_NOTE } from '../researcher/export-control.mjs';
 import {
   buildDomainDrilldown,
   buildKpiDrilldown,
@@ -560,7 +561,22 @@ test('exports and deletions are session-gated and default disabled in UI', () =>
   const html = read('researcher/index.html');
   assert.match(js, /exportsEnabled/);
   assert.match(js, /exportPolicy/);
-  assert.match(js, /payload\?\.exportPolicy === true/);
+  assert.match(js, /exportAllowedForSession/);
+  assert.match(read('researcher/export-control.mjs'), /exportPolicy/);
+  assert.equal(
+    exportAllowedForSession({
+      authenticated: true,
+      role: 'researcher_support',
+      exportsEnabled: true,
+      exportPolicy: true,
+      canExport: true,
+      permissions: ['research:read', 'research:export'],
+    }),
+    true
+  );
+  assert.match(EXPORT_READY_NOTE, /Ready\./);
+  assert.match(EXPORT_OFF_NOTE, /EXPORTS_ENABLED/);
+  assert.match(html, /dashboard\.js\?v=16/);
   assert.match(js, /deletionsEnabled/);
   assert.match(js, /session\?\.exportsEnabled|session\.exportsEnabled/);
   assert.match(js, /session\?\.deletionsEnabled|session\.deletionsEnabled/);

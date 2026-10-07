@@ -11,6 +11,7 @@ import { ITEM_ORDER, CURRENT_STUDY_INSTRUMENT_ID } from '../api/researcher/_lib/
 import { SQL, assertBoundQuery } from '../api/researcher/_lib/db.mjs';
 import { parseFilters, parseDeletionBody, parseExportBody, parseParticipantRef } from '../api/researcher/_lib/validate.mjs';
 import { SESSION_COOKIE } from '../api/researcher/_lib/http.mjs';
+import { exportAllowedForSession, exportControlForPayload } from '../researcher/export-control.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => readFileSync(join(root, relative), 'utf8');
@@ -440,12 +441,37 @@ test('signed-in Study Owner and Research Support see export on when the policy i
   assert.equal(supportPayload.authenticated, true);
   assert.equal(supportPayload.role, 'researcher_support');
   assert.equal(supportPayload.exportPolicy, true);
+  assert.equal(supportPayload.canExport, true);
+  assert.ok(supportPayload.permissions.includes('research:export'));
   assert.equal(supportPayload.exportsEnabled, true);
   assert.equal(supportPayload.deletionsEnabled, false);
 
   const anon = await app.handle({ method: 'POST', url: '/v1/exports', headers: {}, body: { confirm: true, scope: 'all' }, ip: 'export-anon' });
   assert.equal(anon.status, 401);
   assert.doesNotMatch(anon.body, /resp_|participant_reference/);
+
+  const ready = exportControlForPayload(supportPayload);
+  assert.equal(ready.enabled, true);
+  assert.equal(ready.disabled, false);
+  assert.doesNotMatch(ready.note, /stays off until/);
+  assert.match(ready.note, /Ready\./);
+
+  const ledgerReader = {
+    authenticated: true,
+    role: 'researcher_support',
+    permissions: ['research:read', 'research:export'],
+  };
+  assert.equal(exportAllowedForSession(ledgerReader), true);
+  assert.equal(
+    exportAllowedForSession({
+      authenticated: true,
+      role: 'researcher_support',
+      exportPolicy: false,
+      exportsEnabled: false,
+    }),
+    false
+  );
+  assert.equal(exportAllowedForSession({ authenticated: false, role: 'researcher_support', exportPolicy: true }), false);
 });
 
 test('researcher UI connects to the same-origin API without secrets or a password-only workspace', () => {

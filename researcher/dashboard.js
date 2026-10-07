@@ -15,6 +15,7 @@ import {
   normalizeTrend,
   shortenParticipantRef,
 } from './drilldowns.mjs';
+import { EXPORT_OFF_NOTE, EXPORT_READY_NOTE, exportAllowedForSession } from './export-control.mjs';
 
 (function initInquiryArchive() {
   const gate = document.getElementById('auth-gate');
@@ -1203,9 +1204,7 @@ import {
   }
 
   function sessionExportsEnabled(payload, role) {
-    const roleCanExport = role === 'researcher_admin' || role === 'researcher_support';
-    if (!roleCanExport) return false;
-    return payload?.exportsEnabled === true || payload?.exportPolicy === true;
+    return exportAllowedForSession({ ...payload, role: role || payload?.role, authenticated: true });
   }
 
   function sessionFromPayload(payload) {
@@ -1238,9 +1237,7 @@ import {
       exportAllBtn.classList.toggle('ghost', !exportReady);
     }
     if (exportAllNote) {
-      exportAllNote.textContent = exportsOn
-        ? 'Downloads every accepted response in this study as a CSV file Excel can open. Item ratings, profile codes, participant reference, consent metadata, and derived scores are separate columns. Not limited to this page.'
-        : 'Excel opens this CSV. It stays off until EXPORTS_ENABLED is set, then Study Owner and Research Support can download every accepted response after sign-in.';
+      exportAllNote.textContent = exportsOn ? EXPORT_READY_NOTE : EXPORT_OFF_NOTE;
     }
     if (exportPolicyNote) {
       exportPolicyNote.textContent = exportsOn
