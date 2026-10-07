@@ -404,14 +404,18 @@ export function createResearcherApp(overrides = {}) {
   function sessionCapabilityPayload(identity = null) {
     const policy = retentionPolicy(config);
     const exportPolicy = config.exportsEnabled === true;
-    const permissions = identity?.role ? [...permissionsForRole(identity.role)] : [];
-    const canExport = permissions.includes('research:export');
+    const role = identity?.role || null;
+    const permissions = role ? [...permissionsForRole(role)] : [];
+    const canExport =
+      role === STUDY_OWNER_ROLE ||
+      role === RESEARCH_SUPPORT_ROLE ||
+      permissions.includes('research:export');
     const canWithdraw = identity ? hasPermission({ ...identity, mfaOk: true }, 'research:withdraw') : false;
     return {
       exportPolicy,
       canExport,
       permissions,
-      exportsEnabled: exportPolicy && canExport,
+      exportsEnabled: exportPolicy === true && canExport === true,
       deletionsEnabled: config.deletionsEnabled === true && canWithdraw,
       retentionMonths: policy.retentionMonths,
       studyCompletionDate: policy.studyCompletionDate,

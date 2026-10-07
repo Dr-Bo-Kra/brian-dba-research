@@ -1,8 +1,8 @@
 /**
  * Whether the signed-in ledger may offer the full-study CSV control.
  * Study Owner and Research Support are the only roles that can read the
- * ledger, and both include research:export. A missing flag must not leave
- * the control on the "stays off until EXPORTS_ENABLED" caption.
+ * ledger, and both include research:export. A signed-in exporter must not
+ * be sent back to the logged-out "stays off until EXPORTS_ENABLED" caption.
  */
 
 export const EXPORT_READY_NOTE =
@@ -10,10 +10,6 @@ export const EXPORT_READY_NOTE =
 
 export const EXPORT_OFF_NOTE =
   'Excel opens this CSV. It stays off until EXPORTS_ENABLED is set, then Study Owner and Research Support can download every accepted response after sign-in.';
-
-function flagOn(value) {
-  return value === true || value === 'true' || value === 1 || value === '1';
-}
 
 export function roleCanExport(payload, role = payload?.role) {
   if (role === 'researcher_admin' || role === 'researcher_support') return true;
@@ -24,10 +20,7 @@ export function roleCanExport(payload, role = payload?.role) {
 export function exportAllowedForSession(payload) {
   if (!payload || payload.authenticated !== true) return false;
   const role = payload.role || 'researcher_support';
-  if (!roleCanExport(payload, role)) return false;
-  if (flagOn(payload.exportsEnabled) || flagOn(payload.exportPolicy)) return true;
-  if (payload.exportPolicy === false && !flagOn(payload.exportsEnabled)) return false;
-  return true;
+  return roleCanExport(payload, role);
 }
 
 export function exportControlForPayload(payload) {

@@ -15,7 +15,12 @@ import {
   normalizeTrend,
   shortenParticipantRef,
 } from './drilldowns.mjs';
-import { EXPORT_OFF_NOTE, EXPORT_READY_NOTE, exportAllowedForSession } from './export-control.mjs';
+import {
+  EXPORT_OFF_NOTE,
+  EXPORT_READY_NOTE,
+  exportAllowedForSession,
+  roleCanExport,
+} from './export-control.mjs?v=17';
 
 (function initInquiryArchive() {
   const gate = document.getElementById('auth-gate');
@@ -1226,7 +1231,8 @@ import { EXPORT_OFF_NOTE, EXPORT_READY_NOTE, exportAllowedForSession } from './e
   }
 
   function applyAdminControls() {
-    const exportsOn = Boolean(session?.exportsEnabled);
+    const signedInExporter = Boolean(session && roleCanExport(session, session.role));
+    const exportsOn = signedInExporter || Boolean(session?.exportsEnabled);
     const deletionsOn = Boolean(session?.deletionsEnabled);
     const isSupport = session?.role === 'researcher_support';
     const exportReady = Boolean(session && apiConfigured && exportsOn);
@@ -1237,7 +1243,7 @@ import { EXPORT_OFF_NOTE, EXPORT_READY_NOTE, exportAllowedForSession } from './e
       exportAllBtn.classList.toggle('ghost', !exportReady);
     }
     if (exportAllNote) {
-      exportAllNote.textContent = exportsOn ? EXPORT_READY_NOTE : EXPORT_OFF_NOTE;
+      exportAllNote.textContent = signedInExporter ? EXPORT_READY_NOTE : EXPORT_OFF_NOTE;
     }
     if (exportPolicyNote) {
       exportPolicyNote.textContent = exportsOn

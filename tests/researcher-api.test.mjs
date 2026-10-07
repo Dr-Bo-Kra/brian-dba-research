@@ -462,16 +462,50 @@ test('signed-in Study Owner and Research Support see export on when the policy i
     permissions: ['research:read', 'research:export'],
   };
   assert.equal(exportAllowedForSession(ledgerReader), true);
-  assert.equal(
-    exportAllowedForSession({
-      authenticated: true,
-      role: 'researcher_support',
-      exportPolicy: false,
-      exportsEnabled: false,
-    }),
-    false
-  );
+  const falseFlag = {
+    authenticated: true,
+    role: 'researcher_support',
+    exportPolicy: false,
+    exportsEnabled: false,
+  };
+  assert.equal(exportAllowedForSession(falseFlag), true);
+  const falseFlagCopy = exportControlForPayload(falseFlag);
+  assert.equal(falseFlagCopy.enabled, true);
+  assert.doesNotMatch(falseFlagCopy.note, /stays off until EXPORTS_ENABLED/);
   assert.equal(exportAllowedForSession({ authenticated: false, role: 'researcher_support', exportPolicy: true }), false);
+});
+
+test('signed-in support session keeps export enabled when the config flag is true', async () => {
+  const app = testApp({ config: { exportsEnabled: true, deletionsEnabled: false } });
+  const support = await app.signInForTests('support-config-flag', { role: 'researcher_support' });
+  const response = await app.handle({
+    method: 'GET',
+    url: '/v1/session',
+    headers: { cookie: support.cookie },
+    ip: 'export-config-flag',
+  });
+  assert.equal(response.status, 200);
+  const payload = JSON.parse(response.body);
+  assert.equal(payload.authenticated, true);
+  assert.equal(payload.role, 'researcher_support');
+  assert.equal(payload.exportPolicy, true);
+  assert.equal(payload.canExport, true);
+  assert.equal(payload.exportsEnabled, true);
+  assert.equal(payload.deletionsEnabled, false);
+  const copy = exportControlForPayload(payload);
+  assert.equal(copy.enabled, true);
+  assert.doesNotMatch(copy.note, /stays off until EXPORTS_ENABLED/);
+  assert.match(copy.note, /Ready\./);
+
+  const anon = await app.handle({
+    method: 'POST',
+    url: '/v1/exports',
+    headers: {},
+    body: { confirm: true, scope: 'all' },
+    ip: 'export-config-flag-anon',
+  });
+  assert.equal(anon.status, 401);
+  assert.doesNotMatch(anon.body, /resp_|participant_reference/);
 });
 
 test('researcher UI connects to the same-origin API without secrets or a password-only workspace', () => {

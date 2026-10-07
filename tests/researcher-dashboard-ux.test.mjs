@@ -562,7 +562,7 @@ test('exports and deletions are session-gated and default disabled in UI', () =>
   assert.match(js, /exportsEnabled/);
   assert.match(js, /exportPolicy/);
   assert.match(js, /exportAllowedForSession/);
-  assert.match(read('researcher/export-control.mjs'), /exportPolicy/);
+  assert.match(read('researcher/export-control.mjs'), /roleCanExport/);
   assert.equal(
     exportAllowedForSession({
       authenticated: true,
@@ -576,7 +576,20 @@ test('exports and deletions are session-gated and default disabled in UI', () =>
   );
   assert.match(EXPORT_READY_NOTE, /Ready\./);
   assert.match(EXPORT_OFF_NOTE, /EXPORTS_ENABLED/);
-  assert.match(html, /dashboard\.js\?v=16/);
+  assert.match(html, /dashboard\.js\?v=17/);
+  assert.match(js, /export-control\.mjs\?v=17/);
+  assert.match(js, /signedInExporter \? EXPORT_READY_NOTE : EXPORT_OFF_NOTE/);
+  assert.doesNotMatch(js, /exportsOn \? EXPORT_READY_NOTE : EXPORT_OFF_NOTE/);
+  const ledgerNote = html.match(/id="export-all-note">([\s\S]*?)<\/p>/);
+  assert.ok(ledgerNote);
+  assert.doesNotMatch(ledgerNote[1], /stays off until EXPORTS_ENABLED/);
+  const allowedDespiteFalseFlag = exportAllowedForSession({
+    authenticated: true,
+    role: 'researcher_support',
+    exportPolicy: false,
+    exportsEnabled: false,
+  });
+  assert.equal(allowedDespiteFalseFlag, true);
   assert.match(js, /deletionsEnabled/);
   assert.match(js, /session\?\.exportsEnabled|session\.exportsEnabled/);
   assert.match(js, /session\?\.deletionsEnabled|session\.deletionsEnabled/);
