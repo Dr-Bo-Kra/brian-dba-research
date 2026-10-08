@@ -380,6 +380,38 @@ test('delete stays flag-gated after rewrite stripping; export follows research:e
   assert.equal(exported.status, 200);
   assert.match(exported.headers['Content-Type'], /csv/);
 
+  const anonDownload = await handleVercelResearcherRequest(
+    ...Object.values(
+      vercelPair({
+        method: 'GET',
+        url: '/api/researcher?path=v1/exports&confirm=true&scope=all',
+        headers: rewriteHeaders('/api/researcher/v1/exports'),
+      })
+    ),
+    { app }
+  );
+  assert.equal(anonDownload.status, 401);
+  assert.doesNotMatch(String(anonDownload.body), /resp_/);
+
+  const attachment = await handleVercelResearcherRequest(
+    ...Object.values(
+      vercelPair({
+        method: 'GET',
+        url: '/api/researcher?path=v1/exports&confirm=true&scope=all',
+        headers: {
+          ...rewriteHeaders('/api/researcher/v1/exports'),
+          cookie: signed.cookie,
+        },
+      })
+    ),
+    { app }
+  );
+  assert.equal(attachment.status, 200);
+  assert.match(attachment.headers['Content-Type'], /text\/csv/);
+  assert.match(attachment.headers['Content-Disposition'], /attachment;\s*filename="inquiry-archive-all-responses\.csv"/);
+  assert.match(String(attachment.body), /resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
+  assert.doesNotMatch(String(attachment.body), /hidden|openResponses/);
+
   const deleted = await handleVercelResearcherRequest(
     ...Object.values(
       vercelPair({

@@ -964,6 +964,11 @@
   min-height: 34px;
 }
 
+a#export-all-csv {
+  text-decoration: none;
+  cursor: pointer;
+}
+
 #export-all-csv:not(:disabled) {
   background: var(--deep);
   color: #fff;
@@ -976,6 +981,11 @@
   background: #0d3148;
   border-color: #0d3148;
   color: #fff;
+}
+
+a#export-all-csv[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 #export-all-note {

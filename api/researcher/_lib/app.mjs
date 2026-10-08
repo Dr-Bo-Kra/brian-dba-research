@@ -840,13 +840,16 @@ export function createResearcherApp(overrides = {}) {
       return respond(json(200, row));
     }
 
-    if (path === '/v1/exports' && method === 'POST') {
+    if (path === '/v1/exports' && (method === 'POST' || method === 'GET')) {
       const needed = await authorizeAction(identity, 'export');
       if (!needed.ok) {
         await writeAudit(identity, 'authz_failure', { reason: needed.error }, requestId);
         return respond(fail(needed.error));
       }
-      const body = readBody(request);
+      // GET is the browser attachment download. The session cookie is
+      // SameSite=Strict, so a cross-site page cannot send it. POST stays
+      // CSRF-checked above. Both ignore EXPORTS_ENABLED.
+      const body = method === 'GET' ? queryOf(request) : readBody(request);
       if (body === Symbol.for('invalid_json')) return respond(fail('invalid_request'));
       const parsed = parseExportBody(body, config.maxExportRows);
       if (!parsed.ok) return respond(fail(parsed.error));

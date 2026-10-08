@@ -832,6 +832,34 @@ test('full study export includes every stored row and every quantitative item', 
     true
   );
 
+  const anonGet = await app.handle({
+    method: 'GET',
+    url: '/v1/exports?confirm=true&scope=all',
+    headers: {},
+    ip: 'bulk-anon-get',
+  });
+  assert.equal(anonGet.status, 401);
+  assert.doesNotMatch(anonGet.body, /resp_|privacy_notice_version|,B1,/);
+
+  const downloaded = await app.handle({
+    method: 'GET',
+    url: '/v1/exports?confirm=true&scope=all&region=india',
+    headers: { cookie: support.cookie },
+    ip: 'bulk-get',
+  });
+  assert.equal(downloaded.status, 200);
+  assert.match(downloaded.headers['Content-Type'], /text\/csv/);
+  assert.match(
+    downloaded.headers['Content-Disposition'],
+    /attachment;\s*filename="inquiry-archive-all-responses\.csv"/
+  );
+  const downloadedLines = downloaded.body.replace(/^\uFEFF/, '').trim().split('\n');
+  assert.equal(downloadedLines.length, refs.length + 1);
+  for (const ref of refs) {
+    assert.equal(downloadedLines.filter((line) => line.includes(ref)).length, 1);
+  }
+  assert.doesNotMatch(downloaded.body, /resp_ffffffffffffffffffffffffffffffff/);
+
   const withdrawn = await app.handle({
     method: 'POST',
     url: '/v1/deletions',

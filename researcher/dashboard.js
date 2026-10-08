@@ -19,7 +19,7 @@ import {
   EXPORT_ALL_NOTE,
   exportAllowedForSession,
   roleCanExport,
-} from './export-control.mjs?v=18';
+} from './export-control.mjs?v=19';
 
 (function initInquiryArchive() {
   const gate = document.getElementById('auth-gate');
@@ -1261,6 +1261,15 @@ import {
       exportAllBtn.disabled = !exportReady;
       exportAllBtn.classList.toggle('primary', exportReady);
       exportAllBtn.classList.toggle('ghost', !exportReady);
+      if (exportReady) {
+        const fullStudy = { confirm: true, scope: 'all' };
+        exportAllBtn.setAttribute('href', apiUrl(`/v1/exports?${new URLSearchParams(fullStudy).toString()}`));
+        exportAllBtn.setAttribute('download', 'inquiry-archive-all-responses.csv');
+        exportAllBtn.removeAttribute('aria-disabled');
+      } else {
+        exportAllBtn.removeAttribute('href');
+        exportAllBtn.setAttribute('aria-disabled', 'true');
+      }
     }
     if (exportAllNote) {
       exportAllNote.textContent = EXPORT_ALL_NOTE;
@@ -1685,34 +1694,29 @@ import {
     }
   }
 
-  async function downloadCsv(response, filename) {
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
+  function saveCsvAttachment(path, filename) {
     const link = document.createElement('a');
-    link.href = url;
+    link.href = apiUrl(path);
     link.download = filename;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => link.remove(), 1000);
   }
 
-  async function handleExportAll() {
-    if (!session || !apiConfigured) {
+  function handleExportAll(event) {
+    if (!session || !apiConfigured || !exportAllBtn?.getAttribute('href')) {
+      event?.preventDefault();
       setStatus('error', 'Sign in as Study Owner or Research Support to download every accepted response.');
       return;
     }
-    try {
-      const response = await researcherFetch('/v1/exports', {
-        method: 'POST',
-        body: JSON.stringify({ confirm: true, scope: 'all' }),
-      });
-      await downloadCsv(response, 'inquiry-archive-all-responses.csv');
-      setStatus('live', 'Full study CSV downloaded. Open it in Excel.');
-    } catch {
-      setStatus('error', 'CSV export could not be completed. Try again or check study policy flags.');
-    }
+    const fullStudy = { confirm: true, scope: 'all' };
+    exportAllBtn.setAttribute('href', apiUrl(`/v1/exports?${new URLSearchParams(fullStudy).toString()}`));
+    exportAllBtn.setAttribute('download', 'inquiry-archive-all-responses.csv');
+    setStatus('live', 'Full study CSV downloaded. Open it in Excel.');
   }
 
-  async function handleExport() {
+  function handleExport() {
     if (!session || !apiConfigured || !exportAllowedForSession({
       authenticated: true,
       role: session.role,
@@ -1723,29 +1727,24 @@ import {
       setStatus('error', 'Sign in as Study Owner or Research Support to download accepted responses.');
       return;
     }
-    try {
-      const reference = String(exportReference?.value || '').trim();
-      const body = { ...readFilters(), confirm: true };
-      if (reference) {
-        if (!PARTICIPANT_REF.test(reference)) {
-          setStatus('error', 'Enter a valid participant reference for single-record export, or leave it blank.');
-          return;
-        }
-        body.reference = reference;
-        delete body.q;
+    const reference = String(exportReference?.value || '').trim();
+    const params = { confirm: true };
+    if (reference) {
+      if (!PARTICIPANT_REF.test(reference)) {
+        setStatus('error', 'Enter a valid participant reference for single-record export, or leave it blank.');
+        return;
       }
-      const response = await researcherFetch('/v1/exports', {
-        method: 'POST',
-        body: JSON.stringify(body),
+      params.reference = reference;
+    } else {
+      Object.entries(readFilters()).forEach(([key, value]) => {
+        if (value) params[key] = value;
       });
-      await downloadCsv(
-        response,
-        reference ? 'inquiry-archive-participant-export.csv' : 'inquiry-archive-export.csv'
-      );
-      setStatus('live', 'Export downloaded.');
-    } catch {
-      setStatus('error', 'CSV export could not be completed. Try again or check study policy flags.');
     }
+    saveCsvAttachment(
+      `/v1/exports?${new URLSearchParams(params).toString()}`,
+      reference ? 'inquiry-archive-participant-export.csv' : 'inquiry-archive-export.csv'
+    );
+    setStatus('live', 'Export downloaded.');
   }
 
   fillSelect(document.getElementById('filter-region'), GEOGRAPHY);
@@ -1794,7 +1793,7 @@ import {
   deleteConfirm?.addEventListener('change', () => updateDeleteSubmitState());
   deleteReference?.addEventListener('input', () => updateDeleteSubmitState());
   exportBtn?.addEventListener('click', () => void handleExport());
-  exportAllBtn?.addEventListener('click', () => void handleExportAll());
+  exportAllBtn?.addEventListener('click', (event) => handleExportAll(event));
   retentionRefresh?.addEventListener('click', () => void loadRetentionReview());
   signOutBtn?.addEventListener('click', () => void handleSignOut());
   document.getElementById('item-all-details')?.addEventListener('toggle', (event) => {

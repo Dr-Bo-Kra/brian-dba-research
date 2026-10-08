@@ -148,11 +148,14 @@ export function parseExportBody(body, maxRows) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, error: 'invalid_request' };
   }
-  const extra = Object.keys(body).filter(
+  const normalized = { ...body };
+  if (normalized.confirm === 'true') normalized.confirm = true;
+  const extra = Object.keys(normalized).filter(
     (key) => !['from', 'to', 'region', 'role', 'experience', 'q', 'reference', 'confirm', 'scope'].includes(key)
   );
   if (extra.length) return { ok: false, error: 'invalid_request' };
-  if (body.confirm !== true) return { ok: false, error: 'invalid_request' };
+  if (normalized.confirm !== true) return { ok: false, error: 'invalid_request' };
+  body = normalized;
   if (body.scope != null && body.scope !== 'all') return { ok: false, error: 'invalid_request' };
   if (body.scope === 'all') {
     return {
